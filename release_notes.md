@@ -1,5 +1,53 @@
 # ProxyFS Release Notes
 
+## 1.18.0 (January 21, 2021)
+
+### Bug Fixes:
+
+Incorrect settings in some config values could crash ProxyFS upon startup
+or SIGHUP.
+
+Newer Swift versions introduced incompatibilities in some of the development
+and test environments (e.g. saio/sait VMs, runway cookbooks, and the newly
+available Dockerfiles).
+
+### Features:
+
+Liveness Checker is now optionally configured.
+
+Debug HTTP Server is now optionally configured.
+
+Significant number of HTTP RESTful APIs now provided to help debug and, as
+necessary, patch a corrupt file system.
+
+### Notes:
+
+Golang 1.15.5 is now minimally required. As part of this upgraded requirement,
+ProxyFS has converted to Go Modules.
+
+The new Lease Management system has been added to ProxyFS to enable multiple
+PFSAgent instances to consistently access a common ProxyFS Volume in a way that
+enables scaling out the read and write data paths much in the same way BiModal
+(Swift & S3 API) access scales out. All metadata operations continue to be
+forwarded to ProxyFS for centralized processing, but reads and writes proceed
+with minimal interaction with the ProxyFS responsible for the Volume.
+
+Use cases vary, but it had been hoped that scaling out read/write performance
+but leaving metadata operations to be managed centrally by a single ProxyFS
+instance would be sufficient. In the current crop of use cases, this turns out
+not to be quite the case. Further, supporting such a division of labor between
+PFSAgents and ProxyFS has proved quite challenging.
+
+As such, post this release, a new model is being adopted where ProxyFS merely
+maintains the Inode Table that now maps to Swift Objects per file/directory/symlink
+(rather than today's model where each Inode Table Entry is the actual Inode). With
+the new Lease Management system, this will enable a fully scale out model for all
+data and (nearly) all metadata operations to be conducted exclusively in each
+PFSAgent instance.
+
+This transition will not be backwards compatible and will therefore start with an
+increase in the "major" revision number (from 1 to 2).
+
 ## 1.17.0 (October 21, 2020)
 
 ### Bug Fixes:
