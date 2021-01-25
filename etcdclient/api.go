@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	certPath      = "/opt/ss/etc/ssl/etcd/"
+	certPath      = "/etc/ssl/etcd/ssl/"
 	trustedCAFile = certPath + "ca.pem"
 )
 
