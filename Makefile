@@ -37,6 +37,7 @@ gopkgsubdirs = \
 gobinsubdirs = \
 	cleanproxyfs \
 	fsworkout \
+	imgr \
 	inodeworkout \
 	pfs-crash \
 	pfs-fsck \
@@ -59,6 +60,7 @@ gobinsubdirs = \
 	ramswift/ramswift
 
 gobinsubdirsforci = \
+	imgr \
 	pfsconfjson \
 	pfsconfjsonpacked \
 	confgen/confgen \
