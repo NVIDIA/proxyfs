@@ -6,37 +6,39 @@
 set -e
 set -x
 
-# Setup Samba
-# Ideally, these 3 vars should be populated with info from the system.
-# For now, it's just hardcoded.
-OS_DISTRO=centos
-OS_DISTRO_VERSION=7.4
-SAMBA_VERSION=4.6.12
-
-SAMBA_DIR=build-samba-`echo $SAMBA_VERSION | tr . -`-${OS_DISTRO}-`echo $OS_DISTRO_VERSION | tr . -`
-
-cd $GOPATH/src/github.com/swiftstack/ProxyFS/vfs
-
-if [[ -L samba ]]; then
-    rm samba
-else
-    if [[ -e samba ]]; then
-        echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba cannot pre-exist"
-        exit 1
-    fi
-fi
-
-if [[ -d "${SAMBA_DIR}" ]]; then
-    ln -s $SAMBA_DIR samba
-else
-    git clone -b samba-$SAMBA_VERSION --single-branch --depth 1 https://github.com/samba-team/samba.git $SAMBA_DIR
-    ln -s $SAMBA_DIR samba
-    cd samba
-    ./configure
-    make clean
-    make GEN_NDR_TABLES
-fi
-export SAMBA_SOURCE=$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba
+# TODO: We don't need this anymore, do we? Delete when we're 100% sure!
+## Setup Samba
+## Ideally, these 3 vars should be populated with info from the system.
+## For now, it's just hardcoded.
+#OS_DISTRO=centos
+#OS_DISTRO_VERSION=7.4
+#SAMBA_VERSION=4.6.12
+#
+#SAMBA_DIR=build-samba-`echo $SAMBA_VERSION | tr . -`-${OS_DISTRO}-`echo $OS_DISTRO_VERSION | tr . -`
+#
+#cd $GOPATH/src/github.com/swiftstack/ProxyFS/vfs
+#
+#if [[ -L samba ]]; then
+#    rm samba
+#else
+#    if [[ -e samba ]]; then
+#        echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba cannot pre-exist"
+#        exit 1
+#    fi
+#fi
+#
+#if [[ -d "${SAMBA_DIR}" ]]; then
+#    ln -s $SAMBA_DIR samba
+#else
+#    git clone -b samba-$SAMBA_VERSION --single-branch --depth 1 https://github.com/samba-team/samba.git $SAMBA_DIR
+#    ln -s $SAMBA_DIR samba
+#    cd samba
+#    ./configure
+#    make clean
+#    make GEN_NDR_TABLES
+#fi
+#export SAMBA_SOURCE=$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba
+# TODO: End of to-do
 
 # Build ProxyFS and run tests
 cd $GOPATH/src/github.com/swiftstack/ProxyFS
