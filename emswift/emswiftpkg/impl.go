@@ -82,6 +82,11 @@ const (
 	startGETInfoRetryDelay = 100 * time.Millisecond
 )
 
+const (
+	fixedAuthToken           = "AUTH_tk0123456789abcde0123456789abcdef0"
+	fixedUserToAccountPrefix = "AUTH_" // Prefixed to User truncated before colon (":") if necessary
+)
+
 type httpRequestHandler struct{}
 
 type rangeStruct struct {
@@ -321,7 +326,75 @@ func stopNoAuth() (err error) {
 }
 
 func (dummy *authEmulatorStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
-	// TODO
+	var (
+		noAuthPath             string
+		xAuthKey               string
+		xAuthUser              string
+		xAuthUserSplit2OnColon []string
+		xStorageURL            string
+	)
+
+	// Handle the GET of/on info & AuthURL cases
+
+	if http.MethodGet == request.Method {
+		switch request.URL.Path {
+		case "/info":
+			_ = request.Body.Close()
+			doNoAuthGET(responseWriter, request)
+			return
+		case "/auth/v1.0":
+			_ = request.Body.Close()
+			xAuthUser = request.Header.Get("X-Auth-User")
+			xAuthKey = request.Header.Get("X-Auth-Key")
+			if ("" == xAuthUser) || ("" == xAuthKey) {
+				responseWriter.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			xAuthUserSplit2OnColon = strings.SplitN(xAuthUser, ":", 2)
+			xStorageURL = "http://" + globals.authEmulator.httpServer.Addr + "/v1/" + fixedUserToAccountPrefix + xAuthUserSplit2OnColon[0]
+			responseWriter.Header().Add("X-Auth-Token", fixedAuthToken)
+			responseWriter.Header().Add("X-Storage-Url", xStorageURL)
+			return
+		default:
+			// Fall through to normal processing
+		}
+	}
+
+	// Require X-Auth-Token to match fixedAuthToken
+
+	if fixedAuthToken != request.Header.Get("X-Auth-Token") {
+		_ = request.Body.Close()
+		responseWriter.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	// Require "version" portion of request.URL.Path to be "proxyfs"
+
+	if !strings.HasPrefix(request.URL.Path, "/proxyfs/") {
+		_ = request.Body.Close()
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// Branch off to individual request method handlers
+
+	switch request.Method {
+	case http.MethodGet:
+		noAuthPath = strings.Replace(request.URL.Path, "proxyfs", "v1", 1)
+		request.URL.Path = noAuthPath
+		doNoAuthGET(responseWriter, request)
+	case http.MethodPut:
+		noAuthPath = strings.Replace(request.URL.Path, "proxyfs", "v1", 1)
+		request.URL.Path = noAuthPath
+		doNoAuthPUT(responseWriter, request)
+	case "PROXYFS":
+		// TODO: doRPC(responseWriter, request)
+		_ = request.Body.Close()
+		responseWriter.WriteHeader(http.StatusNotImplemented)
+		return
+	default:
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
 
 func (dummy *noAuthEmulatorStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
@@ -1382,214 +1455,3 @@ func doNoAuthPUT(responseWriter http.ResponseWriter, request *http.Request) {
 		}
 	}
 }
-
-/*
-func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
-	switch request.Method {
-	case http.MethodDelete:
-		doNoAuthDELETE(responseWriter, request)
-	case http.MethodGet:
-		doNoAuthGET(responseWriter, request)
-	case http.MethodHead:
-		doNoAuthHEAD(responseWriter, request)
-	case http.MethodPost:
-		doNoAuthPOST(responseWriter, request)
-	case http.MethodPut:
-		doNoAuthPUT(responseWriter, request)
-	default:
-		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
-
-func setupNoAuthSwift(confMap conf.ConfMap) {
-	var (
-		err                    error
-		errno                  syscall.Errno
-		primaryPeerList        []string
-		swiftAccountName       string
-		volumeGroupNameList    []string
-		volumeGroupName        string
-		volumeGroupSectionName string
-		volumeName             string
-		volumeNameList         []string
-		volumeSectionName      string
-	)
-
-	// Fetch and configure volumes for which "we" are the PrimaryPeer
-
-	volumeGroupNameList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
-	if nil != err {
-		log.Fatalf("failed fetch of FSGlobals.VolumeGroupList: %v", err)
-	}
-
-	for _, volumeGroupName = range volumeGroupNameList {
-		volumeGroupSectionName = "VolumeGroup:" + volumeGroupName
-
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "PrimaryPeer")
-		if nil != err {
-			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeGroupSectionName, err)
-		}
-		if 0 == len(primaryPeerList) {
-			continue
-		} else if 1 == len(primaryPeerList) {
-			if globals.whoAmI != primaryPeerList[0] {
-				continue
-			}
-		} else {
-			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeGroupSectionName)
-		}
-
-		volumeNameList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
-		if nil != err {
-			log.Fatalf("failed fetch of %v.VolumeList: %v", volumeGroupSectionName, err)
-		}
-
-		for _, volumeName = range volumeNameList {
-			volumeSectionName = "Volume:" + volumeName
-
-			swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
-			if nil != err {
-				log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
-			}
-
-			_, errno = createSwiftAccount(swiftAccountName)
-			if 0 != errno {
-				log.Fatalf("failed create of %v: %v", swiftAccountName, err)
-			}
-		}
-	}
-
-	// Create HTTP Server on the requested noAuthTCPPort
-
-	globals.noAuthHTTPServer = &http.Server{
-		Addr:    globals.noAuthAddr,
-		Handler: httpRequestHandler{},
-	}
-}
-
-func serveNoAuthSwift() {
-	_ = globals.noAuthHTTPServer.ListenAndServe()
-
-	globals.noAuthHTTPServerWG.Done()
-}
-
-func Daemon(confFile string, confStrings []string, signalHandlerIsArmedWG *sync.WaitGroup, doneChan chan bool, signals ...os.Signal) {
-	var (
-		confMap        conf.ConfMap
-		err            error
-		resp           *http.Response
-		signalChan     chan os.Signal
-		signalReceived os.Signal
-	)
-
-	// Initialization
-
-	globals = &globalsStruct{}
-
-	globals.swiftAccountMap = make(map[string]*swiftAccountStruct)
-
-	// Compute confMap
-
-	confMap, err = conf.MakeConfMapFromFile(confFile)
-	if nil != err {
-		log.Fatalf("failed to load config: %v", err)
-	}
-
-	err = confMap.UpdateFromStrings(confStrings)
-	if nil != err {
-		log.Fatalf("failed to apply config overrides: %v", err)
-	}
-
-	err = transitions.UpgradeConfMapIfNeeded(confMap)
-	if nil != err {
-		log.Fatalf("failed to upgrade confMap: %v", err)
-	}
-
-	// Find out who "we" are
-
-	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		log.Fatalf("failed fetch of Cluster.WhoAmI: %v", err)
-	}
-
-	globals.noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
-	if nil != err {
-		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
-	}
-
-	globals.noAuthAddr = "127.0.0.1:" + strconv.Itoa(int(globals.noAuthTCPPort))
-
-	// Kick off NoAuth Swift Proxy Emulator
-
-	setupNoAuthSwift(confMap)
-	globals.noAuthHTTPServerWG.Add(1)
-	go serveNoAuthSwift()
-
-	// Wait for serveNoAuthSwift() to begin serving
-
-	for {
-		resp, err = http.Get("http://" + globals.noAuthAddr + "/info")
-		if nil != err {
-			log.Printf("failed GET of \"/info\": %v", err)
-			continue
-		}
-		if http.StatusOK == resp.StatusCode {
-			break
-		}
-		log.Printf("GET of \"/info\" returned Status %v", resp.Status)
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	// Arm signal handler used to indicate termination and wait on it
-	//
-	// Note: signalled chan must be buffered to avoid race with window between
-	// arming handler and blocking on the chan read
-
-	signalChan = make(chan os.Signal, 1)
-
-	signal.Notify(signalChan, signals...)
-
-	if nil != signalHandlerIsArmedWG {
-		signalHandlerIsArmedWG.Done()
-	}
-
-	// Await a signal - reloading confFile each SIGHUP - exiting otherwise
-
-	for {
-		signalReceived = <-signalChan
-
-		if unix.SIGHUP == signalReceived {
-			// recompute confMap and re-apply
-
-			confMap, err = conf.MakeConfMapFromFile(confFile)
-			if nil != err {
-				log.Fatalf("failed to load updated config: %v", err)
-			}
-
-			err = confMap.UpdateFromStrings(confStrings)
-			if nil != err {
-				log.Fatalf("failed to reapply config overrides: %v", err)
-			}
-
-			err = transitions.UpgradeConfMapIfNeeded(confMap)
-			if nil != err {
-				log.Fatalf("failed to upgrade confMap: %v", err)
-			}
-
-			updateConf(confMap)
-		} else {
-			// signalReceived either SIGINT or SIGTERM... so just exit
-
-			err = globals.noAuthHTTPServer.Close()
-
-			globals.noAuthHTTPServerWG.Wait()
-
-			globals = nil
-
-			doneChan <- true
-
-			return
-		}
-	}
-}
-*/
