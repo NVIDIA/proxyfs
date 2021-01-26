@@ -32,10 +32,13 @@ gopkgsubdirs = \
 	transitions \
 	trackedlock \
 	utils \
-	version
+	version \
+	emswift/emswiftpkg \
+	imgr/imgrpkg
 
 gobinsubdirs = \
 	cleanproxyfs \
+	emswift \
 	fsworkout \
 	imgr \
 	inodeworkout \
@@ -60,6 +63,7 @@ gobinsubdirs = \
 	ramswift/ramswift
 
 gobinsubdirsforci = \
+	emswift \
 	imgr \
 	pfsconfjson \
 	pfsconfjsonpacked \
