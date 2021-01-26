@@ -38,15 +38,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Arm signal handler used to indicate termination and wait on it
-	//
-	// Note: signalled chan must be buffered to avoid race with window between
-	// arming handler and blocking on the chan read
-
-	signalChan = make(chan os.Signal, 1)
-
-	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
-
 	// Start Swift Emulation
 
 	err = emswiftpkg.Start(confMap)
@@ -55,13 +46,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Await any of the above specified signals
+	// Arm signal handler used to indicate termination & wait on it
+	//
+	// Note: signal'd chan must be buffered to avoid race with window between
+	// arming handler and blocking on the chan read
+
+	signalChan = make(chan os.Signal, 1)
+
+	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
 
 	_ = <-signalChan
 
 	// Stop Swift Emulation
 
-	emswiftpkg.Stop()
+	err = emswiftpkg.Stop()
 	if nil != err {
 		fmt.Fprintf(os.Stderr, "emswiftpkg.Stop() failed: %v\n", err)
 		os.Exit(1)
