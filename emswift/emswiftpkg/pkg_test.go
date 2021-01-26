@@ -89,6 +89,11 @@ func TestNoAuthEmulation(t *testing.T) {
 		t.Fatalf("Start(confMap) returned unexpected error: %v", err)
 	}
 
+	// Format URLs
+
+	urlForInfo = "http://" + globals.noAuthEmulator.httpServer.Addr + "/info"
+	urlPrefix = "http://" + globals.noAuthEmulator.httpServer.Addr + "/v1/"
+
 	// Setup http.Client that we will use for all HTTP requests
 
 	httpClient = &http.Client{}
