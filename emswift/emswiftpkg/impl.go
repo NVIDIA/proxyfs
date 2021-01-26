@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -75,6 +76,11 @@ type globalsStruct struct {
 }
 
 var globals globalsStruct
+
+const (
+	startGETInfoMaxRetries = 10
+	startGETInfoRetryDelay = 100 * time.Millisecond
+)
 
 type httpRequestHandler struct{}
 
@@ -195,7 +201,8 @@ func uninitializeGlobals() {
 
 func startAuthIfRequested() (err error) {
 	var (
-		authEmulator *authEmulatorStruct
+		authEmulator           *authEmulatorStruct
+		startGETInfoNumRetries int
 	)
 
 	if "" == globals.config.AuthIPAddr {
@@ -219,6 +226,22 @@ func startAuthIfRequested() (err error) {
 		_ = globals.authEmulator.httpServer.ListenAndServe()
 		globals.authEmulator.wg.Done()
 	}()
+
+	startGETInfoNumRetries = 0
+
+	for {
+		_, err = http.Get("http://" + globals.authEmulator.httpServer.Addr + "/info")
+		if nil == err {
+			break
+		}
+		startGETInfoNumRetries++
+		if startGETInfoNumRetries > startGETInfoMaxRetries {
+			_ = stopAuthIfRequested()
+			err = fmt.Errorf("startAuthIfRequested() failed to establish that authEmulator is up")
+			return
+		}
+		time.Sleep(startGETInfoRetryDelay)
+	}
 
 	err = nil
 	return
@@ -244,7 +267,8 @@ func stopAuthIfRequested() (err error) {
 
 func startNoAuth() (err error) {
 	var (
-		noAuthEmulator *noAuthEmulatorStruct
+		noAuthEmulator         *noAuthEmulatorStruct
+		startGETInfoNumRetries int
 	)
 
 	noAuthEmulator = &noAuthEmulatorStruct{
@@ -262,6 +286,22 @@ func startNoAuth() (err error) {
 		_ = globals.noAuthEmulator.httpServer.ListenAndServe()
 		globals.noAuthEmulator.wg.Done()
 	}()
+
+	startGETInfoNumRetries = 0
+
+	for {
+		_, err = http.Get("http://" + globals.noAuthEmulator.httpServer.Addr + "/info")
+		if nil == err {
+			break
+		}
+		startGETInfoNumRetries++
+		if startGETInfoNumRetries > startGETInfoMaxRetries {
+			_ = stopNoAuth()
+			err = fmt.Errorf("startNoAuth() failed to establish that noAuthEmulator is up")
+			return
+		}
+		time.Sleep(startGETInfoRetryDelay)
+	}
 
 	err = nil
 	return
@@ -285,7 +325,20 @@ func (dummy *authEmulatorStruct) ServeHTTP(responseWriter http.ResponseWriter, r
 }
 
 func (dummy *noAuthEmulatorStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
-	// TODO
+	switch request.Method {
+	case http.MethodDelete:
+		doNoAuthDELETE(responseWriter, request)
+	case http.MethodGet:
+		doNoAuthGET(responseWriter, request)
+	case http.MethodHead:
+		doNoAuthHEAD(responseWriter, request)
+	case http.MethodPost:
+		doNoAuthPOST(responseWriter, request)
+	case http.MethodPut:
+		doNoAuthPUT(responseWriter, request)
+	default:
+		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }
 
 func (dummy *globalsStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
