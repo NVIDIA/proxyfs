@@ -32,4 +32,4 @@ PROXYSERVERCONF=/etc/swift/proxy-server.conf
 sed -i "/^pipeline/ s/${LIBRARY} tempauth/tempauth/" $PROXYSERVERCONF
 
 echo "${LIBRARY} was successfully disabled. Remember to restart Swift or just run:"
-echo "    start_and_mount_pfs keepmounts"
+echo "    start_and_mount_pfs"
