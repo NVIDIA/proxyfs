@@ -47,6 +47,9 @@ type configStruct struct {
 	AuthIPAddr  string // Only required if Auth Swift Proxy enabled
 	AuthTCPPort uint16 // Only required if Auth Swift Proxy enabled
 
+	JRPCIPAddr  string // Only required if Auth Swift Proxy enabled
+	JRPCTCPPort uint16 // Only required if Auth Swift Proxy enabled
+
 	NoAuthIPAddr  string
 	NoAuthTCPPort uint16
 
@@ -86,6 +89,25 @@ const (
 	fixedAuthToken           = "AUTH_tk0123456789abcde0123456789abcdef0"
 	fixedUserToAccountPrefix = "AUTH_" // Prefixed to User truncated before colon (":") if necessary
 )
+
+type jrpcRequestStruct struct {
+	JSONrpc string         `json:"jsonrpc"`
+	Method  string         `json:"method"`
+	ID      uint64         `json:"id"`
+	Params  [1]interface{} `json:"params"`
+}
+
+type jrpcRequestEmptyParamStruct struct{}
+
+type jrpcResponseIDAndErrorStruct struct {
+	ID    uint64 `json:"id"`
+	Error string `json:"error"`
+}
+
+type jrpcResponseNoErrorStruct struct {
+	ID     uint64      `json:"id"`
+	Result interface{} `json:"result"`
+}
 
 type httpRequestHandler struct{}
 
@@ -138,6 +160,15 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 	globals.config.AuthIPAddr, err = confMap.FetchOptionValueString("EMSWIFT", "AuthIPAddr")
 	if nil == err {
 		globals.config.AuthTCPPort, err = confMap.FetchOptionValueUint16("EMSWIFT", "AuthTCPPort")
+		if nil != err {
+			return
+		}
+
+		globals.config.JRPCIPAddr, err = confMap.FetchOptionValueString("EMSWIFT", "JRPCIPAddr")
+		if nil != err {
+			return
+		}
+		globals.config.JRPCTCPPort, err = confMap.FetchOptionValueUint16("EMSWIFT", "JRPCTCPPort")
 		if nil != err {
 			return
 		}
@@ -388,13 +419,16 @@ func (dummy *authEmulatorStruct) ServeHTTP(responseWriter http.ResponseWriter, r
 		request.URL.Path = noAuthPath
 		doNoAuthPUT(responseWriter, request)
 	case "PROXYFS":
-		// TODO: doRPC(responseWriter, request)
-		_ = request.Body.Close()
-		responseWriter.WriteHeader(http.StatusNotImplemented)
-		return
+		doAuthPROXYFS(responseWriter, request)
 	default:
 		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func doAuthPROXYFS(responseWriter http.ResponseWriter, request *http.Request) {
+	fmt.Println("TODO: doAuthPROXYFS(responseWriter, request)")
+	_ = request.Body.Close()
+	responseWriter.WriteHeader(http.StatusNotImplemented)
 }
 
 func (dummy *noAuthEmulatorStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {

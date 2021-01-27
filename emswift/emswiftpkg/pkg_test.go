@@ -5,22 +5,32 @@ package emswiftpkg
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
+type testJRPCServerHandlerStruct struct {
+	httpServer *http.Server
+	wg         sync.WaitGroup
+}
+
 func TestAuthEmulation(t *testing.T) {
 	var (
 		confMap     conf.ConfMap
 		confStrings = []string{
 			"EMSWIFT.AuthIPAddr=127.0.0.1",
-			"EMSWIFT.AuthTCPPort=9998",
+			"EMSWIFT.AuthTCPPort=9997",
+			"EMSWIFT.JRPCIPAddr=127.0.0.1",
+			"EMSWIFT.JRPCTCPPort=9998",
 			"EMSWIFT.NoAuthIPAddr=127.0.0.1",
 			"EMSWIFT.NoAuthTCPPort=9999",
 			"EMSWIFT.MaxAccountNameLength=256",
@@ -29,7 +39,17 @@ func TestAuthEmulation(t *testing.T) {
 			"EMSWIFT.AccountListingLimit=10000",
 			"EMSWIFT.ContainerListingLimit=10000",
 		}
-		err error
+		err                   error
+		expectedInfo          string
+		expectedStorageURL    string
+		httpClient            *http.Client
+		httpRequest           *http.Request
+		httpResponse          *http.Response
+		readBuf               []byte
+		testJRPCServerHandler *testJRPCServerHandlerStruct
+		urlForAuth            string
+		urlForInfo            string
+		urlPrefix             string
 	)
 
 	confMap, err = conf.MakeConfMapFromStrings(confStrings)
@@ -42,12 +62,131 @@ func TestAuthEmulation(t *testing.T) {
 		t.Fatalf("Start(confMap) returned unexpected error: %v", err)
 	}
 
-	t.Logf("TODO: Implement TestAuthEmulation() test steps")
+	testJRPCServerHandler = &testJRPCServerHandlerStruct{
+		httpServer: &http.Server{
+			Addr: net.JoinHostPort(globals.config.JRPCIPAddr, fmt.Sprintf("%d", globals.config.JRPCTCPPort)),
+		},
+	}
+	testJRPCServerHandler.httpServer.Handler = testJRPCServerHandler
+
+	// Format URLs
+
+	urlForInfo = "http://" + globals.authEmulator.httpServer.Addr + "/info"
+	urlForAuth = "http://" + globals.authEmulator.httpServer.Addr + "/auth/v1.0"
+	urlPrefix = "http://" + globals.authEmulator.httpServer.Addr + "/proxyfs/"
+
+	expectedStorageURL = "http://" + globals.authEmulator.httpServer.Addr + "/v1/" + "AUTH_test"
+
+	// Setup http.Client that we will use for all HTTP requests
+
+	httpClient = &http.Client{}
+
+	// Send a GET for "/info" expecting [EMSWIFT] data in compact JSON form
+
+	httpRequest, err = http.NewRequest("GET", urlForInfo, nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusOK != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	expectedInfo = "{\"swift\": {\"max_account_name_length\": 256,\"max_container_name_length\": 256,\"max_object_name_length\": 1024,\"account_listing_limit\": 10000,\"container_listing_limit\": 10000}}"
+	if int64(len(expectedInfo)) != httpResponse.ContentLength {
+		t.Fatalf("GET of /info httpResponse.ContentLength unexpected")
+	}
+	readBuf, err = ioutil.ReadAll(httpResponse.Body)
+	if nil != err {
+		t.Fatalf("ioutil.ReadAll() returned unexpected error: %v", err)
+	}
+	if expectedInfo != utils.ByteSliceToString(readBuf) {
+		t.Fatalf("GET of /info httpResponse.Body contents unexpected")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a GET for "/auth/v1.0" expecting X-Auth-Token & X-Storage-Url
+
+	httpRequest, err = http.NewRequest("GET", urlForAuth, nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpRequest.Header.Add("X-Auth-User", "test:tester")
+	httpRequest.Header.Add("X-Auth-Key", "testing")
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusOK != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+	if httpResponse.Header.Get("X-Auth-Token") != fixedAuthToken {
+		t.Fatalf("Auth response should have header X-Auth-Token: %s", fixedAuthToken)
+	}
+	if httpResponse.Header.Get("X-Storage-Url") != expectedStorageURL {
+		t.Fatalf("Auth response should have header X-Storage-Url: %s", expectedStorageURL)
+	}
+
+	// Send a PUT for account "TestAccount"
+
+	httpRequest, err = http.NewRequest("PUT", urlPrefix+"TestAccount", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpRequest.Header.Add("X-Auth-Token", fixedAuthToken)
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusCreated != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a GET for account "TestAccount" expecting Content-Length: 0
+
+	httpRequest, err = http.NewRequest("GET", urlPrefix+"TestAccount", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpRequest.Header.Add("X-Auth-Token", fixedAuthToken)
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusNoContent != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	if 0 != httpResponse.ContentLength {
+		t.Fatalf("TestAccount should contain no elements at this point")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	t.Logf("TODO: Implement remaining TestAuthEmulation() PROXYFS RPC Method")
 
 	err = Stop()
 	if nil != err {
 		t.Fatalf("Stop() returned unexpected error: %v", err)
 	}
+}
+
+func testAuthEmulationJRPCServer() {
+	// TODO
 }
 
 func TestNoAuthEmulation(t *testing.T) {
@@ -98,7 +237,7 @@ func TestNoAuthEmulation(t *testing.T) {
 
 	httpClient = &http.Client{}
 
-	// Send a GET for "/info" expecting [RamSwiftInfo] data in compact JSON form
+	// Send a GET for "/info" expecting [EMSWIFT] data in compact JSON form
 
 	httpRequest, err = http.NewRequest("GET", urlForInfo, nil)
 	if nil != err {
