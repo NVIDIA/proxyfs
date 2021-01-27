@@ -10,6 +10,7 @@ gopkgsubdirs = \
 	conf \
 	confgen \
 	dlm \
+    etcdclient \
 	evtlog \
 	fs \
 	fuse \
