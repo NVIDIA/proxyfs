@@ -6,7 +6,7 @@ import (
 	"time"
 
 	etcd "go.etcd.io/etcd/clientv3"
-	etcdtransport "go.etcd.io/etcd/pkg/transport"
+	"go.etcd.io/etcd/pkg/transport"
 )
 
 const (
@@ -15,25 +15,7 @@ const (
 )
 
 // New initializes etcd config structures and returns an etcd client
-func New(endPoints []string, autoSyncInterval time.Duration, dialTimeout time.Duration) (etcdClient *etcd.Client, err error) {
-	var caFile string
-
-	// If we have a local CA then use it.  Otherwise, use the system wide CA
-	_, statErr := os.Stat(trustedCAFile)
-	if os.IsExist(statErr) {
-		caFile = trustedCAFile
-	}
-
-	// Certs are named based on the host name.
-	h, _ := os.Hostname()
-	certFile := certPath + "node-" + h + ".pem"
-	keyFile := certPath + "node-" + h + "-key.pem"
-
-	tlsInfo := etcdtransport.TLSInfo{
-		CertFile:      certFile,
-		KeyFile:       keyFile,
-		TrustedCAFile: caFile,
-	}
+func New(tlsInfo *transport.TLSInfo, endPoints []string, autoSyncInterval time.Duration, dialTimeout time.Duration) (etcdClient *etcd.Client, err error) {
 	tlsConfig, etcdErr := tlsInfo.ClientConfig()
 	if etcdErr != nil {
 		log.Fatal(etcdErr)
@@ -46,4 +28,30 @@ func New(endPoints []string, autoSyncInterval time.Duration, dialTimeout time.Du
 		TLS:              tlsConfig,
 	})
 	return
+}
+
+// GetCertFile returns the name of the cert file for the local node
+func GetCertFile() string {
+	h, _ := os.Hostname()
+	return certPath + "node-" + h + ".pem"
+}
+
+// GetKeyFile returns the name of the key file for the local node
+func GetKeyFile() string {
+	h, _ := os.Hostname()
+	return certPath + "node-" + h + "-key.pem"
+}
+
+// GetCA returns the name of the certificate authority for the local node
+func GetCA() string {
+	var (
+		caFile string
+	)
+
+	_, statErr := os.Stat(trustedCAFile)
+	if os.IsExist(statErr) {
+		caFile = trustedCAFile
+	}
+
+	return caFile
 }

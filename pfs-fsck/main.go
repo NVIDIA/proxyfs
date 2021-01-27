@@ -17,6 +17,7 @@ import (
 	"time"
 
 	etcd "go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/pkg/transport"
 
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
@@ -377,7 +378,13 @@ func setup() {
 			log.Fatal(err)
 		}
 
-		globals.etcdClient, err = etcdclient.New(globals.etcdEndpoints,
+		tlsInfo := transport.TLSInfo{
+			CertFile:      etcdclient.GetCertFile(),
+			KeyFile:       etcdclient.GetKeyFile(),
+			TrustedCAFile: etcdclient.GetCA(),
+		}
+
+		globals.etcdClient, err = etcdclient.New(&tlsInfo, globals.etcdEndpoints,
 			globals.etcdAutoSyncInterval, globals.etcdDialTimeout)
 		if nil != err {
 			log.Fatalf("unable to create etcdClient: %v\n", err)

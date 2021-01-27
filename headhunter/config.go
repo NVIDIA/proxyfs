@@ -12,6 +12,7 @@ import (
 	"time"
 
 	etcd "go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/pkg/transport"
 
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
@@ -470,7 +471,13 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 		// Initialize etcd Client & KV objects
 
-		globals.etcdClient, err = etcdclient.New(globals.etcdEndpoints,
+		tlsInfo := transport.TLSInfo{
+			CertFile:      etcdclient.GetCertFile(),
+			KeyFile:       etcdclient.GetKeyFile(),
+			TrustedCAFile: etcdclient.GetCA(),
+		}
+
+		globals.etcdClient, err = etcdclient.New(&tlsInfo, globals.etcdEndpoints,
 			globals.etcdAutoSyncInterval, globals.etcdDialTimeout)
 		if nil != err {
 			return
