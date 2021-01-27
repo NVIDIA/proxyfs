@@ -5,7 +5,6 @@ package emswiftpkg
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -17,11 +16,6 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/utils"
 )
-
-type testJRPCServerHandlerStruct struct {
-	httpServer *http.Server
-	wg         sync.WaitGroup
-}
 
 func TestAuthEmulation(t *testing.T) {
 	var (
@@ -39,17 +33,18 @@ func TestAuthEmulation(t *testing.T) {
 			"EMSWIFT.AccountListingLimit=10000",
 			"EMSWIFT.ContainerListingLimit=10000",
 		}
-		err                   error
-		expectedInfo          string
-		expectedStorageURL    string
-		httpClient            *http.Client
-		httpRequest           *http.Request
-		httpResponse          *http.Response
-		readBuf               []byte
-		testJRPCServerHandler *testJRPCServerHandlerStruct
-		urlForAuth            string
-		urlForInfo            string
-		urlPrefix             string
+		err                              error
+		expectedInfo                     string
+		expectedStorageURL               string
+		httpClient                       *http.Client
+		httpRequest                      *http.Request
+		httpResponse                     *http.Response
+		readBuf                          []byte
+		testJRPCServerHandlerTCPListener *net.TCPListener
+		testJRPCServerHandlerWG          *sync.WaitGroup
+		urlForAuth                       string
+		urlForInfo                       string
+		urlPrefix                        string
 	)
 
 	confMap, err = conf.MakeConfMapFromStrings(confStrings)
@@ -62,12 +57,14 @@ func TestAuthEmulation(t *testing.T) {
 		t.Fatalf("Start(confMap) returned unexpected error: %v", err)
 	}
 
-	testJRPCServerHandler = &testJRPCServerHandlerStruct{
-		httpServer: &http.Server{
-			Addr: net.JoinHostPort(globals.config.JRPCIPAddr, fmt.Sprintf("%d", globals.config.JRPCTCPPort)),
-		},
+	testJRPCServerHandlerTCPListener, err = net.ListenTCP("tcp", globals.authEmulator.resolvedJRPCTCPAddr)
+	if nil != err {
+		t.Fatalf("net.ListenTCP() returned unexpected error: %v", err)
 	}
-	testJRPCServerHandler.httpServer.Handler = testJRPCServerHandler
+
+	testJRPCServerHandlerWG = new(sync.WaitGroup)
+	testJRPCServerHandlerWG.Add(1)
+	go testJRPCServerHandler(testJRPCServerHandlerTCPListener, testJRPCServerHandlerWG)
 
 	// Format URLs
 
@@ -179,14 +176,88 @@ func TestAuthEmulation(t *testing.T) {
 
 	t.Logf("TODO: Implement remaining TestAuthEmulation() PROXYFS RPC Method")
 
+	err = testJRPCServerHandlerTCPListener.Close()
+	if nil != err {
+		t.Fatalf("testJRPCServerHandlerTCPListener.Close() returned unexpected error: %v", err)
+	}
+
+	testJRPCServerHandlerWG.Wait()
+
 	err = Stop()
 	if nil != err {
 		t.Fatalf("Stop() returned unexpected error: %v", err)
 	}
 }
 
-func testAuthEmulationJRPCServer() {
-	// TODO
+func testJRPCServerHandler(testJRPCServerHandlerTCPListener *net.TCPListener, testJRPCServerHandlerWG *sync.WaitGroup) {
+	var (
+		bytesWritten                int
+		bytesWrittenInTotal         int
+		err                         error
+		jrpcRequest                 []byte
+		jrpcRequestNestedLeftBraces uint32
+		jrpcRequestSingleByte       []byte
+		jrpcResponse                []byte
+		jrpcTCPConn                 *net.TCPConn
+	)
+
+DoAcceptTCP:
+	jrpcTCPConn, err = testJRPCServerHandlerTCPListener.AcceptTCP()
+	if nil != err {
+		testJRPCServerHandlerWG.Done()
+		return
+	}
+
+	jrpcRequest = make([]byte, 0)
+	jrpcRequestSingleByte = make([]byte, 1)
+
+	_, err = jrpcTCPConn.Read(jrpcRequestSingleByte)
+	if nil != err {
+		_ = jrpcTCPConn.Close()
+		goto DoAcceptTCP
+	}
+	jrpcRequest = append(jrpcRequest, jrpcRequestSingleByte[0])
+
+	if '{' != jrpcRequestSingleByte[0] {
+		_ = jrpcTCPConn.Close()
+		goto DoAcceptTCP
+	}
+
+	jrpcRequestNestedLeftBraces = 1
+
+	for 0 < jrpcRequestNestedLeftBraces {
+		_, err = jrpcTCPConn.Read(jrpcRequestSingleByte)
+		if nil != err {
+			_ = jrpcTCPConn.Close()
+			goto DoAcceptTCP
+		}
+		jrpcRequest = append(jrpcRequest, jrpcRequestSingleByte[0])
+
+		switch jrpcRequestSingleByte[0] {
+		case '{':
+			jrpcRequestNestedLeftBraces++
+		case '}':
+			jrpcRequestNestedLeftBraces--
+		default:
+			// Nothing special to do here
+		}
+	}
+
+	jrpcResponse = jrpcRequest
+
+	bytesWrittenInTotal = 0
+
+	for bytesWrittenInTotal < len(jrpcResponse) {
+		bytesWritten, err = jrpcTCPConn.Write(jrpcResponse[len(jrpcResponse)-bytesWrittenInTotal:])
+		if nil != err {
+			_ = jrpcTCPConn.Close()
+			goto DoAcceptTCP
+		}
+		bytesWrittenInTotal += bytesWritten
+	}
+
+	_ = jrpcTCPConn.Close()
+	goto DoAcceptTCP
 }
 
 func TestNoAuthEmulation(t *testing.T) {

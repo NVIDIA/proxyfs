@@ -61,17 +61,19 @@ type configStruct struct {
 }
 
 type authEmulatorStruct struct {
-	httpServer *http.Server
-	wg         sync.WaitGroup
+	sync.Mutex
+	httpServer          *http.Server
+	resolvedJRPCTCPAddr *net.TCPAddr
+	wg                  sync.WaitGroup
 }
 
 type noAuthEmulatorStruct struct {
+	sync.Mutex
 	httpServer *http.Server
 	wg         sync.WaitGroup
 }
 
 type globalsStruct struct {
-	sync.Mutex
 	config          configStruct
 	authEmulator    *authEmulatorStruct
 	noAuthEmulator  *noAuthEmulatorStruct
@@ -254,6 +256,11 @@ func startAuthIfRequested() (err error) {
 	}
 	authEmulator.httpServer.Handler = authEmulator
 
+	authEmulator.resolvedJRPCTCPAddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort(globals.config.JRPCIPAddr, fmt.Sprintf("%d", globals.config.JRPCTCPPort)))
+	if nil != err {
+		return
+	}
+
 	authEmulator.wg.Add(1)
 
 	globals.authEmulator = authEmulator
@@ -426,9 +433,82 @@ func (dummy *authEmulatorStruct) ServeHTTP(responseWriter http.ResponseWriter, r
 }
 
 func doAuthPROXYFS(responseWriter http.ResponseWriter, request *http.Request) {
-	fmt.Println("TODO: doAuthPROXYFS(responseWriter, request)")
+	var (
+		bytesWritten                 int
+		bytesWrittenInTotal          int
+		err                          error
+		jrpcRequest                  []byte
+		jrpcResponse                 []byte
+		jrpcResponseNestedLeftBraces uint32
+		jrpcResponseSingleByte       []byte
+		jrpcTCPConn                  *net.TCPConn
+	)
+
+	globals.authEmulator.Lock()
+	defer globals.authEmulator.Unlock()
+
+	jrpcRequest, err = ioutil.ReadAll(request.Body)
+	if nil != err {
+		panic(err)
+	}
 	_ = request.Body.Close()
-	responseWriter.WriteHeader(http.StatusNotImplemented)
+
+	jrpcTCPConn, err = net.DialTCP("tcp", nil, globals.authEmulator.resolvedJRPCTCPAddr)
+	if nil != err {
+		panic(err)
+	}
+
+	bytesWrittenInTotal = 0
+
+	for bytesWrittenInTotal < len(jrpcRequest) {
+		bytesWritten, err = jrpcTCPConn.Write(jrpcRequest[len(jrpcRequest)-bytesWrittenInTotal:])
+		if nil != err {
+			panic(err)
+		}
+		bytesWrittenInTotal += bytesWritten
+	}
+
+	jrpcResponse = make([]byte, 0)
+	jrpcResponseSingleByte = make([]byte, 1)
+
+	_, err = jrpcTCPConn.Read(jrpcResponseSingleByte)
+	if nil != err {
+		panic(err)
+	}
+	jrpcResponse = append(jrpcResponse, jrpcResponseSingleByte[0])
+
+	if '{' != jrpcResponseSingleByte[0] {
+		err = fmt.Errorf("Opening character of jrpcResponse must be '{'")
+		panic(err)
+	}
+
+	jrpcResponseNestedLeftBraces = 1
+
+	for 0 < jrpcResponseNestedLeftBraces {
+		_, err = jrpcTCPConn.Read(jrpcResponseSingleByte)
+		if nil != err {
+			panic(err)
+		}
+		jrpcResponse = append(jrpcResponse, jrpcResponseSingleByte[0])
+
+		switch jrpcResponseSingleByte[0] {
+		case '{':
+			jrpcResponseNestedLeftBraces++
+		case '}':
+			jrpcResponseNestedLeftBraces--
+		default:
+			// Nothing special to do here
+		}
+	}
+
+	err = jrpcTCPConn.Close()
+	if nil != err {
+		panic(err)
+	}
+
+	responseWriter.Header().Add("Content-Type", "application/json")
+	responseWriter.WriteHeader(http.StatusOK)
+	_, _ = responseWriter.Write(jrpcResponse)
 }
 
 func (dummy *noAuthEmulatorStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
@@ -886,6 +966,9 @@ func doNoAuthDELETE(responseWriter http.ResponseWriter, request *http.Request) {
 		swiftObjectName    string
 	)
 
+	globals.noAuthEmulator.Lock()
+	defer globals.noAuthEmulator.Unlock()
+
 	infoOnly, swiftAccountName, swiftContainerName, swiftObjectName = parsePath(request)
 	if infoOnly || ("" == swiftAccountName) {
 		responseWriter.WriteHeader(http.StatusForbidden)
@@ -985,6 +1068,9 @@ func doNoAuthGET(responseWriter http.ResponseWriter, request *http.Request) {
 		swiftObjectName         string
 		swiftObjectNameAsKey    sortedmap.Key
 	)
+
+	globals.noAuthEmulator.Lock()
+	defer globals.noAuthEmulator.Unlock()
 
 	infoOnly, swiftAccountName, swiftContainerName, swiftObjectName = parsePath(request)
 	if infoOnly {
@@ -1178,6 +1264,9 @@ func doNoAuthHEAD(responseWriter http.ResponseWriter, request *http.Request) {
 		swiftObjectName    string
 	)
 
+	globals.noAuthEmulator.Lock()
+	defer globals.noAuthEmulator.Unlock()
+
 	infoOnly, swiftAccountName, swiftContainerName, swiftObjectName = parsePath(request)
 	if infoOnly || ("" == swiftAccountName) {
 		responseWriter.WriteHeader(http.StatusForbidden)
@@ -1258,6 +1347,9 @@ func doNoAuthPOST(responseWriter http.ResponseWriter, request *http.Request) {
 		swiftObject         *swiftObjectStruct
 		swiftObjectName     string
 	)
+
+	globals.noAuthEmulator.Lock()
+	defer globals.noAuthEmulator.Unlock()
 
 	infoOnly, swiftAccountName, swiftContainerName, swiftObjectName = parsePath(request)
 	if infoOnly || ("" == swiftAccountName) {
@@ -1375,6 +1467,9 @@ func doNoAuthPUT(responseWriter http.ResponseWriter, request *http.Request) {
 		swiftObjectName     string
 		wasCreated          bool
 	)
+
+	globals.noAuthEmulator.Lock()
+	defer globals.noAuthEmulator.Unlock()
 
 	infoOnly, swiftAccountName, swiftContainerName, swiftObjectName = parsePath(request)
 	if infoOnly || ("" == swiftAccountName) {
