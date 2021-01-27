@@ -461,7 +461,7 @@ func doAuthPROXYFS(responseWriter http.ResponseWriter, request *http.Request) {
 	bytesWrittenInTotal = 0
 
 	for bytesWrittenInTotal < len(jrpcRequest) {
-		bytesWritten, err = jrpcTCPConn.Write(jrpcRequest[len(jrpcRequest)-bytesWrittenInTotal:])
+		bytesWritten, err = jrpcTCPConn.Write(jrpcRequest[bytesWrittenInTotal:])
 		if nil != err {
 			panic(err)
 		}
