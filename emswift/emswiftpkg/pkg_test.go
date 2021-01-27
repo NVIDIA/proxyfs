@@ -174,7 +174,38 @@ func TestAuthEmulation(t *testing.T) {
 		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
 	}
 
-	t.Logf("TODO: Implement remaining TestAuthEmulation() PROXYFS RPC Method")
+	// Send a PROXYFS JSON-RPC "request" that simply gets echo'd
+
+	httpRequest, err = http.NewRequest("PROXYFS", urlPrefix+"TestAccount", bytes.NewReader([]byte{'{', 'p', 'i', 'n', 'g', '}'}))
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpRequest.Header.Add("X-Auth-Token", fixedAuthToken)
+	httpRequest.Header.Add("Content-Type", "application/json")
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusOK != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	if httpResponse.Header.Get("Content-Type") != "application/json" {
+		t.Fatalf("TestAccount should have header Content-Type: application/json")
+	}
+	if int64(len("{ping}")) != httpResponse.ContentLength {
+		t.Fatalf("TestContainer should contain only \"{ping}\"")
+	}
+	readBuf, err = ioutil.ReadAll(httpResponse.Body)
+	if nil != err {
+		t.Fatalf("ioutil.ReadAll() returned unexpected error: %v", err)
+	}
+	if "{ping}" != utils.ByteSliceToString(readBuf) {
+		t.Fatalf("TestContainer should contain only \"{ping}\"")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
 
 	err = testJRPCServerHandlerTCPListener.Close()
 	if nil != err {
@@ -248,7 +279,7 @@ DoAcceptTCP:
 	bytesWrittenInTotal = 0
 
 	for bytesWrittenInTotal < len(jrpcResponse) {
-		bytesWritten, err = jrpcTCPConn.Write(jrpcResponse[len(jrpcResponse)-bytesWrittenInTotal:])
+		bytesWritten, err = jrpcTCPConn.Write(jrpcResponse[bytesWrittenInTotal:])
 		if nil != err {
 			_ = jrpcTCPConn.Close()
 			goto DoAcceptTCP
