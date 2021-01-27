@@ -12,9 +12,11 @@ import (
 	"time"
 
 	etcd "go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/pkg/transport"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/etcdclient"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -131,13 +133,15 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 			return
 		}
 
-		// Initialize etcd Client & KV objects
+		tlsInfo := transport.TLSInfo{
+			CertFile:      etcdclient.GetCertFile(),
+			KeyFile:       etcdclient.GetKeyFile(),
+			TrustedCAFile: etcdclient.GetCA(),
+		}
 
-		etcdClient, err = etcd.New(etcd.Config{
-			Endpoints:        etcdEndpoints,
-			AutoSyncInterval: etcdAutoSyncInterval,
-			DialTimeout:      etcdDialTimeout,
-		})
+		// Initialize etcd Client & KV objects
+		etcdClient, err = etcdclient.New(&tlsInfo, etcdEndpoints,
+			etcdAutoSyncInterval, etcdDialTimeout)
 		if nil != err {
 			return
 		}
