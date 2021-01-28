@@ -48,19 +48,13 @@ one.
 * cd src/github.com/swiftstack
 * git clone git@github.com:swiftstack/ProxyFS.git
 * cd ProxyFS
-* git submodule update --init --recursive
 
 ## How to run unit tests (in your Development Environment)
 
 * Install/update to at least Go 1.8.3 (if not using Runway)
 * Ensure $GOPATH/bin is in your $PATH
 * cd $GOPATH/src/github.com/swiftstack/ProxyFS
-* ./regression_test.py
-
-## Commercial Deployment
-
-ProxyFS powers File Access for the SwiftStack product.
-See: http://swiftstack.com
+* make
 
 ## License
 
