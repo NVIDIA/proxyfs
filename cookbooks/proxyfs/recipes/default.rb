@@ -162,6 +162,7 @@ execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/" do
   command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_BIN_DIR}/"
 end
 
+# TODO: install aws cli v2
 execute "Install awscli and awscli-plugin-endpoint" do
   command "pip install awscli awscli-plugin-endpoint"
 end
@@ -214,14 +215,8 @@ link '/etc/pfsagentd' do
   group proxyfs_group
 end
 
-template "/usr/bin/start_and_mount_pfs" do
-  mode '0755'
-  source "usr/bin/start_and_mount_pfs.erb"
-  variables({
-    :swift_user => node['swift_user'],
-    :swift_uid => node['swift_uid'],
-    :swift_gid => node['swift_gid']
-  })
+execute "Provision start_and_mount_pfs" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/start_and_mount_pfs /usr/bin"
 end
 
 execute "Provision start_swift_only" do
@@ -428,16 +423,6 @@ end
 #
 # Create mount point and fstab entry
 #
-execute "Create SMB mount point" do
-  command "mkdir /mnt/smb_proxyfs_mount"
-  not_if { ::Dir.exists?("/mnt/smb_proxyfs_mount") }
-end
-
-execute "Create NFS mount point" do
-  command "mkdir /mnt/nfs_proxyfs_mount"
-  not_if { ::Dir.exists?("/mnt/nfs_proxyfs_mount") }
-end
-
 execute "Create PFSAgent mount point" do
   command "mkdir /mnt/pfsa_proxyfs_mount"
   not_if { ::Dir.exists?("/mnt/pfsa_proxyfs_mount") }

@@ -1,0 +1,111 @@
+#!/bin/bash
+
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
+# A simple script to start the services and mount the sample mount point
+# The PATH, etc should already be setup by systemctl environment
+
+function await_proxyfsd_startup {
+    /usr/bin/systemctl -q is-active proxyfsd
+    if [ $? -ne 0 ]; then
+        echo "ProxyFS failed to start. Exiting..."
+        exit 1
+    fi
+    while true; do
+        curl http://127.0.0.1:15346/ 2>/dev/null >/dev/null
+        if [ $? -eq 0 ]; then
+            break
+        fi
+        echo "Waiting for ProxyFS to be started..."
+        sleep 1
+    done
+}
+
+function await_pfsagentd_startup {
+    /usr/bin/systemctl -q is-active pfsagentd
+    if [ $? -ne 0 ]; then
+        echo "PFSAgent failed to start. Exiting..."
+        exit 1
+    fi
+    while true; do
+        curl http://127.0.0.1:9090/version 2>/dev/null >/dev/null
+        if [ $? -eq 0 ]; then
+            # Service is active and curl to the HTTP server succeeded.
+            # We're go to go.
+            break
+        fi
+        echo "Waiting for PFSAgent to be started..."
+        sleep 1
+    done
+}
+
+function await_swift_startup {
+    while true
+    do
+        curl http://127.0.0.1:8090/info 2>/dev/null >/dev/null
+        if [ $? -eq 0 ]
+        then
+            break
+        fi
+        echo "Waiting for Swift to be started..."
+        sleep 1
+    done
+}
+
+function format_volume_if_necessary {
+    sudo $GOPATH/bin/mkproxyfs -I $1 /etc/proxyfsd/saioproxyfsd0.conf SwiftClient.RetryLimit=1
+    if [ $? -ne 0 ]
+    then
+        echo "Could not pre-format $1"
+        exit 1
+    fi
+}
+
+function containsElement () {
+  local e match="$1"
+  shift
+  for e; do [[ "$e" == "$match" ]] && return 0; done
+  return 1
+}
+
+# Making sure $GOPATH contains something:
+source ~/.bashrc
+if [ -z "$GOPATH" ]; then
+    GOPATH=/home/swift/code/ProxyFS
+fi
+
+sudo mount -a
+
+echo "Shutting down services and mount points..."
+/usr/bin/unmount_and_stop_pfs
+echo
+
+echo "Bringing up services..."
+if [ -f /usr/bin/systemctl ]; then
+    # Centos
+    MOUNT=/usr/bin/mount
+    sudo /usr/bin/systemctl start memcached
+    sudo /usr/bin/swift-init main start
+    await_swift_startup
+    format_volume_if_necessary CommonVolume
+    sudo /usr/bin/systemctl start proxyfsd
+    await_proxyfsd_startup
+    echo "ProxyFS successfully started"
+    echo "Starting PFSAgent..."
+    sudo /usr/bin/systemctl start pfsagentd
+    await_pfsagentd_startup
+else
+    # Ubuntu (not tested!)
+    MOUNT=/bin/mount
+    sudo /usr/sbin/service memcached start
+    sudo /usr/bin/swift-init main start
+    await_swift_startup
+    format_volume_if_necessary CommonVolume
+    sudo /usr/sbin/service proxyfsd start
+    await_proxyfsd_startup
+    echo "ProxyFS successfully started"
+    # Here we should start pfsagentd (if 'all' or 'pfsa' are present in
+    # $MOUNT_OPTIONS), but we don't support Ubuntu
+fi
+echo
