@@ -126,6 +126,7 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | EtcdEnabled                              | No           | false              | Yes but don't re-enable  | No                           |
 |                                           | EtcdEndpoints                            | If enabled   |                    | Yes                      | No                           |
 |                                           | EtcdAutoSyncInterval                     | If enabled   |                    | Yes                      | No                           |
+|                                           | EtcdCertPath                             | If enabled   | /etc/ssl/etcd/ssl/ | Yes                      | No                           |
 |                                           | EtcdDialTimeout                          | If enabled   |                    | Yes                      | No                           |
 |                                           | EtcdOpTimeout                            | If enabled   |                    | Yes                      | No                           |
 |                                           | MetadataRecycleBin                       | No           | false              | Yes                      | No                           |

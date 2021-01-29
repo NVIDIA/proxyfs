@@ -51,6 +51,7 @@ type globalsStruct struct {
 	etcdClient                         *etcd.Client
 	etcdDialTimeout                    time.Duration
 	etcdEnabled                        bool
+	etcdCertPath                       string
 	etcdEndpoints                      []string
 	etcdKV                             etcd.KV
 	etcdOpTimeout                      time.Duration
@@ -365,6 +366,10 @@ func setup() {
 		if nil != err {
 			log.Fatal(err)
 		}
+		globals.etcdCertPath, err = confMap.FetchOptionValueString("FSGlobals", "EtcdCertPath")
+		if nil != err {
+			return
+		}
 		globals.etcdDialTimeout, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdDialTimeout")
 		if nil != err {
 			log.Fatal(err)
@@ -379,9 +384,9 @@ func setup() {
 		}
 
 		tlsInfo := transport.TLSInfo{
-			CertFile:      etcdclient.GetCertFile(),
-			KeyFile:       etcdclient.GetKeyFile(),
-			TrustedCAFile: etcdclient.GetCA(),
+			CertFile:      etcdclient.GetCertFile(globals.etcdCertPath),
+			KeyFile:       etcdclient.GetKeyFile(globals.etcdCertPath),
+			TrustedCAFile: etcdclient.GetCA(globals.etcdCertPath),
 		}
 
 		globals.etcdClient, err = etcdclient.New(&tlsInfo, globals.etcdEndpoints,
