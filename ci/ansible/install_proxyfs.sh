@@ -6,7 +6,7 @@
 set -e
 
 ENV_NAME=$1
-GOLANG_VERSION=$3
+GOLANG_VERSION=$2
 
 if [ -z "$ENV_NAME" ]; then
   echo "usage: $0 <env-name>"
