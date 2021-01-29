@@ -1,18 +1,4 @@
 {
-  "samba_packages": [
-    ["samba"],
-    ["smbclient"]
-  ],
-  "samba_deps": [
-    ["gcc"],
-    ["python-dev"],
-    ["libgnutls-dev"],
-    ["libacl1-dev"],
-    ["libldap2-dev"],
-    ["pkg-config"],
-    ["cifs-utils"],
-    ["libpam0g-dev"]
-  ],
   "proxyfs_packages": [
     ["libjson-c-dev"],
     ["fuse"]
@@ -23,10 +9,6 @@
   ],
   "ssh_packages": [
     ["sshpass"]
-  ],
-  "nfs_packages": [
-    ["nfs-kernel-server"],
-    ["nfs-common"]
   ],
   "gdb_packages": [
     ["gdb"]
