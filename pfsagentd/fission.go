@@ -108,6 +108,34 @@ func unixTimeToNs(sec uint64, nsec uint32) (ns uint64) {
 	return
 }
 
+func (fileInode *fileInodeStruct) ensureCachedStatPopulatedWhileLocked() (err error) {
+	var (
+		getStatReply   *jrpcfs.StatStruct
+		getStatRequest *jrpcfs.GetStatRequest
+	)
+
+	if nil == fileInode.cachedStat {
+		getStatRequest = &jrpcfs.GetStatRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(fileInode.InodeNumber),
+			},
+		}
+
+		getStatReply = &jrpcfs.StatStruct{}
+
+		err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
+		if nil != err {
+			return
+		}
+
+		fileInode.cachedStat = getStatReply
+	}
+
+	err = nil
+	return
+}
+
 func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fission.LookupIn) (lookupOut *fission.LookupOut, errno syscall.Errno) {
 	var (
 		aTimeNSec         uint32
@@ -1238,11 +1266,19 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 	}
 	// defer fileInode.dereference()
 
+	err = fileInode.ensureCachedStatPopulatedWhileLocked()
+	if nil != err {
+		fileInode.unlock(true)
+		errno = convertErrToErrno(err, syscall.EIO)
+		return
+	}
+
 	// grantedLock = fileInode.getSharedLock()
 	// defer grantedLock.release()
 
 	err = fileInode.populateExtentMap(uint64(readIn.Offset), uint64(readIn.Size))
 	if nil != err {
+		fileInode.unlock(true)
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
 	}
@@ -1277,6 +1313,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 						logSegmentCacheElement = fetchLogSegmentCacheLine(readPlanStepAsMultiObjectExtentStruct.containerName, readPlanStepAsMultiObjectExtentStruct.objectName, curObjectOffset)
 
 						if logSegmentCacheElementStateGetFailed == logSegmentCacheElement.state {
+							fileInode.unlock(true)
 							errno = syscall.EIO
 							return
 						}
@@ -1318,6 +1355,8 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		}
 	}
 
+	fileInode.unlock(true)
+
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRead_bytes, uint64(len(readOut.Data)))
 
 	errno = 0
@@ -1328,6 +1367,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 	var (
 		chunkedPutContext        *chunkedPutContextStruct
 		chunkedPutContextElement *list.Element
+		err                      error
 		fhInodeNumber            uint64
 		fileInode                *fileInodeStruct
 		ok                       bool
@@ -1353,6 +1393,12 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 	// fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	if nil == fileInode {
 		logFatalf("DoWrite(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, writeIn.FH)
+	}
+
+	err = fileInode.ensureCachedStatPopulatedWhileLocked()
+	if nil != err {
+		errno = convertErrToErrno(err, syscall.EIO)
+		return
 	}
 
 	// Grab quota to start a fresh chunkedPutContext before calling fileInode.getExclusiveLock()
@@ -1578,6 +1624,7 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 
 	globals.Unlock()
 
+	fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(inHeader.NodeID))
 	// fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	if nil == fileInode {
 		logFatalf("DoFSync(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, fSyncIn.FH)
@@ -1586,6 +1633,7 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 	fileInode.doFlushIfNecessary()
 
 	// fileInode.dereference()
+	fileInode.unlock(false)
 
 	errno = 0
 	return
