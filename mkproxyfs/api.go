@@ -45,7 +45,7 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		etcdClient            *etcd.Client
 		etcdDialTimeout       time.Duration
 		etcdEnabled           bool
-		etcdCertPath          string
+		etcdCertDir           string
 		etcdEndpoints         []string
 		etcdKV                etcd.KV
 		etcdOpTimeout         time.Duration
@@ -112,7 +112,7 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 	}
 
 	if etcdEnabled {
-		etcdCertPath, err = confMap.FetchOptionValueString("FSGlobals", "EtcdCertPath")
+		etcdCertDir, err = confMap.FetchOptionValueString("FSGlobals", "EtcdCertDir")
 		if nil != err {
 			return
 		}
@@ -139,9 +139,9 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		}
 
 		tlsInfo := transport.TLSInfo{
-			CertFile:      etcdclient.GetCertFile(etcdCertPath),
-			KeyFile:       etcdclient.GetKeyFile(etcdCertPath),
-			TrustedCAFile: etcdclient.GetCA(etcdCertPath),
+			CertFile:      etcdclient.GetCertFilePath(etcdCertDir),
+			KeyFile:       etcdclient.GetKeyFilePath(etcdCertDir),
+			TrustedCAFile: etcdclient.GetCA(etcdCertDir),
 		}
 
 		// Initialize etcd Client & KV objects

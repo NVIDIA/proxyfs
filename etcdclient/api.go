@@ -32,27 +32,28 @@ func New(tlsInfo *transport.TLSInfo, endPoints []string, autoSyncInterval time.D
 	return
 }
 
-// GetCertFile returns the name of the cert file for the local node
-func GetCertFile(certPath string) string {
+// GetCertFilePath returns the name of the cert file for the local node
+func GetCertFilePath(certDir string) string {
 	h, _ := os.Hostname()
-	return certPath + "/node-" + h + ".pem"
+	return certDir + "/node-" + h + ".pem"
 }
 
-// GetKeyFile returns the name of the key file for the local node
-func GetKeyFile(certPath string) string {
+// GetKeyFilePath returns the name of the key file for the local node
+func GetKeyFilePath(certDir string) string {
 	h, _ := os.Hostname()
-	return certPath + "/node-" + h + "-key.pem"
+	return certDir + "/node-" + h + "-key.pem"
 }
 
 // GetCA returns the name of the certificate authority for the local node
-func GetCA(certPath string) string {
+func GetCA(certDir string) string {
 	var (
 		caFile string
 	)
 
-	_, statErr := os.Stat(certPath + trustedCAFile)
+	trustedCAFilePath := certDir + trustedCAFile
+	_, statErr := os.Stat(trustedCAFilePath)
 	if os.IsExist(statErr) {
-		caFile = trustedCAFile
+		caFile = trustedCAFilePath
 	}
 
 	return caFile
