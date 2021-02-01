@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	certPath      = "/etc/ssl/etcd/ssl/"
-	trustedCAFile = certPath + "ca.pem"
+	trustedCAFile = "/ca.pem"
 )
 
 // New initializes etcd config structures and returns an etcd client
@@ -33,27 +32,28 @@ func New(tlsInfo *transport.TLSInfo, endPoints []string, autoSyncInterval time.D
 	return
 }
 
-// GetCertFile returns the name of the cert file for the local node
-func GetCertFile() string {
+// GetCertFilePath returns the name of the cert file for the local node
+func GetCertFilePath(certDir string) string {
 	h, _ := os.Hostname()
-	return certPath + "node-" + h + ".pem"
+	return certDir + "/node-" + h + ".pem"
 }
 
-// GetKeyFile returns the name of the key file for the local node
-func GetKeyFile() string {
+// GetKeyFilePath returns the name of the key file for the local node
+func GetKeyFilePath(certDir string) string {
 	h, _ := os.Hostname()
-	return certPath + "node-" + h + "-key.pem"
+	return certDir + "/node-" + h + "-key.pem"
 }
 
 // GetCA returns the name of the certificate authority for the local node
-func GetCA() string {
+func GetCA(certDir string) string {
 	var (
 		caFile string
 	)
 
-	_, statErr := os.Stat(trustedCAFile)
+	trustedCAFilePath := certDir + trustedCAFile
+	_, statErr := os.Stat(trustedCAFilePath)
 	if os.IsExist(statErr) {
-		caFile = trustedCAFile
+		caFile = trustedCAFilePath
 	}
 
 	return caFile
