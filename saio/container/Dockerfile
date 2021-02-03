@@ -109,7 +109,7 @@ RUN pip install -e .
 RUN pip install -r test-requirements.txt
 
 WORKDIR /home/swift
-RUN git clone https://github.com/swiftstack/swift.git
+RUN git clone https://github.com/NVIDIA/swift.git
 WORKDIR /home/swift/swift
 RUN git checkout $SwiftVersion
 RUN pip install wheel
