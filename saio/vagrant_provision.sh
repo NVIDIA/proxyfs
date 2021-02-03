@@ -226,7 +226,7 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 # Now we can actually install Swift from source
 
 cd ~swift
-git clone https://github.com/swiftstack/swift.git
+git clone https://github.com/NVIDIA/swift.git
 cd swift
 git checkout ss-release-2.26.0.11
 pip install wheel
