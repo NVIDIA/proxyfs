@@ -169,7 +169,7 @@ RUN yum install -y make fuse
 
 RUN mkdir -p $GOPATH/src/github.com/swiftstack
 WORKDIR $GOPATH/src/github.com/swiftstack
-RUN git clone https://github.com/NVIDIA/ProxyFS.git
+RUN git clone https://github.com/swiftstack/ProxyFS.git
 WORKDIR $GOPATH/src/github.com/swiftstack/ProxyFS
 RUN git checkout $ProxyFS_Version
 
