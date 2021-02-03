@@ -105,7 +105,7 @@ ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
 
 yum -y install epel-release
 yum -y install python-pip
-pip install --upgrade pip
+pip install --upgrade 'pip<21.0'
 
 # Setup ProxyFS build environment
 

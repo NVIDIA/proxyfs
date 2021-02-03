@@ -88,7 +88,7 @@ RUN ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
 
 RUN yum install -y epel-release
 RUN yum install -y python-pip
-RUN pip install --upgrade pip
+RUN pip install --upgrade 'pip<21.0'
 RUN pip install --upgrade setuptools
 
 WORKDIR /home/swift
