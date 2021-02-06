@@ -2,6 +2,6 @@
 set -e
 
 /usr/bin/unmount_and_stop_pfs
-cd $GOPATH/src/github.com/swiftstack/ProxyFS
+cd $GOPATH/src/github.com/NVIDIA/proxyfs
 ci/ansible/install_proxyfs.sh {{ env_arg }} {{ active_golang_version }}
 /usr/bin/start_and_mount_pfs "$@"

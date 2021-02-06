@@ -7,7 +7,7 @@ set -e
 set -x
 
 # Build ProxyFS and run tests
-cd $GOPATH/src/github.com/swiftstack/ProxyFS
+cd $GOPATH/src/github.com/NVIDIA/proxyfs
 make ci
 # $COVERALLS_TOKEN must be configured in TravisCI
 if [ -n "$COVERALLS_TOKEN" ] && [ -n "$TRAVIS_BRANCH" ]; then

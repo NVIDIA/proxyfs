@@ -12,9 +12,9 @@ DOT_BASHRC = "#{HOME_DIR}/.bashrc"
 ROOT_DOT_BASH_PROFILE = "/root/.bash_profile"
 ROOT_DOT_BASHRC = "/root/.bashrc"
 ETC_BASHRC = "/etc/bashrc"
-REPO_CLONE_PARENT_DIR = "#{source_root}/src/github.com/swiftstack"
+REPO_CLONE_PARENT_DIR = "#{source_root}/src/github.com/NVIDIA"
 PROXYFS_BIN_DIR = "#{source_root}/bin"
-PROXYFS_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/ProxyFS"
+PROXYFS_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/proxyfs"
 
 ruby_block "update_profile_and_bashrc" do
   block do
@@ -49,7 +49,7 @@ ruby_block "update_profile_and_bashrc" do
     file = Chef::Util::FileEdit.new(DOT_BASHRC)
     file.insert_line_if_no_match(/export GOPATH/, "export GOPATH=#{source_root}")
     file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
-    file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
+    file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/NVIDIA/proxyfs'")
     file.insert_line_if_no_match(/cdfun/, "alias cdfun='cd /home/swift/code/functional-tests'")
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
     file.insert_line_if_no_match(/ls -liha/, "alias li='ls -liha'")
@@ -79,7 +79,7 @@ ruby_block "update_profile_and_bashrc" do
     file = Chef::Util::FileEdit.new(ROOT_DOT_BASHRC)
     file.insert_line_if_no_match(/export GOPATH/, "export GOPATH=#{source_root}")
     file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
-    file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
+    file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/NVIDIA/proxyfs'")
     file.insert_line_if_no_match(/cdfun/, "alias cdfun='cd /home/swift/code/functional-tests'")
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
     file.insert_line_if_no_match(/ls -liha/, "alias li='ls -liha'")
@@ -118,12 +118,12 @@ execute "Install pfs-swift-load-plot requirements" do
   command "pip install -r #{PROXYFS_SRC_DIR}/pfs-swift-load/requirements.txt"
 end
 
-execute "Create ProxyFS/bin dir" do
+execute "Create proxyfs/bin dir" do
   command "mkdir #{PROXYFS_BIN_DIR}"
   not_if { ::Dir.exists?("#{PROXYFS_BIN_DIR}") }
 end
 
-execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/" do
+execute "Copy pfs-swift-load-plot at /home/swift/code/proxyfs/bin/" do
   command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_BIN_DIR}/"
 end
 
@@ -167,61 +167,61 @@ directory '/var/log/proxyfsd' do
 end
 
 link '/etc/proxyfsd' do
-  to "#{source_root}/src/github.com/swiftstack/ProxyFS/proxyfsd/"
+  to "#{source_root}/src/github.com/NVIDIA/proxyfs/proxyfsd/"
   link_type :symbolic
   owner proxyfs_user
   group proxyfs_group
 end
 
 link '/etc/pfsagentd' do
-  to "#{source_root}/src/github.com/swiftstack/ProxyFS/pfsagentd/"
+  to "#{source_root}/src/github.com/NVIDIA/proxyfs/pfsagentd/"
   link_type :symbolic
   owner proxyfs_user
   group proxyfs_group
 end
 
 execute "Provision start_and_mount_pfs" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/start_and_mount_pfs /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/cookbooks/proxyfs/files/default/usr/bin/start_and_mount_pfs /usr/bin"
 end
 
 execute "Provision start_swift_only" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/start_swift_only /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/cookbooks/proxyfs/files/default/usr/bin/start_swift_only /usr/bin"
 end
 
 execute "Provision start_proxyfsd_only" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/start_proxyfsd_only /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/cookbooks/proxyfs/files/default/usr/bin/start_proxyfsd_only /usr/bin"
 end
 
 execute "Provision stop_proxyfsd_only" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/stop_proxyfsd_only /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/cookbooks/proxyfs/files/default/usr/bin/stop_proxyfsd_only /usr/bin"
 end
 
 execute "Provision unmount_and_stop_pfs" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/unmount_and_stop_pfs /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/cookbooks/proxyfs/files/default/usr/bin/unmount_and_stop_pfs /usr/bin"
 end
 
 execute "Provision set_up_s3api" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/set_up_s3api /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/cookbooks/proxyfs/files/default/usr/bin/set_up_s3api /usr/bin"
 end
 
 execute "Provision set_up_swift3" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/set_up_swift3 /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/cookbooks/proxyfs/files/default/usr/bin/set_up_swift3 /usr/bin"
 end
 
 execute "Provision enable_s3" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/enable_s3 /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/cookbooks/proxyfs/files/default/usr/bin/enable_s3 /usr/bin"
 end
 
 execute "Provision disable_s3" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/disable_s3 /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/cookbooks/proxyfs/files/default/usr/bin/disable_s3 /usr/bin"
 end
 
 execute "Provision detect_s3" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/detect_s3 /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/cookbooks/proxyfs/files/default/usr/bin/detect_s3 /usr/bin"
 end
 
 execute "Provision pfs_stat" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/bin/pfs_stat /usr/bin"
+  command "install -m 0755 #{source_root}/src/github.com/NVIDIA/proxyfs/bin/pfs_stat /usr/bin"
 end
 
 cookbook_file "/usr/lib/systemd/system/proxyfsd.service" do
