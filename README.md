@@ -1,6 +1,3 @@
-[![Build Status](https://travis-ci.com/NVIDIA/proxyfs.svg?branch=development)](https://travis-ci.com/NVIDIA/proxyfs)
-[![Coverage Status](https://coveralls.io/repos/github/NVIDIA/proxyfs/badge.svg?branch=development)](https://coveralls.io/github/NVIDIA/proxyfs?branch=development)
-
 # ProxyFS
 Integrated File and Object Access for Swift Object Storage
 
