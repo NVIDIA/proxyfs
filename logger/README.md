@@ -74,7 +74,7 @@ The simplest way to use Logger is as a replacement for the stdlib logger:
 package main
 
 import (
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/NVIDIA/proxyfs/logger"
 )
 
 func main() {

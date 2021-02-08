@@ -35,9 +35,9 @@ SMB Access – ProxyFS Samba VFS
 ProxyFS provides a Samba VFS module written in C that integrates
 directly with the Samba server processes. This module is provided in a
 separate repository called
-`proxyfs-vfs <https://github.com/swiftstack/proxyfs-vfs>`__. A ProxyFS
+`proxyfs-vfs <https://github.com/NVIDIA/proxyfs-vfs>`__. A ProxyFS
 JSON RPC client is provided in a separate repository called
-`proxyfs-jrpc-client <https://github.com/swiftstack/proxyfs-jrpc-client>`__.
+`proxyfs-jrpc-client <https://github.com/NVIDIA/proxyfs-jrpc-client>`__.
 
 The ProxyFS Samba VFS module utilizes the ProxyFS JSON RPC interface for
 direct access into ProxyFS for a given volume.
