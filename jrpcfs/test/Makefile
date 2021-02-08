@@ -3,7 +3,7 @@
 
 CC=gcc
 CFLAGS=-I.
-JSON_C_DIR=/Users/kmalone/code/gowork/src/github.com/swiftstack/samba/json-c
+JSON_C_DIR=/Users/kmalone/code/gowork/src/github.com/NVIDIA/samba/json-c
 CFLAGS += -I $(JSON_C_DIR)/include/json-c
 LDFLAGS+= -L $(JSON_C_DIR)/lib -ljson-c
 DEPS =

@@ -1,6 +1,6 @@
 # Copyright (c) 2015-2021, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 
-gosubdir := github.com/swiftstack/ProxyFS/emswift/emswiftpkg
+gosubdir := github.com/NVIDIA/proxyfs/emswift/emswiftpkg
 
 include ../../GoMakefile
