@@ -6,7 +6,7 @@ After=proxyfsd.service
 Environment=PATH=/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin:/vagrant/bin
 Environment=GOTRACEBACK=crash
 LimitCORE=infinity
-ExecStart=/vagrant/bin/pfsagentd /vagrant/src/github.com/swiftstack/ProxyFS/pfsagentd/pfsagent.conf
+ExecStart=/vagrant/bin/pfsagentd /vagrant/src/github.com/NVIDIA/proxyfs/pfsagentd/pfsagent.conf
 ExecReload=/usr/bin/kill -HUP $MAINPID
 
 Restart=always
