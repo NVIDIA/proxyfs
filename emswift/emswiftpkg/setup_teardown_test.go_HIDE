@@ -14,9 +14,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/proxyfsd"
-	"github.com/swiftstack/ProxyFS/ramswift"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/proxyfsd"
+	"github.com/NVIDIA/proxyfs/ramswift"
 )
 
 const (
