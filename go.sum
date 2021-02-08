@@ -3,6 +3,12 @@ bazil.org/fuse v0.0.0-20160811212531-371fbbdaa898/go.mod h1:Xbm+BRKSBEpa4q4hTSxo
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 github.com/BurntSushi/toml v0.3.1 h1:WXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+github.com/NVIDIA/cstruct v0.0.0-20210203201140-f4db46040b9a h1:kC/haCyNLEPaV++f9Ro7w5MyW5KclVUNrTG7JhmSp/M=
+github.com/NVIDIA/cstruct v0.0.0-20210203201140-f4db46040b9a/go.mod h1:Ffet7HOf/prPpmqMxpWFXEimd/5YHt9MKO/murMNKos=
+github.com/NVIDIA/fission v0.0.0-20210206002952-579a9b261fe0 h1:GQZP8OZqvkcMt7l7QAdtfa17PDUqiamz64df2DWNCDM=
+github.com/NVIDIA/fission v0.0.0-20210206002952-579a9b261fe0/go.mod h1:YzbQsUqGZ4BCnhIotOEc2VtCTW9Ue6rJrLMfEwQrEvk=
+github.com/NVIDIA/sortedmap v0.0.0-20210206003014-af46f3efdbec h1:SO7/dGH1jwQTdsaXHQR87UsFGXMIeAPtuT1YlTsD+Iw=
+github.com/NVIDIA/sortedmap v0.0.0-20210206003014-af46f3efdbec/go.mod h1:UobtfEnrrugMbdhaJNcTXPmrHDNJlbyznqkDFDyOcpM=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf/go.mod h1:ybxpYRFXyAe+OPACYpWeL0wqObRcbAqCMya13uyzqw0=
 github.com/ansel1/merry v1.0.1 h1:NEqlG+pyb6XKY55oRdGStyMkQ35YucmgFVG2tpybaP8=
@@ -128,12 +134,6 @@ github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+
 github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
 github.com/stretchr/testify v1.3.0 h1:TivCn/peBQ7UY8ooIcPgZFpTNSz0Q2U6UrFlUfqbe0Q=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
-github.com/swiftstack/cstruct v0.0.0-20210119215647-26f9e390f1a4 h1:a8h1nMi7X3Pt3nki0EGrYwcGVxSVdTH0mhmlnM9MdGI=
-github.com/swiftstack/cstruct v0.0.0-20210119215647-26f9e390f1a4/go.mod h1:M9lpLN5EdXU71XfQYsfp/Om0LBYmbhAH0egd/JoC7n0=
-github.com/swiftstack/fission v0.0.0-20210119215758-8345a19492f6 h1:NTNyX6NGekgMb/jFgVkCUCRhrO57TOYlNvlMShSf3Ik=
-github.com/swiftstack/fission v0.0.0-20210119215758-8345a19492f6/go.mod h1:Cfh/Fpms2DJoorCv+82iLQCaJNymAA6SBm2PjfKvQu0=
-github.com/swiftstack/sortedmap v0.0.0-20210119215928-78f1ae2b7386 h1:6g01lFENjg9Lcoyp6LL3Z2QJeDmaKxLd9WEP6/cPh8I=
-github.com/swiftstack/sortedmap v0.0.0-20210119215928-78f1ae2b7386/go.mod h1:PIKb6sduhN4itGEKgEN+zxDUs45bpx0XuJPo6UjF/vQ=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20170815181823-89b8d40f7ca8 h1:ndzgwNDnKIqyCvHTXaCqh9KlOWKvBry6nuXMJmonVsE=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20170815181823-89b8d40f7ca8/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
 github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijbERA=
