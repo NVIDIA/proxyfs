@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/creachadair/cityhash"
 	"github.com/NVIDIA/sortedmap"
+	"github.com/creachadair/cityhash"
 
 	"github.com/NVIDIA/proxyfs/blunder"
 	"github.com/NVIDIA/proxyfs/evtlog"

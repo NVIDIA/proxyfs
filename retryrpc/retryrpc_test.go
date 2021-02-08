@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/retryrpc/rpctest"
+	"github.com/stretchr/testify/assert"
 )
 
 // Test basic retryrpc primitives

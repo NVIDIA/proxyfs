@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/NVIDIA/proxyfs/swiftclient"
 	"github.com/NVIDIA/proxyfs/utils"
+	"github.com/stretchr/testify/assert"
 )
 
 const durationToDelayOrSkew = "100ms"

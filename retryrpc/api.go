@@ -21,9 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/btree"
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/google/btree"
 )
 
 // ServerCreds tracks the root CA and the

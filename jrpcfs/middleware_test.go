@@ -14,7 +14,6 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/NVIDIA/proxyfs/blunder"
 	"github.com/NVIDIA/proxyfs/conf"
 	"github.com/NVIDIA/proxyfs/fs"
@@ -23,6 +22,7 @@ import (
 	"github.com/NVIDIA/proxyfs/ramswift"
 	"github.com/NVIDIA/proxyfs/swiftclient"
 	"github.com/NVIDIA/proxyfs/transitions"
+	"github.com/stretchr/testify/assert"
 )
 
 // Shorthand for our testing debug log id; global to the package

@@ -8,8 +8,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/stretchr/testify/assert"
 )
 
 func getConfMap(t *testing.T, filename string) (confMap conf.ConfMap, err error) {

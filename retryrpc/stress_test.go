@@ -14,8 +14,8 @@ import (
 	_ "net/http/pprof"
 	*/
 
-	"github.com/stretchr/testify/assert"
 	"github.com/NVIDIA/proxyfs/retryrpc/rpctest"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestStress(t *testing.T) {
