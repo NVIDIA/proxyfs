@@ -1,6 +1,6 @@
 # Copyright (c) 2015-2021, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 
-gosubdir := github.com/swiftstack/ProxyFS/pfs-swift-load
+gosubdir := github.com/NVIDIA/proxyfs/pfs-swift-load
 
 include ../GoMakefile

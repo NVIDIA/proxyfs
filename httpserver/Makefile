@@ -1,7 +1,7 @@
 # Copyright (c) 2015-2021, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 
-gosubdir := github.com/swiftstack/ProxyFS/httpserver
+gosubdir := github.com/NVIDIA/proxyfs/httpserver
 
 generatedfiles := \
 	bootstrap_dot_min_dot_css_.go \

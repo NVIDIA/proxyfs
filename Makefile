@@ -72,7 +72,7 @@ gobinsubdirsforci = \
 	proxyfsd/proxyfsd
 
 gosubdirsforci = $(gopkgsubdirs) $(gobinsubdirsforci);
-gosubdirspathsforci = $(addprefix github.com/swiftstack/ProxyFS/,$(gosubdirsforci))
+gosubdirspathsforci = $(addprefix github.com/NVIDIA/proxyfs/,$(gosubdirsforci))
 
 uname = $(shell uname)
 machine = $(shell uname -m)
