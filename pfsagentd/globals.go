@@ -17,15 +17,15 @@ import (
 
 	"bazil.org/fuse"
 
-	"github.com/swiftstack/fission"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/fission"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/jrpcfs"
-	"github.com/swiftstack/ProxyFS/retryrpc"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/inode"
+	"github.com/NVIDIA/proxyfs/jrpcfs"
+	"github.com/NVIDIA/proxyfs/retryrpc"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 type configStruct struct {

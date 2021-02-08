@@ -8,7 +8,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/NVIDIA/proxyfs/conf"
 )
 
 type testCallbacksInterfaceStruct struct {

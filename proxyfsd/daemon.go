@@ -14,13 +14,13 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/transitions"
-	"github.com/swiftstack/ProxyFS/version"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/transitions"
+	"github.com/NVIDIA/proxyfs/version"
 
 	// Force importing of the following "top-most" package
-	_ "github.com/swiftstack/ProxyFS/httpserver"
+	_ "github.com/NVIDIA/proxyfs/httpserver"
 )
 
 // Daemon is launched as a GoRoutine that launches ProxyFS. During startup, the parent should read errChan

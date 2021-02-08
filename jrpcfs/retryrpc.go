@@ -6,8 +6,8 @@ package jrpcfs
 import (
 	"time"
 
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/retryrpc"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
 func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,

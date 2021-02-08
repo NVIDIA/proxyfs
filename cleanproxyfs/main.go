@@ -13,9 +13,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/transitions"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/transitions"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 const (

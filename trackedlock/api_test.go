@@ -19,8 +19,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/logger"
 )
 
 // Common configuration for all tests (unless overridden)

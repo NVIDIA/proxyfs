@@ -15,7 +15,7 @@ import (
 	*/
 
 	"github.com/stretchr/testify/assert"
-	"github.com/swiftstack/ProxyFS/retryrpc/rpctest"
+	"github.com/NVIDIA/proxyfs/retryrpc/rpctest"
 )
 
 func TestStress(t *testing.T) {

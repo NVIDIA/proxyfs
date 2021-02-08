@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/NVIDIA/proxyfs/conf"
 )
 
 type envSettingsStruct struct {

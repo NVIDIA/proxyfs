@@ -8,7 +8,7 @@ import (
 	"net"
 	"strconv"
 	// XXX TODO: Can't call logger from here since logger calls stats.
-	//"github.com/swiftstack/ProxyFS/logger"
+	//"github.com/NVIDIA/proxyfs/logger"
 )
 
 func sender() {

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/NVIDIA/proxyfs/swiftclient"
 )
 
 type testObjectLocationStruct struct {

@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/NVIDIA/proxyfs/blunder"
 )
 
 func encodeErrno(e *error) {

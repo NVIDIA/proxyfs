@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/platform"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/platform"
 )
 
 func adoptVolumeGroupReadCacheParameters(confMap conf.ConfMap) (err error) {

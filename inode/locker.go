@@ -13,7 +13,7 @@ package inode
 import (
 	"fmt"
 
-	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/NVIDIA/proxyfs/dlm"
 )
 
 // MakeLockID creates the ID of an inode used in volume

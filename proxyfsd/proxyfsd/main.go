@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/ProxyFS/proxyfsd"
+	"github.com/NVIDIA/proxyfs/proxyfsd"
 )
 
 func main() {

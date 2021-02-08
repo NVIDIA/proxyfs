@@ -9,8 +9,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/transitions"
 )
 
 func main() {

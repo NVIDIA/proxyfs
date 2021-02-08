@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/swiftstack/ProxyFS/blunder"
-	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/NVIDIA/proxyfs/blunder"
+	"github.com/NVIDIA/proxyfs/swiftclient"
 )
 
 // Helper to fetch a volume handle and create a file for a test. Return the

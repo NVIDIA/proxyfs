@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/google/btree"
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/logger"
 )
 
 // ServerCreds tracks the root CA and the

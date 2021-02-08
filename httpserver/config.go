@@ -10,19 +10,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/fs"
-	"github.com/swiftstack/ProxyFS/headhunter"
-	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/fs"
+	"github.com/NVIDIA/proxyfs/headhunter"
+	"github.com/NVIDIA/proxyfs/inode"
+	"github.com/NVIDIA/proxyfs/transitions"
 
 	// Force importing of the following next "top-most" packages
-	_ "github.com/swiftstack/ProxyFS/fuse"
-	_ "github.com/swiftstack/ProxyFS/jrpcfs"
-	_ "github.com/swiftstack/ProxyFS/statslogger"
-	"github.com/swiftstack/ProxyFS/trackedlock"
+	_ "github.com/NVIDIA/proxyfs/fuse"
+	_ "github.com/NVIDIA/proxyfs/jrpcfs"
+	_ "github.com/NVIDIA/proxyfs/statslogger"
+	"github.com/NVIDIA/proxyfs/trackedlock"
 )
 
 type ExtentMapElementStruct struct {

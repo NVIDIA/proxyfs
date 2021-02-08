@@ -13,8 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 func TestAuthEmulation(t *testing.T) {

@@ -19,12 +19,12 @@ import (
 	etcd "go.etcd.io/etcd/clientv3"
 	"go.etcd.io/etcd/pkg/transport"
 
-	"github.com/swiftstack/cstruct"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/cstruct"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/etcdclient"
-	"github.com/swiftstack/ProxyFS/headhunter"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/etcdclient"
+	"github.com/NVIDIA/proxyfs/headhunter"
 )
 
 const (

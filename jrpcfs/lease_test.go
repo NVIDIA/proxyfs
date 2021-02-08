@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/retryrpc"
+	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
 const (

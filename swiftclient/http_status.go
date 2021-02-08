@@ -6,7 +6,7 @@
 package swiftclient
 
 import (
-	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/NVIDIA/proxyfs/blunder"
 )
 
 func httpStatusIsSuccess(httpStatus int) (isSuccess bool) {
