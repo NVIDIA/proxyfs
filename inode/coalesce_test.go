@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/NVIDIA/proxyfs/blunder"
+	"github.com/stretchr/testify/assert"
 )
 
 // NB: test setup and such is in api_test.go (look for TestMain function)

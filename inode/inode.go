@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ansel1/merry"
 	"github.com/NVIDIA/cstruct"
 	"github.com/NVIDIA/sortedmap"
+	"github.com/ansel1/merry"
 
 	"github.com/NVIDIA/proxyfs/blunder"
 	"github.com/NVIDIA/proxyfs/dlm"
