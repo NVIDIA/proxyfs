@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/logger"
 )
 
 // PayloadProtocols defines the supported protocols for the payload

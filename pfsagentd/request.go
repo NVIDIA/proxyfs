@@ -17,9 +17,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/jrpcfs"
-	"github.com/swiftstack/ProxyFS/retryrpc"
-	"github.com/swiftstack/ProxyFS/version"
+	"github.com/NVIDIA/proxyfs/jrpcfs"
+	"github.com/NVIDIA/proxyfs/retryrpc"
+	"github.com/NVIDIA/proxyfs/version"
 )
 
 const (

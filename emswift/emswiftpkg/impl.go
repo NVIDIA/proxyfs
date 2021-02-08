@@ -17,10 +17,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 type swiftAccountStruct struct {

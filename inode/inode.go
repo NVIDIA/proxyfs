@@ -13,19 +13,19 @@ import (
 	"time"
 
 	"github.com/ansel1/merry"
-	"github.com/swiftstack/cstruct"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/cstruct"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/blunder"
-	"github.com/swiftstack/ProxyFS/dlm"
-	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/halter"
-	"github.com/swiftstack/ProxyFS/headhunter"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/trackedlock"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/blunder"
+	"github.com/NVIDIA/proxyfs/dlm"
+	"github.com/NVIDIA/proxyfs/evtlog"
+	"github.com/NVIDIA/proxyfs/halter"
+	"github.com/NVIDIA/proxyfs/headhunter"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/stats"
+	"github.com/NVIDIA/proxyfs/swiftclient"
+	"github.com/NVIDIA/proxyfs/trackedlock"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 // Shorthand for inode internal API debug log id; global to the package

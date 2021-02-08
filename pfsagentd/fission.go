@@ -12,12 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/swiftstack/fission"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/fission"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/fs"
-	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/jrpcfs"
+	"github.com/NVIDIA/proxyfs/fs"
+	"github.com/NVIDIA/proxyfs/inode"
+	"github.com/NVIDIA/proxyfs/jrpcfs"
 )
 
 const (

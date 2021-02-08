@@ -196,19 +196,19 @@ func StackTraceToGoId(buf []byte) uint64 {
 //
 // goroutine 1 [running]:
 // main.main()
-// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/stacktrace.go:27 +0x21e
+// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/NVIDIA/proxyfs/stacktrace.go:27 +0x21e
 //
 // goroutine 5 [runnable]:
 // main.killTime()
-// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/stacktrace.go:9
+// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/NVIDIA/proxyfs/stacktrace.go:9
 // created by main.main
-// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/stacktrace.go:14 +0x47
+// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/NVIDIA/proxyfs/stacktrace.go:14 +0x47
 //
 // goroutine 7 [runnable]:
 // main.killTime()
-// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/stacktrace.go:9
+// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/NVIDIA/proxyfs/stacktrace.go:9
 // created by main.main
-// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/stacktrace.go:16 +0x77
+// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/NVIDIA/proxyfs/stacktrace.go:16 +0x77
 //
 func StackTracesToMap(buf []byte) (traceMap map[uint64]string, stateMap map[uint64]string) {
 

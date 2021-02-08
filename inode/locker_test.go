@@ -6,8 +6,8 @@ package inode
 import (
 	"testing"
 
-	"github.com/swiftstack/ProxyFS/blunder"
-	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/NVIDIA/proxyfs/blunder"
+	"github.com/NVIDIA/proxyfs/dlm"
 )
 
 func TestLockerStuff(t *testing.T) {

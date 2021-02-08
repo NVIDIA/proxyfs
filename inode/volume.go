@@ -6,9 +6,9 @@ package inode
 import (
 	"fmt"
 
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/stats"
+	"github.com/NVIDIA/sortedmap"
 )
 
 func (vS *volumeStruct) GetFSID() (fsid uint64) {

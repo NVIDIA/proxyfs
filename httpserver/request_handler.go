@@ -19,19 +19,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/fs"
-	"github.com/swiftstack/ProxyFS/halter"
-	"github.com/swiftstack/ProxyFS/headhunter"
-	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/jrpcfs"
-	"github.com/swiftstack/ProxyFS/liveness"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/utils"
-	"github.com/swiftstack/ProxyFS/version"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/fs"
+	"github.com/NVIDIA/proxyfs/halter"
+	"github.com/NVIDIA/proxyfs/headhunter"
+	"github.com/NVIDIA/proxyfs/inode"
+	"github.com/NVIDIA/proxyfs/jrpcfs"
+	"github.com/NVIDIA/proxyfs/liveness"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/stats"
+	"github.com/NVIDIA/proxyfs/utils"
+	"github.com/NVIDIA/proxyfs/version"
 )
 
 type httpRequestHandler struct{}

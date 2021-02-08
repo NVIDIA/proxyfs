@@ -6,7 +6,7 @@ package inode
 import (
 	"testing"
 
-	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/NVIDIA/proxyfs/transitions"
 
 	"github.com/stretchr/testify/assert"
 )

@@ -14,9 +14,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/version"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/stats"
+	"github.com/NVIDIA/proxyfs/version"
 )
 
 const swiftVersion = "v1"

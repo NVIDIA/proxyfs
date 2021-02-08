@@ -36,7 +36,7 @@ import (
 	"github.com/ansel1/merry"
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/NVIDIA/proxyfs/logger"
 )
 
 // Error constants to be used in the ProxyFS namespace.

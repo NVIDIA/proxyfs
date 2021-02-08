@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/swiftstack/ProxyFS/version"
+	"github.com/NVIDIA/proxyfs/version"
 )
 
 type authInStruct struct {

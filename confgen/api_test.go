@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/NVIDIA/proxyfs/conf"
 )
 
 func getConfMap(t *testing.T, filename string) (confMap conf.ConfMap, err error) {

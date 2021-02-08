@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/NVIDIA/proxyfs/blunder"
 )
 
 // NB: test setup and such is in api_test.go (look for TestMain function)

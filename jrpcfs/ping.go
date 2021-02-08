@@ -7,7 +7,7 @@ package jrpcfs
 import (
 	"fmt"
 
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/NVIDIA/proxyfs/logger"
 )
 
 func (s *Server) RpcPing(in *PingReq, reply *PingReply) (err error) {

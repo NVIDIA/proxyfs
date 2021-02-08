@@ -4,7 +4,7 @@
 package emswiftpkg
 
 import (
-	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/NVIDIA/proxyfs/conf"
 )
 
 // Start is called to start serving the NoAuth Swift Proxy Port and,

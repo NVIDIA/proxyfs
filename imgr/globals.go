@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/conf"
 )
 
 type configStruct struct {

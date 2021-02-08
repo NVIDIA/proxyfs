@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/swiftstack/ProxyFS/mkproxyfs"
+	"github.com/NVIDIA/proxyfs/mkproxyfs"
 )
 
 func usage() {

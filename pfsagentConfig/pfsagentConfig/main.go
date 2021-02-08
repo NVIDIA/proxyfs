@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	pfsagentConfig "github.com/swiftstack/ProxyFS/pfsagentConfig"
+	pfsagentConfig "github.com/NVIDIA/proxyfs/pfsagentConfig"
 )
 
 const (

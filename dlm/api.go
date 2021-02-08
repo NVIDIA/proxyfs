@@ -54,7 +54,7 @@ package dlm
 import (
 	"fmt"
 
-	"github.com/swiftstack/ProxyFS/trackedlock"
+	"github.com/NVIDIA/proxyfs/trackedlock"
 )
 
 type NotifyReason uint32

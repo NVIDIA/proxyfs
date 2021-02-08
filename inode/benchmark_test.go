@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 func writeBenchmarkHelper(b *testing.B, byteSize uint64) {

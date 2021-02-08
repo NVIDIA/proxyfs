@@ -6,7 +6,7 @@ package fs
 import (
 	"testing"
 
-	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/NVIDIA/proxyfs/inode"
 )
 
 func TestResolvePath(t *testing.T) {

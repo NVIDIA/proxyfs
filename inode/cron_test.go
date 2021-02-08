@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/NVIDIA/proxyfs/conf"
 )
 
 func TestLoadSnapShotPolicy(t *testing.T) {

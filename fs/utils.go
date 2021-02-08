@@ -10,7 +10,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/NVIDIA/proxyfs/stats"
 )
 
 func (tryLockBackoffContext *tryLockBackoffContextStruct) backoff() {

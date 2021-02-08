@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/NVIDIA/proxyfs/conf"
 	"golang.org/x/sys/unix"
 )
 

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/logger"
 )
 
 type loggerCallbacksInterfaceStruct struct {

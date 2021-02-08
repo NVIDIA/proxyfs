@@ -150,9 +150,9 @@
 package jrpcfs
 
 import (
-	"github.com/swiftstack/ProxyFS/fs"
-	"github.com/swiftstack/ProxyFS/headhunter"
-	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/NVIDIA/proxyfs/fs"
+	"github.com/NVIDIA/proxyfs/headhunter"
+	"github.com/NVIDIA/proxyfs/inode"
 )
 
 // The first section of this file defines the structs used by protocols like Samba.

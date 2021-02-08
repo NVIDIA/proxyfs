@@ -11,7 +11,7 @@ import (
 	mathRand "math/rand"
 	"testing"
 
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/sortedmap"
 )
 
 const (

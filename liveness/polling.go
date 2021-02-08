@@ -19,9 +19,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/jrpcfs"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/jrpcfs"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 type pingReqStruct struct {

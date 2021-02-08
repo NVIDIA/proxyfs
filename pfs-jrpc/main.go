@@ -13,8 +13,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/jrpcfs"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/jrpcfs"
 )
 
 type jrpcRequestStruct struct {
