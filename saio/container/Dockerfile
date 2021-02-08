@@ -167,10 +167,10 @@ ENV PATH   $PATH:/usr/local/go/bin:$GOPATH/bin
 
 RUN yum install -y make fuse
 
-RUN mkdir -p $GOPATH/src/github.com/swiftstack
-WORKDIR $GOPATH/src/github.com/swiftstack
-RUN git clone https://github.com/swiftstack/ProxyFS.git
-WORKDIR $GOPATH/src/github.com/swiftstack/ProxyFS
+RUN mkdir -p $GOPATH/src/github.com/NVIDIA
+WORKDIR $GOPATH/src/github.com/NVIDIA
+RUN git clone https://github.com/NVIDIA/proxyfs.git
+WORKDIR $GOPATH/src/github.com/NVIDIA/proxyfs
 RUN git checkout $ProxyFS_Version
 
 RUN cd pfs_middleware  && python setup.py develop

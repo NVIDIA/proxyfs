@@ -20,10 +20,10 @@ RUN tar -C /usr/local -xzf $GolangBasename
 ENV GOPATH /opt/PFSAgent/GOPATH
 ENV PATH   $PATH:/usr/local/go/bin:$GOPATH/bin
 
-RUN mkdir -p $GOPATH/src/github.com/swiftstack
-WORKDIR $GOPATH/src/github.com/swiftstack
-RUN git clone https://github.com/swiftstack/ProxyFS.git
-WORKDIR $GOPATH/src/github.com/swiftstack/ProxyFS
+RUN mkdir -p $GOPATH/src/github.com/NVIDIA
+WORKDIR $GOPATH/src/github.com/NVIDIA
+RUN git clone https://github.com/NVIDIA/proxyfs.git
+WORKDIR $GOPATH/src/github.com/NVIDIA/proxyfs
 RUN git checkout $ProxyFS_Version
 
 RUN make version pfsagent

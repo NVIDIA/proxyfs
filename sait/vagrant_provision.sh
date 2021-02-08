@@ -79,7 +79,7 @@ echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
 # Patch Golang's GDB runtime plug-in
 
 mv /usr/local/go/src/runtime/runtime-gdb.py /usr/local/go/src/runtime/runtime-gdb.py_ORIGINAL
-cp /vagrant/src/github.com/swiftstack/ProxyFS/sait/usr/local/go/src/runtime/runtime-gdb.py /usr/local/go/src/runtime/.
+cp /vagrant/src/github.com/NVIDIA/proxyfs/sait/usr/local/go/src/runtime/runtime-gdb.py /usr/local/go/src/runtime/.
 
 # Install GDB and enable above Golang GDB runtime plug-in as well as other niceties
 
@@ -114,7 +114,7 @@ yum -y install json-c-devel
 yum -y install fuse
 echo "export GOPATH=/vagrant" >> ~vagrant/.bash_profile
 echo "export PATH=\$PATH:\$GOPATH/bin" >> ~vagrant/.bash_profile
-echo "alias cdpfs=\"cd \$GOPATH/src/github.com/swiftstack/ProxyFS\"" >> ~vagrant/.bash_profile
+echo "alias cdpfs=\"cd \$GOPATH/src/github.com/NVIDIA/proxyfs\"" >> ~vagrant/.bash_profile
 echo "alias goclean=\"go clean;go clean --cache;go clean --testcache\"" >> ~vagrant/.bash_profile
 echo "alias gogetdlv=\"go get -u github.com/go-delve/delve/cmd/dlv\"" >> ~vagrant/.bash_profile
 echo "user_allow_other" >> /etc/fuse.conf
@@ -265,8 +265,8 @@ systemctl start memcached.service
 # [Setup Swift] Configuring each node
 
 rm -rf /etc/swift
-cp -R /vagrant/src/github.com/swiftstack/ProxyFS/sait/etc/swift /etc/.
-cp -R /vagrant/src/github.com/swiftstack/ProxyFS/sait/sait$SAIT_INSTANCE/etc/swift /etc/.
+cp -R /vagrant/src/github.com/NVIDIA/proxyfs/sait/etc/swift /etc/.
+cp -R /vagrant/src/github.com/NVIDIA/proxyfs/sait/sait$SAIT_INSTANCE/etc/swift /etc/.
 chown -R swift:swift /etc/swift
 
 # [Setup Swift] Setting up scripts for running Swift
@@ -274,19 +274,19 @@ chown -R swift:swift /etc/swift
 mkdir -p ~swift/bin
 
 cd ~swift/bin
-cp /vagrant/src/github.com/swiftstack/ProxyFS/sait/home/swift/bin/* .
+cp /vagrant/src/github.com/NVIDIA/proxyfs/sait/home/swift/bin/* .
 echo "export PATH=\$PATH:~swift/bin" >> ~vagrant/.bash_profile
 
 ~swift/bin/remakerings
 
 # Install ProxyFS's pfs_middleware into the "normal" Swift Proxy pipeline
 
-cd /vagrant/src/github.com/swiftstack/ProxyFS/pfs_middleware
+cd /vagrant/src/github.com/NVIDIA/proxyfs/pfs_middleware
 python setup.py develop
 
 # Install ProxyFS's meta_middleware into the "NoAuth" Swift Proxy pipeline
 
-cd /vagrant/src/github.com/swiftstack/ProxyFS/meta_middleware
+cd /vagrant/src/github.com/NVIDIA/proxyfs/meta_middleware
 python setup.py develop
 
 # Setup AWS access for local vagrant user
@@ -335,11 +335,11 @@ fi
 
 # Install systemd .service files for ProxyFS
 
-cp /vagrant/src/github.com/swiftstack/ProxyFS/sait/sait$SAIT_INSTANCE/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
+cp /vagrant/src/github.com/NVIDIA/proxyfs/sait/sait$SAIT_INSTANCE/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
 
 # Enable start/stop tools
 
-echo "export PATH=\$PATH:/vagrant/src/github.com/swiftstack/ProxyFS/sait/bin" >> ~vagrant/.bash_profile
+echo "export PATH=\$PATH:/vagrant/src/github.com/NVIDIA/proxyfs/sait/bin" >> ~vagrant/.bash_profile
 
 # Install wireshark
 

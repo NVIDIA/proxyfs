@@ -38,7 +38,7 @@ function await_swift_startup {
 }
 
 function format_volume_if_necessary {
-    sudo /vagrant/bin/mkproxyfs -I $1 /vagrant/src/github.com/swiftstack/ProxyFS/saio/proxyfs.conf SwiftClient.RetryLimit=1
+    sudo /vagrant/bin/mkproxyfs -I $1 /vagrant/src/github.com/NVIDIA/proxyfs/saio/proxyfs.conf SwiftClient.RetryLimit=1
     if [ $? -ne 0 ]
     then
         echo "Could not pre-format $1"
@@ -49,7 +49,7 @@ function format_volume_if_necessary {
 sudo mount -a
 
 echo "Shutting down services and mount points..."
-/vagrant/src/github.com/swiftstack/ProxyFS/saio/bin/unmount_and_stop_pfs
+/vagrant/src/github.com/NVIDIA/proxyfs/saio/bin/unmount_and_stop_pfs
 echo
 echo "Bringing up services..."
 if [ -f /usr/bin/systemctl ]; then

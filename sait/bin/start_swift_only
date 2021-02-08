@@ -6,7 +6,7 @@
 sudo mount -a
 
 echo "Shutting down services and mount points..."
-/vagrant/src/github.com/swiftstack/ProxyFS/sait/bin/unmount_and_stop_pfs
+/vagrant/src/github.com/NVIDIA/proxyfs/sait/bin/unmount_and_stop_pfs
 echo
 echo "Bringing up services..."
 if [ -f /usr/bin/systemctl ]; then
