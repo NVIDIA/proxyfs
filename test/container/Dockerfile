@@ -104,7 +104,7 @@ RUN yum -y install rh-python36 && \
 # - requests
 ## Install Python tox
 # - tox
-RUN pip install --upgrade pip
+RUN pip install --upgrade 'pip<21.0'
 RUN pip install requests tox==3.5.3
 
 # Install Golang
