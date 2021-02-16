@@ -1301,7 +1301,11 @@ func (vS *volumeStruct) AddDirEntry(dirInodeNumber InodeNumber, dirEntryName str
 		dirEntryInode.onDiskInodeV1Struct.LinkCount++
 	}
 
-	err = nil
+	dirInode.dirty = true
+	dirEntryInode.dirty = true
+
+	err = vS.flushInodes([]*inMemoryInodeStruct{dirInode, dirEntryInode})
+
 	return
 }
 
