@@ -4,7 +4,7 @@
 package imgrpkg
 
 import (
-	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/NVIDIA/proxyfs/conf"
 )
 
 // Start is called to start serving
