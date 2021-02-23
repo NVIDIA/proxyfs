@@ -17,6 +17,7 @@ gopkgsubdirs = \
 	halter \
 	headhunter \
 	httpserver \
+	iauth \
 	inode \
 	jrpcfs \
 	liveness \
@@ -35,6 +36,9 @@ gopkgsubdirs = \
 	version \
 	emswift/emswiftpkg \
 	imgr/imgrpkg
+
+goplugindirs = \
+	iauth/iauth-swift
 
 gobinsubdirs = \
 	cleanproxyfs \
@@ -125,6 +129,9 @@ clean:
 	for gosubdir in $(gopkgsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir clean; \
 	done; \
+	for gosubdir in $(goplugindirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir clean; \
+	done; \
 	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir clean; \
 	done
@@ -140,6 +147,9 @@ fmt:
 	for gosubdir in $(gopkgsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir fmt; \
 	done; \
+	for gosubdir in $(goplugindirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir fmt; \
+	done; \
 	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir fmt; \
 	done
@@ -149,6 +159,9 @@ generate:
 	for gosubdir in $(gopkgsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir generate; \
 	done; \
+	for gosubdir in $(goplugindirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir generate; \
+	done; \
 	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir generate; \
 	done
@@ -156,6 +169,9 @@ generate:
 install:
 	@set -e; \
 	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir install; \
+	done; \
+	for gosubdir in $(goplugindirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
 	done; \
 	for gosubdir in $(gobinsubdirs); do \
@@ -181,6 +197,9 @@ python-test:
 test:
 	@set -e; \
 	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir test; \
+	done; \
+	for gosubdir in $(goplugindirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir test; \
 	done; \
 	for gosubdir in $(gobinsubdirs); do \
