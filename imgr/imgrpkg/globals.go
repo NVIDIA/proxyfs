@@ -1,7 +1,7 @@
 // Copyright (c) 2015-2021, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
-package main
+package imgrpkg
 
 import (
 	"container/list"
@@ -17,7 +17,7 @@ type configStruct struct {
 	PrivateIPAddr  string
 	PublicIPAddr   string
 	JSONRPCPort    uint16 // To be served only on PrivateIPAddr via TCP
-	RetryRPCPort   uint16 // To be served only on PublicIPAddr via TLS
+	RetryRPCPort   uint16 // To be served only on PublicIPAddr  via TLS
 	HTTPServerPort uint16 // To be served only on PrivateIPAddr via TCP
 
 	RetryRPCTTLCompleted    time.Duration
@@ -28,9 +28,6 @@ type configStruct struct {
 	MinLeaseDuration       time.Duration
 	LeaseInterruptInterval time.Duration
 	LeaseInterruptLimit    uint32
-
-	SwiftNoAuthIPAddr  string
-	SwiftNoAuthTCPPort uint16
 
 	SwiftRetryDelay      time.Duration
 	SwiftRetryExpBackoff float64
@@ -60,17 +57,30 @@ type chunkedPutContextStruct struct {
 }
 
 type statsStruct struct {
-	SharedLeaseRequests    bucketstats.BucketLog2Round
-	PromoteLeaseRequests   bucketstats.BucketLog2Round
-	ExclusiveLeaseRequests bucketstats.BucketLog2Round
-	DemoteLeaseRequests    bucketstats.BucketLog2Round
-	ReleaseLeaseRequests   bucketstats.BucketLog2Round
+	MountUsecs bucketstats.BucketLog2Round
 
+	SharedLeaseRequestUsecs    bucketstats.BucketLog2Round
+	PromoteLeaseRequestUsecs   bucketstats.BucketLog2Round
+	ExclusiveLeaseRequestUsecs bucketstats.BucketLog2Round
+	DemoteLeaseRequestUsecs    bucketstats.BucketLog2Round
+	ReleaseLeaseRequestUsecs   bucketstats.BucketLog2Round
+
+	GetInodeTableEntryUsecs   bucketstats.BucketLog2Round
+	PutInodeTableEntriesUsecs bucketstats.BucketLog2Round
+	FetchNonceRangeUsecs      bucketstats.BucketLog2Round
+	RenewMountUsecs           bucketstats.BucketLog2Round
+	UnmountUsecs              bucketstats.BucketLog2Round
+
+	UnmountInterrupts     bucketstats.Totaler
 	DemoteLeaseInterrupts bucketstats.Totaler
 	RevokeLeaseInterrupts bucketstats.Totaler
 
-	InodeGets bucketstats.BucketLog2Round
-	InodePuts bucketstats.BucketLog2Round
+	GetVolumeListUsecs bucketstats.BucketLog2Round
+	GetVolumeUsecs     bucketstats.BucketLog2Round
+	PutVolumeUsecs     bucketstats.BucketLog2Round
+	DeleteVolumeUsecs  bucketstats.BucketLog2Round
+
+	VolumeCheckpointUsecs bucketstats.BucketLog2Round
 }
 
 type globalsStruct struct {
@@ -82,11 +92,7 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-func initializeGlobals(confMap conf.ConfMap) {
-	var (
-		err error
-	)
-
+func initializeGlobals(confMap conf.ConfMap) (err error) {
 	// Default logging related globals
 
 	globals.config.LogFilePath = ""
@@ -150,15 +156,6 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
-	globals.config.SwiftNoAuthIPAddr, err = confMap.FetchOptionValueString("IMGR", "SwiftNoAuthIPAddr")
-	if nil != err {
-		logFatal(err)
-	}
-	globals.config.SwiftNoAuthTCPPort, err = confMap.FetchOptionValueUint16("IMGR", "SwiftNoAuthTCPPort")
-	if nil != err {
-		logFatal(err)
-	}
-
 	globals.config.SwiftRetryDelay, err = confMap.FetchOptionValueDuration("IMGR", "SwiftRetryDelay")
 	if nil != err {
 		logFatal(err)
@@ -198,9 +195,12 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.stats = &statsStruct{}
 
 	bucketstats.Register("IMGR", "", globals.stats)
+
+	err = nil
+	return
 }
 
-func uninitializeGlobals() {
+func uninitializeGlobals() (err error) {
 	globals.config.PrivateIPAddr = ""
 	globals.config.PublicIPAddr = ""
 	globals.config.JSONRPCPort = 0
@@ -216,9 +216,6 @@ func uninitializeGlobals() {
 	globals.config.LeaseInterruptInterval = time.Duration(0)
 	globals.config.LeaseInterruptLimit = 0
 
-	globals.config.SwiftNoAuthIPAddr = ""
-	globals.config.SwiftNoAuthTCPPort = 0
-
 	globals.config.SwiftRetryDelay = time.Duration(0)
 	globals.config.SwiftRetryExpBackoff = 0.0
 	globals.config.SwiftRetryLimit = 0
@@ -230,4 +227,7 @@ func uninitializeGlobals() {
 	globals.config.TraceEnabled = false
 
 	bucketstats.UnRegister("IMGR", "")
+
+	err = nil
+	return
 }

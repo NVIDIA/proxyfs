@@ -27,3 +27,15 @@ func Signal() (err error) {
 	err = signal()
 	return
 }
+
+// LogWarnf is a wrapper around the internal logWarnf() func called by imgr/main.go::main()
+//
+func LogWarnf(format string, args ...interface{}) {
+	logWarnf(format, args...)
+}
+
+// LogInfof is a wrapper around the internal logInfof() func called by imgr/main.go::main()
+//
+func LogInfof(format string, args ...interface{}) {
+	logInfof(format, args...)
+}

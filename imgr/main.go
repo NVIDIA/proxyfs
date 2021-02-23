@@ -4,13 +4,14 @@
 package main
 
 import (
-	"log"
+	"fmt"
 	"os"
 	"os/signal"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
 )
 
 func main() {
@@ -22,59 +23,61 @@ func main() {
 	)
 
 	if len(os.Args) < 2 {
-		log.Fatalf("no .conf file specified")
+		fmt.Fprintf(os.Stderr, "no .conf file specified\n")
+		os.Exit(1)
 	}
-
-	// Parse arguments (at this point, logging goes only to the console)
-
-	globals.logFile = nil
-	globals.config.LogFilePath = ""
-	globals.config.LogToConsole = true
 
 	confMap, err = conf.MakeConfMapFromFile(os.Args[1])
 	if nil != err {
-		log.Fatalf("failed to load config: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
+		os.Exit(1)
 	}
 
 	err = confMap.UpdateFromStrings(os.Args[2:])
 	if nil != err {
-		log.Fatalf("failed to apply config overrides: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to apply config overrides: %v\n", err)
+		os.Exit(1)
 	}
 
-	// Arm signal handler used to indicate termination and wait on it
+	// Start imgr
+
+	err = imgrpkg.Start(confMap)
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "imgrpkg.Start(confMap) failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	imgrpkg.LogInfof("UP")
+
+	// Arm signal handler used to indicate interruption/termination & wait on it
 	//
-	// Note: signalled chan must be buffered to avoid race with window between
+	// Note: signal'd chan must be buffered to avoid race with window between
 	// arming handler and blocking on the chan read
 
 	signalChan = make(chan os.Signal, 1)
 
 	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
 
-	// Initialize globals
-
-	initializeGlobals(confMap)
-
-	// Indicate we are UP
-
-	logInfof("UP")
-
-	// Await any of specified signals or fission exit
-
 	for {
 		signalReceived = <-signalChan
-		logInfof("Received signal: %v", signalReceived)
 		if unix.SIGHUP == signalReceived {
-			logSIGHUP()
+			imgrpkg.LogInfof("Received SIGHUP")
+			err = imgrpkg.Signal()
+			if nil != err {
+				imgrpkg.LogWarnf("imgrpkg.Signal() failed: %v", err)
+			}
 		} else {
 			break
 		}
 	}
 
-	// Indicate we are DOWN
+	// Stop imgr
 
-	logInfof("DOWN")
+	imgrpkg.LogInfof("DOWN")
 
-	// Uninitialize globals
-
-	uninitializeGlobals()
+	err = imgrpkg.Stop()
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "imgrpkg.Stop() failed: %v\n", err)
+		os.Exit(1)
+	}
 }

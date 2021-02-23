@@ -8,13 +8,20 @@ import (
 )
 
 func start(confMap conf.ConfMap) (err error) {
-	return nil // TODO
+	err = initializeGlobals(confMap)
+
+	return
 }
 
 func stop() (err error) {
-	return nil // TODO
+	err = uninitializeGlobals()
+
+	return
 }
 
 func signal() (err error) {
-	return nil // TODO
+	logSIGHUP()
+
+	err = nil
+	return
 }
