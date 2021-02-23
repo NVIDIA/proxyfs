@@ -1,0 +1,40 @@
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
+# GoPlugInMakefile is a template to be included by Go PlugIn Makefile's in this repo
+
+all: version fmt generate install test
+
+.PHONY: all bench clean cover fmt generate get install test
+
+bench:
+	go test -bench $(gosubdir)
+
+clean:
+	@set -e; \
+	go clean -i $(gosubdir); \
+	rm -f $(GOPATH)/bin/$(plugin); \
+	for generatedfile in $(generatedfiles); do \
+		rm -f $$generatedfile; \
+	done
+
+cover:
+	go test $(gosubdir) -covermode=atomic -coverprofile=coverage.coverprofile
+
+fmt:
+	go fmt $(gosubdir)
+
+generate:
+	go generate $(gosubdir)
+
+install:
+	@set -e; \
+	go build -buildmode=plugin $(gosubdir); \
+	cp $(plugin) $(GOPATH)/bin/.
+
+test:
+	go test -vet all $(gosubdir)
+
+version:
+	@go version
+
