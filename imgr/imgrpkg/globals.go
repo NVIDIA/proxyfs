@@ -5,9 +5,12 @@ package imgrpkg
 
 import (
 	"container/list"
+	"net/http"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/NVIDIA/sortedmap"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/conf"
@@ -34,6 +37,9 @@ type configStruct struct {
 	SwiftRetryLimit      uint32
 
 	SwiftConnectionPoolSize uint32
+
+	InodeTableCacheEvictLowLimit  uint64
+	InodeTableCacheEvictHighLimit uint64
 
 	LogFilePath  string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole bool
@@ -81,13 +87,19 @@ type statsStruct struct {
 	DeleteVolumeUsecs  bucketstats.BucketLog2Round
 
 	VolumeCheckpointUsecs bucketstats.BucketLog2Round
+
+	InodeTableCacheHits   bucketstats.Totaler
+	InodeTableCacheMisses bucketstats.Totaler
 }
 
 type globalsStruct struct {
 	sync.RWMutex
-	config  configStruct
-	logFile *os.File // == nil if config.LogFilePath == ""
-	stats   *statsStruct
+	config          configStruct
+	logFile         *os.File // == nil if config.LogFilePath == ""
+	inodeTableCache sortedmap.BPlusTreeCache
+	httpServer      *http.Server
+	httpServerWG    sync.WaitGroup
+	stats           *statsStruct
 }
 
 var globals globalsStruct
@@ -174,6 +186,15 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 
+	globals.config.InodeTableCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("IMGR", "InodeTableCacheEvictLowLimit")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.InodeTableCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("IMGR", "InodeTableCacheEvictHighLimit")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.LogFilePath, err = confMap.FetchOptionValueString("IMGR", "LogFilePath")
 	if nil != err {
 		err = confMap.VerifyOptionValueIsEmpty("IMGR", "LogFilePath")
@@ -221,6 +242,9 @@ func uninitializeGlobals() (err error) {
 	globals.config.SwiftRetryLimit = 0
 
 	globals.config.SwiftConnectionPoolSize = 0
+
+	globals.config.InodeTableCacheEvictLowLimit = 0
+	globals.config.InodeTableCacheEvictHighLimit = 0
 
 	globals.config.LogFilePath = ""
 	globals.config.LogToConsole = false
