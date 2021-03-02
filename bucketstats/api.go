@@ -276,7 +276,7 @@ func (this *BucketLog2Round) Sprint(stringFmt StatStringFormat, pkgName string, 
 }
 
 // BucketLogRoot2Round holds bucketized statistics where the stats value is
-// placed bucket N determined by round(logRoot(2)(value), except that:
+// placed bucket N determined by round(logRoot2(value)), except that:
 //
 // value 0 goes in bucket 0 (instead of negative infinity)
 // value 1 goes in bucket 1 (instead of 0)
