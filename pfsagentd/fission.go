@@ -168,42 +168,43 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 		return
 	}
 
-	fileInode = lockInodeWithSharedLease(inode.InodeNumber(lookupPlusReply.InodeNumber))
+	fileInode = lockInodeIfExclusiveLeaseGranted(inode.InodeNumber(lookupPlusReply.InodeNumber))
+	if nil != fileInode {
+		if nil == fileInode.cachedStat {
+			// Might as well cache the Stat portion of lookupPlusReply in fileInode.cachedStat
+			//
+			// Note: This is a convenient, and unlikely, optimization that won't be done in
+			//       the SharedLease case... but that is also an unlikely case.
 
-	if nil == fileInode.cachedStat {
-		// Might as well cache the Stat portion of lookupPlusReply in fileInode.cachedStat
-		//
-		// Note: This is a convenient, and unlikely, optimization that won't be done in
-		//       the SharedLease case... but that is also an unlikely case.
+			fileInode.cachedStat = &jrpcfs.StatStruct{
+				CTimeNs:         lookupPlusReply.CTimeNs,
+				CRTimeNs:        lookupPlusReply.CRTimeNs,
+				MTimeNs:         lookupPlusReply.MTimeNs,
+				ATimeNs:         lookupPlusReply.ATimeNs,
+				Size:            lookupPlusReply.Size,
+				NumLinks:        lookupPlusReply.NumLinks,
+				StatInodeNumber: lookupPlusReply.StatInodeNumber,
+				FileMode:        lookupPlusReply.FileMode,
+				UserID:          lookupPlusReply.UserID,
+				GroupID:         lookupPlusReply.GroupID,
+			}
+		} else {
+			// Update lookupPlusReply from fileInode.cachedStat
 
-		fileInode.cachedStat = &jrpcfs.StatStruct{
-			CTimeNs:         lookupPlusReply.CTimeNs,
-			CRTimeNs:        lookupPlusReply.CRTimeNs,
-			MTimeNs:         lookupPlusReply.MTimeNs,
-			ATimeNs:         lookupPlusReply.ATimeNs,
-			Size:            lookupPlusReply.Size,
-			NumLinks:        lookupPlusReply.NumLinks,
-			StatInodeNumber: lookupPlusReply.StatInodeNumber,
-			FileMode:        lookupPlusReply.FileMode,
-			UserID:          lookupPlusReply.UserID,
-			GroupID:         lookupPlusReply.GroupID,
+			lookupPlusReply.CTimeNs = fileInode.cachedStat.CTimeNs
+			lookupPlusReply.CRTimeNs = fileInode.cachedStat.CRTimeNs
+			lookupPlusReply.MTimeNs = fileInode.cachedStat.MTimeNs
+			lookupPlusReply.ATimeNs = fileInode.cachedStat.ATimeNs
+			lookupPlusReply.Size = fileInode.cachedStat.Size
+			lookupPlusReply.NumLinks = fileInode.cachedStat.NumLinks
+			lookupPlusReply.StatInodeNumber = fileInode.cachedStat.StatInodeNumber
+			lookupPlusReply.FileMode = fileInode.cachedStat.FileMode
+			lookupPlusReply.UserID = fileInode.cachedStat.UserID
+			lookupPlusReply.GroupID = fileInode.cachedStat.GroupID
 		}
-	} else {
-		// Update lookupPlusReply from fileInode.cachedStat
 
-		lookupPlusReply.CTimeNs = fileInode.cachedStat.CTimeNs
-		lookupPlusReply.CRTimeNs = fileInode.cachedStat.CRTimeNs
-		lookupPlusReply.MTimeNs = fileInode.cachedStat.MTimeNs
-		lookupPlusReply.ATimeNs = fileInode.cachedStat.ATimeNs
-		lookupPlusReply.Size = fileInode.cachedStat.Size
-		lookupPlusReply.NumLinks = fileInode.cachedStat.NumLinks
-		lookupPlusReply.StatInodeNumber = fileInode.cachedStat.StatInodeNumber
-		lookupPlusReply.FileMode = fileInode.cachedStat.FileMode
-		lookupPlusReply.UserID = fileInode.cachedStat.UserID
-		lookupPlusReply.GroupID = fileInode.cachedStat.GroupID
+		fileInode.unlock(false)
 	}
-
-	fileInode.unlock(false)
 
 	aTimeSec, aTimeNSec = nsToUnixTime(lookupPlusReply.ATimeNs)
 	mTimeSec, mTimeNSec = nsToUnixTime(lookupPlusReply.MTimeNs)
