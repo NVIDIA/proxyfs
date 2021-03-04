@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 
@@ -29,6 +30,24 @@ func main() {
 	globals.logFile = nil
 	globals.config.LogFilePath = ""
 	globals.config.LogToConsole = true
+
+	// if this process is run setuid then ascend to full daemon
+	if syscall.Getgid() != syscall.Getegid() {
+		egid := syscall.Getegid()
+		err = syscall.Setresgid(egid, egid, egid)
+		if nil != err {
+			log.Fatalf("gid %d  egid %d  syscall.Setresgid(egid, egid, egid)) failed: %v",
+				syscall.Getegid(), egid, err)
+		}
+	}
+	if syscall.Getuid() != syscall.Geteuid() {
+		euid := syscall.Geteuid()
+		err = syscall.Setresuid(euid, euid, euid)
+		if nil != err {
+			log.Fatalf("uid %d  euid %d  syscall.Setresuid(euid, euid, euid)) failed: %v",
+				syscall.Geteuid(), euid, err)
+		}
+	}
 
 	confMap, err = conf.MakeConfMapFromFile(os.Args[1])
 	if nil != err {
