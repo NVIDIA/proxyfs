@@ -332,12 +332,12 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	volume.activeLeaseEvictLowLimit, err = confMap.FetchOptionValueUint64("Volume:"+volumeName, "ActiveLeaseEvictLowLimit")
 	if nil != err {
 		logger.Infof("failed to get Volume:" + volumeName + ".ActiveLeaseEvictLowLimit from config file - defaulting to 5000")
-		volume.activeLeaseEvictLowLimit = 5000
+		volume.activeLeaseEvictLowLimit = 500000
 	}
 	volume.activeLeaseEvictHighLimit, err = confMap.FetchOptionValueUint64("Volume:"+volumeName, "ActiveLeaseEvictHighLimit")
 	if nil != err {
 		logger.Infof("failed to get Volume:" + volumeName + ".ActiveLeaseEvictHighLimit from config file - defaulting to 5010")
-		volume.activeLeaseEvictHighLimit = 5010
+		volume.activeLeaseEvictHighLimit = 500010
 	}
 
 	globals.volumeMap[volumeName] = volume
