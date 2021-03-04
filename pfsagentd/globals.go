@@ -325,6 +325,65 @@ type statsStruct struct {
 	LeaseRequests_Exclusive_Usec bucketstats.BucketLog2Round
 	LeaseRequests_Demote_Usec    bucketstats.BucketLog2Round
 	LeaseRequests_Release_Usec   bucketstats.BucketLog2Round
+
+	DoLookupUsec         bucketstats.BucketLogRoot2Round
+	DoLookupThreads      bucketstats.BucketLog2Round
+	DoGetAttrUsec        bucketstats.BucketLogRoot2Round
+	DoGetAttrThreads     bucketstats.BucketLog2Round
+	DoSetAttrUsec        bucketstats.BucketLogRoot2Round
+	DoSetAttrThreads     bucketstats.BucketLog2Round
+	DoReadLinkUsec       bucketstats.BucketLogRoot2Round
+	DoReadLinkThreads    bucketstats.BucketLog2Round
+	DoSymLinkUsec        bucketstats.BucketLogRoot2Round
+	DoSymLinkThreads     bucketstats.BucketLog2Round
+	DoMkDirUsec          bucketstats.BucketLogRoot2Round
+	DoMkDirThreads       bucketstats.BucketLog2Round
+	DoUnlinkUsec         bucketstats.BucketLogRoot2Round
+	DoUnlinkThreads      bucketstats.BucketLog2Round
+	DoRmDirUsec          bucketstats.BucketLogRoot2Round
+	DoRmDirThreads       bucketstats.BucketLog2Round
+	DoRenameUsec         bucketstats.BucketLogRoot2Round
+	DoRenameThreads      bucketstats.BucketLog2Round
+	DoLinkUsec           bucketstats.BucketLogRoot2Round
+	DoLinkThreads        bucketstats.BucketLog2Round
+	DoOpenUsec           bucketstats.BucketLogRoot2Round
+	DoOpenThreads        bucketstats.BucketLog2Round
+	DoReadUsec           bucketstats.BucketLogRoot2Round
+	DoReadThreads        bucketstats.BucketLog2Round
+	DoWriteUsec          bucketstats.BucketLogRoot2Round
+	DoWriteThreads       bucketstats.BucketLog2Round
+	DoStatFSUsec         bucketstats.BucketLogRoot2Round
+	DoStatFSThreads      bucketstats.BucketLog2Round
+	DoReleaseUsec        bucketstats.BucketLogRoot2Round
+	DoReleaseThreads     bucketstats.BucketLog2Round
+	DoFSyncUsec          bucketstats.BucketLogRoot2Round
+	DoFSyncThreads       bucketstats.BucketLog2Round
+	DoSetXAttrUsec       bucketstats.BucketLogRoot2Round
+	DoSetXAttrThreads    bucketstats.BucketLog2Round
+	DoGetXAttrUsec       bucketstats.BucketLogRoot2Round
+	DoGetXAttrThreads    bucketstats.BucketLog2Round
+	DoListXAttrUsec      bucketstats.BucketLogRoot2Round
+	DoListXAttrThreads   bucketstats.BucketLog2Round
+	DoRemoveXAttrUsec    bucketstats.BucketLogRoot2Round
+	DoRemoveXAttrThreads bucketstats.BucketLog2Round
+	DoFlushUsec          bucketstats.BucketLogRoot2Round
+	DoFlushThreads       bucketstats.BucketLog2Round
+	DoOpenDirUsec        bucketstats.BucketLogRoot2Round
+	DoOpenDirThreads     bucketstats.BucketLog2Round
+	DoReadDirUsec        bucketstats.BucketLogRoot2Round
+	DoReadDirThreads     bucketstats.BucketLog2Round
+	DoReleaseDirUsec     bucketstats.BucketLogRoot2Round
+	DoReleaseDirThreads  bucketstats.BucketLog2Round
+	DoFSyncDirUsec       bucketstats.BucketLogRoot2Round
+	DoFSyncDirThreads    bucketstats.BucketLog2Round
+	DoAccessUsec         bucketstats.BucketLogRoot2Round
+	DoAccessThreads      bucketstats.BucketLog2Round
+	DoCreateUsec         bucketstats.BucketLogRoot2Round
+	DoCreateThreads      bucketstats.BucketLog2Round
+	DoReadDirPlusUsec    bucketstats.BucketLogRoot2Round
+	DoReadDirPlusThreads bucketstats.BucketLog2Round
+	DoRename2Usec        bucketstats.BucketLogRoot2Round
+	DoRename2Threads     bucketstats.BucketLog2Round
 }
 
 type globalsStruct struct {
@@ -739,6 +798,8 @@ func initializeGlobals(confMap conf.ConfMap) {
 }
 
 func uninitializeGlobals() {
+
+	logInfof("%s", bucketstats.SprintStats(bucketstats.StatFormatParsable1, "*", "*"))
 	bucketstats.UnRegister("PFSAgent", "")
 
 	globals.logFile = nil

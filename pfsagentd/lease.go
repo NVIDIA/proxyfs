@@ -12,6 +12,56 @@ import (
 	"github.com/NVIDIA/proxyfs/jrpcfs"
 )
 
+// leaseStateInvariants containts a set of assertions that should be satisfied
+// any time a lease is locked by this process (if isLocked is true) or a process
+// is waiting for the lock (else isLocked is false).
+//
+func (dummy *globalsStruct) leaseStateInvariants(fileInode *fileInodeStruct, isLocked bool) {
+
+	if fileInode.lockWaiters == nil {
+		logFatalf("lease is locked or waiting but fileInode.lockWaiters == nil: %+v", fileInode)
+		return
+	}
+	if fileInode.leaseState == fileInodeLeaseStateNone {
+		logFatalf("lease is locked or waiting but leaseState == fileInodeLeaseStateNone: %+v", fileInode)
+		return
+	}
+
+	if isLocked {
+		switch fileInode.leaseState {
+		case fileInodeLeaseStateNone:
+			logFatalf("lease is locked but leaseState is None: %+v", fileInode)
+
+		case fileInodeLeaseStateSharedRequested:
+			logFatalf("lease is locked but leaseState is SharedRequested: %+v", fileInode)
+
+		case fileInodeLeaseStateSharedGranted:
+			// fine
+
+		case fileInodeLeaseStateSharedPromoting:
+			// fine
+
+		case fileInodeLeaseStateSharedReleasing:
+			logFatalf("lease is locked but leaseState is SharedReleasing: %+v", fileInode)
+
+		case fileInodeLeaseStateExclusiveRequested:
+			logFatalf("lease is locked but leaseState is ExclRequested: %+v", fileInode)
+
+		case fileInodeLeaseStateExclusiveGranted:
+			// fine
+		case fileInodeLeaseStateExclusiveDemoting:
+			// fine
+
+		case fileInodeLeaseStateExclusiveReleasing:
+			logFatalf("lease is locked but leaseState is ExclReleasing: %+v", fileInode)
+
+		default:
+			logFatalf("lease is locked but leaseState is Invalid: %+v", fileInode)
+		}
+	}
+
+}
+
 func (dummy *globalsStruct) Interrupt(rpcInterruptBuf []byte) {
 	var (
 		err          error
@@ -179,8 +229,8 @@ func lockInodeWithSharedLease(inodeNumber inode.InodeNumber) (fileInode *fileIno
 			if nil != err {
 				logFatalf("lockInodeWithSharedLease() unable to obtain Shared Lease [case 1] - retryRPCClient.Send() failed: %v", err)
 			}
-			leaseRequestEndTime = time.Now()
-			globals.stats.LeaseRequests_Shared_Usec.Add(uint64(leaseRequestEndTime.Sub(leaseRequestStartTime) / time.Microsecond))
+			globals.stats.LeaseRequests_Shared_Usec.Add(
+				uint64(time.Since(leaseRequestStartTime).Microseconds()))
 
 			// Record leaseReply.LeaseReplyType
 
@@ -272,6 +322,8 @@ func lockInodeWithSharedLease(inodeNumber inode.InodeNumber) (fileInode *fileIno
 	default:
 		logFatalf("lockInodeWithSharedLease() found unknown fileInode.leaseState [case 1]: %v", fileInode.leaseState)
 	}
+
+	globals.leaseStateInvariants(fileInode, false)
 
 	// Time to block
 

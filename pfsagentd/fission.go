@@ -136,6 +136,8 @@ func (fileInode *fileInodeStruct) ensureCachedStatPopulatedWhileLocked() (err er
 	return
 }
 
+var doLookupThreads uint64
+
 func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fission.LookupIn) (lookupOut *fission.LookupOut, errno syscall.Errno) {
 	var (
 		aTimeNSec         uint32
@@ -151,6 +153,13 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoLookup_calls, 1)
+
+	startTime := time.Now()
+	globals.stats.DoLookupThreads.Add(atomic.AddUint64(&doLookupThreads, 1))
+	defer func() {
+		globals.stats.DoLookupUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doLookupThreads, ^uint64(0))
+	}()
 
 	lookupPlusRequest = &jrpcfs.LookupPlusRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -250,6 +259,8 @@ func (dummy *globalsStruct) DoForget(inHeader *fission.InHeader, forgetIn *fissi
 	return
 }
 
+var doGetAttrThreads uint64
+
 func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fission.GetAttrIn) (getAttrOut *fission.GetAttrOut, errno syscall.Errno) {
 	var (
 		aTimeNSec      uint32
@@ -265,6 +276,12 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoGetAttr_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoGetAttrThreads.Add(atomic.AddUint64(&doGetAttrThreads, 1))
+	defer func() {
+		globals.stats.DoGetAttrUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doGetAttrThreads, ^uint64(0))
+	}()
 
 	fileInode = lockInodeWithSharedLease(inode.InodeNumber(inHeader.NodeID))
 
@@ -484,6 +501,8 @@ func setMTimeAndOrATime(nodeID uint64, settingMTime bool, settingMTimeNow bool, 
 	return
 }
 
+var doSetAttrThreads uint64
+
 func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fission.SetAttrIn) (setAttrOut *fission.SetAttrOut, errno syscall.Errno) {
 	var (
 		aTimeNSec              uint32
@@ -508,6 +527,12 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoSetAttr_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoSetAttrThreads.Add(atomic.AddUint64(&doSetAttrThreads, 1))
+	defer func() {
+		globals.stats.DoSetAttrUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doSetAttrThreads, ^uint64(0))
+	}()
 
 	if setAttrIn.Valid != (setAttrIn.Valid & (fission.SetAttrInValidMode | fission.SetAttrInValidUID | fission.SetAttrInValidGID | fission.SetAttrInValidSize | fission.SetAttrInValidATime | fission.SetAttrInValidMTime | fission.SetAttrInValidFH | fission.SetAttrInValidATimeNow | fission.SetAttrInValidMTimeNow | fission.SetAttrInValidLockOwner)) {
 		errno = syscall.ENOSYS
@@ -624,6 +649,8 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	return
 }
 
+var doReadLinkThreads uint64
+
 func (dummy *globalsStruct) DoReadLink(inHeader *fission.InHeader) (readLinkOut *fission.ReadLinkOut, errno syscall.Errno) {
 	var (
 		err                error
@@ -632,6 +659,12 @@ func (dummy *globalsStruct) DoReadLink(inHeader *fission.InHeader) (readLinkOut 
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoReadLink_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoReadLinkThreads.Add(atomic.AddUint64(&doReadLinkThreads, 1))
+	defer func() {
+		globals.stats.DoReadLinkUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doReadLinkThreads, ^uint64(0))
+	}()
 
 	readSymlinkRequest = &jrpcfs.ReadSymlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -656,6 +689,8 @@ func (dummy *globalsStruct) DoReadLink(inHeader *fission.InHeader) (readLinkOut 
 	return
 }
 
+var doSymLinkThreads uint64
+
 func (dummy *globalsStruct) DoSymLink(inHeader *fission.InHeader, symLinkIn *fission.SymLinkIn) (symLinkOut *fission.SymLinkOut, errno syscall.Errno) {
 	var (
 		aTimeNSec      uint32
@@ -672,6 +707,12 @@ func (dummy *globalsStruct) DoSymLink(inHeader *fission.InHeader, symLinkIn *fis
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoSymLink_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoSymLinkThreads.Add(atomic.AddUint64(&doSymLinkThreads, 1))
+	defer func() {
+		globals.stats.DoSymLinkUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doSymLinkThreads, ^uint64(0))
+	}()
 
 	symlinkRequest = &jrpcfs.SymlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -750,6 +791,8 @@ func (dummy *globalsStruct) DoMkNod(inHeader *fission.InHeader, mkNodIn *fission
 	return
 }
 
+var doMkDirThreads uint64
+
 func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission.MkDirIn) (mkDirOut *fission.MkDirOut, errno syscall.Errno) {
 	var (
 		aTimeNSec      uint32
@@ -766,6 +809,12 @@ func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoMkDir_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoMkDirThreads.Add(atomic.AddUint64(&doMkDirThreads, 1))
+	defer func() {
+		globals.stats.DoMkDirUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doMkDirThreads, ^uint64(0))
+	}()
 
 	mkdirRequest = &jrpcfs.MkdirRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -838,6 +887,8 @@ func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission
 	return
 }
 
+var doUnlinkThreads uint64
+
 func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fission.UnlinkIn) (errno syscall.Errno) {
 	var (
 		err           error
@@ -849,6 +900,12 @@ func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fissi
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoUnlink_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoUnlinkThreads.Add(atomic.AddUint64(&doUnlinkThreads, 1))
+	defer func() {
+		globals.stats.DoUnlinkUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doUnlinkThreads, ^uint64(0))
+	}()
 
 	lookupRequest = &jrpcfs.LookupRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -904,6 +961,8 @@ func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fissi
 	return
 }
 
+var doRmDirThreads uint64
+
 func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission.RmDirIn) (errno syscall.Errno) {
 	var (
 		err           error
@@ -912,6 +971,12 @@ func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRmDir_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoRmDirThreads.Add(atomic.AddUint64(&doRmDirThreads, 1))
+	defer func() {
+		globals.stats.DoRmDirUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doRmDirThreads, ^uint64(0))
+	}()
 
 	unlinkRequest = &jrpcfs.UnlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -933,6 +998,8 @@ func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission
 	return
 }
 
+var doRenameThreads uint64
+
 func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fission.RenameIn) (errno syscall.Errno) {
 	var (
 		destroyReply   *jrpcfs.Reply
@@ -946,6 +1013,12 @@ func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fissi
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRename_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoRenameThreads.Add(atomic.AddUint64(&doRenameThreads, 1))
+	defer func() {
+		globals.stats.DoRenameUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doRenameThreads, ^uint64(0))
+	}()
 
 	lookupRequest = &jrpcfs.LookupRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -1022,6 +1095,8 @@ func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fissi
 	return
 }
 
+var doLinkThreads uint64
+
 func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.LinkIn) (linkOut *fission.LinkOut, errno syscall.Errno) {
 	var (
 		aTimeNSec      uint32
@@ -1039,6 +1114,12 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoLink_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoLinkThreads.Add(atomic.AddUint64(&doLinkThreads, 1))
+	defer func() {
+		globals.stats.DoLinkUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doLinkThreads, ^uint64(0))
+	}()
 
 	fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(linkIn.OldNodeID))
 
@@ -1121,6 +1202,8 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 	return
 }
 
+var doOpenThreads uint64
+
 func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.OpenIn) (openOut *fission.OpenOut, errno syscall.Errno) {
 	var (
 		err            error
@@ -1132,6 +1215,12 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoOpen_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoOpenThreads.Add(atomic.AddUint64(&doOpenThreads, 1))
+	defer func() {
+		globals.stats.DoOpenUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doOpenThreads, ^uint64(0))
+	}()
 
 	if 0 != (openIn.Flags & fission.FOpenRequestTRUNC) {
 		fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(inHeader.NodeID))
@@ -1201,6 +1290,8 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 	return
 }
 
+var doReadThreads uint64
+
 func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.ReadIn) (readOut *fission.ReadOut, errno syscall.Errno) {
 	var (
 		curObjectOffset                           uint64
@@ -1224,7 +1315,13 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRead_calls, 1)
+	startTime := time.Now()
 	globals.stats.FUSEDoReadBytes.Add(uint64(readIn.Size))
+	globals.stats.DoReadThreads.Add(atomic.AddUint64(&doReadThreads, 1))
+	defer func() {
+		globals.stats.DoReadUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doReadThreads, ^uint64(0))
+	}()
 
 	fileInode = lockInodeWithSharedLease(inode.InodeNumber(inHeader.NodeID))
 
@@ -1363,6 +1460,8 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 	return
 }
 
+var doDoWriteThreads uint64
+
 func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission.WriteIn) (writeOut *fission.WriteOut, errno syscall.Errno) {
 	var (
 		chunkedPutContext        *chunkedPutContextStruct
@@ -1375,6 +1474,15 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoWrite_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoWriteThreads.Add(atomic.AddUint64(&doDoWriteThreads, 1))
+	defer func() {
+		if errno != 0 {
+			globals.stats.FUSEDoWriteBytes.Add(uint64(writeOut.Size))
+		}
+		globals.stats.DoWriteUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doDoWriteThreads, ^uint64(0))
+	}()
 
 	fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(inHeader.NodeID))
 
@@ -1512,11 +1620,12 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 	}
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoWrite_bytes, uint64(writeOut.Size))
-	globals.stats.FUSEDoWriteBytes.Add(uint64(writeOut.Size))
 
 	errno = 0
 	return
 }
+
+var doStatFSThreads uint64
 
 func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fission.StatFSOut, errno syscall.Errno) {
 	var (
@@ -1526,6 +1635,12 @@ func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fis
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoStatFS_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoStatFSThreads.Add(atomic.AddUint64(&doStatFSThreads, 1))
+	defer func() {
+		globals.stats.DoStatFSUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doStatFSThreads, ^uint64(0))
+	}()
 
 	statVFSRequest = &jrpcfs.StatVFSRequest{
 		MountID: globals.mountID,
@@ -1558,6 +1673,8 @@ func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fis
 	return
 }
 
+var doReleaseThreads uint64
+
 func (dummy *globalsStruct) DoRelease(inHeader *fission.InHeader, releaseIn *fission.ReleaseIn) (errno syscall.Errno) {
 	var (
 		fhInodeNumber uint64
@@ -1566,6 +1683,12 @@ func (dummy *globalsStruct) DoRelease(inHeader *fission.InHeader, releaseIn *fis
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRelease_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoReleaseThreads.Add(atomic.AddUint64(&doReleaseThreads, 1))
+	defer func() {
+		globals.stats.DoReleaseUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doReleaseThreads, ^uint64(0))
+	}()
 
 	globals.Lock()
 
@@ -1603,6 +1726,8 @@ func (dummy *globalsStruct) DoRelease(inHeader *fission.InHeader, releaseIn *fis
 	return
 }
 
+var doFSyncThreads uint64
+
 func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission.FSyncIn) (errno syscall.Errno) {
 	var (
 		fhInodeNumber uint64
@@ -1611,6 +1736,12 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoFSync_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoFSyncThreads.Add(atomic.AddUint64(&doFSyncThreads, 1))
+	defer func() {
+		globals.stats.DoFSyncUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doFSyncThreads, ^uint64(0))
+	}()
 
 	globals.Lock()
 
@@ -1639,6 +1770,8 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 	return
 }
 
+var doSetXAttrThreads uint64
+
 func (dummy *globalsStruct) DoSetXAttr(inHeader *fission.InHeader, setXAttrIn *fission.SetXAttrIn) (errno syscall.Errno) {
 	var (
 		err             error
@@ -1647,6 +1780,12 @@ func (dummy *globalsStruct) DoSetXAttr(inHeader *fission.InHeader, setXAttrIn *f
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoSetXAttr_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoSetXAttrThreads.Add(atomic.AddUint64(&doSetXAttrThreads, 1))
+	defer func() {
+		globals.stats.DoSetXAttrUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doSetXAttrThreads, ^uint64(0))
+	}()
 
 	if !globals.config.XAttrEnabled {
 		errno = syscall.ENOSYS
@@ -1677,6 +1816,8 @@ func (dummy *globalsStruct) DoSetXAttr(inHeader *fission.InHeader, setXAttrIn *f
 	return
 }
 
+var doGetXAttrThreads uint64
+
 func (dummy *globalsStruct) DoGetXAttr(inHeader *fission.InHeader, getXAttrIn *fission.GetXAttrIn) (getXAttrOut *fission.GetXAttrOut, errno syscall.Errno) {
 	var (
 		err             error
@@ -1685,6 +1826,12 @@ func (dummy *globalsStruct) DoGetXAttr(inHeader *fission.InHeader, getXAttrIn *f
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoGetXAttr_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoGetXAttrThreads.Add(atomic.AddUint64(&doGetXAttrThreads, 1))
+	defer func() {
+		globals.stats.DoGetXAttrUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doGetXAttrThreads, ^uint64(0))
+	}()
 
 	if !globals.config.XAttrEnabled {
 		errno = syscall.ENOSYS
@@ -1734,6 +1881,8 @@ func (dummy *globalsStruct) DoGetXAttr(inHeader *fission.InHeader, getXAttrIn *f
 	return
 }
 
+var doListXAttrThreads uint64
+
 func (dummy *globalsStruct) DoListXAttr(inHeader *fission.InHeader, listXAttrIn *fission.ListXAttrIn) (listXAttrOut *fission.ListXAttrOut, errno syscall.Errno) {
 	var (
 		err              error
@@ -1745,6 +1894,12 @@ func (dummy *globalsStruct) DoListXAttr(inHeader *fission.InHeader, listXAttrIn 
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoListXAttr_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoListXAttrThreads.Add(atomic.AddUint64(&doListXAttrThreads, 1))
+	defer func() {
+		globals.stats.DoListXAttrUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doListXAttrThreads, ^uint64(0))
+	}()
 
 	if !globals.config.XAttrEnabled {
 		errno = syscall.ENOSYS
@@ -1798,6 +1953,8 @@ func (dummy *globalsStruct) DoListXAttr(inHeader *fission.InHeader, listXAttrIn 
 	return
 }
 
+var doRemoveXAttrThreads uint64
+
 func (dummy *globalsStruct) DoRemoveXAttr(inHeader *fission.InHeader, removeXAttrIn *fission.RemoveXAttrIn) (errno syscall.Errno) {
 	var (
 		err                error
@@ -1806,6 +1963,12 @@ func (dummy *globalsStruct) DoRemoveXAttr(inHeader *fission.InHeader, removeXAtt
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRemoveXAttr_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoRemoveXAttrThreads.Add(atomic.AddUint64(&doRemoveXAttrThreads, 1))
+	defer func() {
+		globals.stats.DoRemoveXAttrUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doRemoveXAttrThreads, ^uint64(0))
+	}()
 
 	if !globals.config.XAttrEnabled {
 		errno = syscall.ENOSYS
@@ -1832,6 +1995,8 @@ func (dummy *globalsStruct) DoRemoveXAttr(inHeader *fission.InHeader, removeXAtt
 	return
 }
 
+var doFlushThreads uint64
+
 func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission.FlushIn) (errno syscall.Errno) {
 	var (
 		fhInodeNumber uint64
@@ -1839,6 +2004,12 @@ func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoFlush_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoFlushThreads.Add(atomic.AddUint64(&doFlushThreads, 1))
+	defer func() {
+		globals.stats.DoFlushUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doFlushThreads, ^uint64(0))
+	}()
 
 	globals.Lock()
 
@@ -1883,6 +2054,8 @@ func (dummy *globalsStruct) DoInit(inHeader *fission.InHeader, initIn *fission.I
 	return
 }
 
+var doOpenDirThreads uint64
+
 func (dummy *globalsStruct) DoOpenDir(inHeader *fission.InHeader, openDirIn *fission.OpenDirIn) (openDirOut *fission.OpenDirOut, errno syscall.Errno) {
 	var (
 		err            error
@@ -1893,6 +2066,12 @@ func (dummy *globalsStruct) DoOpenDir(inHeader *fission.InHeader, openDirIn *fis
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoOpenDir_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoOpenDirThreads.Add(atomic.AddUint64(&doOpenDirThreads, 1))
+	defer func() {
+		globals.stats.DoOpenDirUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doOpenDirThreads, ^uint64(0))
+	}()
 
 	getStatRequest = &jrpcfs.GetStatRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -1939,6 +2118,8 @@ func (dummy *globalsStruct) DoOpenDir(inHeader *fission.InHeader, openDirIn *fis
 	return
 }
 
+var doReadDirThreads uint64
+
 func (dummy *globalsStruct) DoReadDir(inHeader *fission.InHeader, readDirIn *fission.ReadDirIn) (readDirOut *fission.ReadDirOut, errno syscall.Errno) {
 	var (
 		curSize              uint32
@@ -1957,6 +2138,12 @@ func (dummy *globalsStruct) DoReadDir(inHeader *fission.InHeader, readDirIn *fis
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoReadDir_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoReadDirThreads.Add(atomic.AddUint64(&doReadDirThreads, 1))
+	defer func() {
+		globals.stats.DoReadDirUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doReadDirThreads, ^uint64(0))
+	}()
 
 	globals.Lock()
 
@@ -2026,6 +2213,8 @@ func (dummy *globalsStruct) DoReadDir(inHeader *fission.InHeader, readDirIn *fis
 	return
 }
 
+var doReleaseDirThreads uint64
+
 func (dummy *globalsStruct) DoReleaseDir(inHeader *fission.InHeader, releaseDirIn *fission.ReleaseDirIn) (errno syscall.Errno) {
 	var (
 		fhInodeNumber uint64
@@ -2034,6 +2223,12 @@ func (dummy *globalsStruct) DoReleaseDir(inHeader *fission.InHeader, releaseDirI
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoReleaseDir_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoReleaseDirThreads.Add(atomic.AddUint64(&doReleaseDirThreads, 1))
+	defer func() {
+		globals.stats.DoReleaseDirUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doReleaseDirThreads, ^uint64(0))
+	}()
 
 	globals.Lock()
 
@@ -2071,6 +2266,8 @@ func (dummy *globalsStruct) DoReleaseDir(inHeader *fission.InHeader, releaseDirI
 	return
 }
 
+var doFSyncDirThreads uint64
+
 func (dummy *globalsStruct) DoFSyncDir(inHeader *fission.InHeader, fSyncDirIn *fission.FSyncDirIn) (errno syscall.Errno) {
 	var (
 		fhInodeNumber uint64
@@ -2078,6 +2275,12 @@ func (dummy *globalsStruct) DoFSyncDir(inHeader *fission.InHeader, fSyncDirIn *f
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoFSyncDir_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoFSyncDirThreads.Add(atomic.AddUint64(&doFSyncDirThreads, 1))
+	defer func() {
+		globals.stats.DoFSyncDirUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doFSyncDirThreads, ^uint64(0))
+	}()
 
 	globals.Lock()
 
@@ -2111,6 +2314,8 @@ func (dummy *globalsStruct) DoSetLKW(inHeader *fission.InHeader, setLKWIn *fissi
 	return
 }
 
+var doAccessThreads uint64
+
 func (dummy *globalsStruct) DoAccess(inHeader *fission.InHeader, accessIn *fission.AccessIn) (errno syscall.Errno) {
 	var (
 		err           error
@@ -2119,6 +2324,12 @@ func (dummy *globalsStruct) DoAccess(inHeader *fission.InHeader, accessIn *fissi
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoAccess_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoAccessThreads.Add(atomic.AddUint64(&doAccessThreads, 1))
+	defer func() {
+		globals.stats.DoAccessUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doAccessThreads, ^uint64(0))
+	}()
 
 	accessRequest = &jrpcfs.AccessRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -2142,6 +2353,8 @@ func (dummy *globalsStruct) DoAccess(inHeader *fission.InHeader, accessIn *fissi
 	return
 }
 
+var doCreateThreads uint64
+
 func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fission.CreateIn) (createOut *fission.CreateOut, errno syscall.Errno) {
 	var (
 		aTimeNSec      uint32
@@ -2160,6 +2373,12 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoCreate_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoCreateThreads.Add(atomic.AddUint64(&doCreateThreads, 1))
+	defer func() {
+		globals.stats.DoCreateUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doCreateThreads, ^uint64(0))
+	}()
 
 	createRequest = &jrpcfs.CreateRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -2287,6 +2506,8 @@ func (dummy *globalsStruct) DoFAllocate(inHeader *fission.InHeader, fAllocateIn 
 	return
 }
 
+var doReadDirPlusThreads uint64
+
 func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlusIn *fission.ReadDirPlusIn) (readDirPlusOut *fission.ReadDirPlusOut, errno syscall.Errno) {
 	var (
 		aTimeNSec               uint32
@@ -2312,6 +2533,12 @@ func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlu
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoReadDirPlus_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoReadDirPlusThreads.Add(atomic.AddUint64(&doReadDirPlusThreads, 1))
+	defer func() {
+		globals.stats.DoReadDirPlusUsec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doReadDirPlusThreads, ^uint64(0))
+	}()
 
 	globals.Lock()
 
@@ -2419,6 +2646,8 @@ func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlu
 	return
 }
 
+var doRename2Threads uint64
+
 func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fission.Rename2In) (errno syscall.Errno) {
 	var (
 		destroyReply   *jrpcfs.Reply
@@ -2432,6 +2661,12 @@ func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fis
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRename2_calls, 1)
+	startTime := time.Now()
+	globals.stats.DoRename2Threads.Add(atomic.AddUint64(&doRename2Threads, 1))
+	defer func() {
+		globals.stats.DoRename2Usec.Add(uint64(time.Since(startTime).Microseconds()))
+		_ = atomic.AddUint64(&doRename2Threads, ^uint64(0))
+	}()
 
 	lookupRequest = &jrpcfs.LookupRequest{
 		InodeHandle: jrpcfs.InodeHandle{
