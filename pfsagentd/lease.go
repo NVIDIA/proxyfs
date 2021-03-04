@@ -31,7 +31,9 @@ func (dummy *globalsStruct) Interrupt(rpcInterruptBuf []byte) {
 	case jrpcfs.RPCInterruptTypeUnmount:
 		logFatalf("UNSUPPORTED: (*globalsStruct).Interrupt() received jrpcfs.RPCInterruptTypeUnmount")
 	case jrpcfs.RPCInterruptTypeDemote:
+		logFatalf("UNSUPPORTED: (*globalsStruct).Interrupt() received jrpcfs.RPCInterruptTypeDemote")
 	case jrpcfs.RPCInterruptTypeRelease:
+		logFatalf("UNSUPPORTED: (*globalsStruct).Interrupt() received jrpcfs.RPCInterruptTypeRelease")
 	default:
 		logFatalf("(*globalsStruct).Interrupt() received unknown rpcInterrupt.RPCInterruptType: %v", rpcInterrupt.RPCInterruptType)
 	}
