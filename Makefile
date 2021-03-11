@@ -35,6 +35,7 @@ gopkgsubdirs = \
 	utils \
 	version \
 	emswift/emswiftpkg \
+	icert/icertpkg
 	imgr/imgrpkg
 
 goplugindirs = \
@@ -44,6 +45,7 @@ gobinsubdirs = \
 	cleanproxyfs \
 	emswift \
 	fsworkout \
+	icert \
 	imgr \
 	inodeworkout \
 	pfs-crash \
