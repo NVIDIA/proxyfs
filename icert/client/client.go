@@ -20,7 +20,13 @@ func main() {
 		return
 	}
 
-	rootCAs := x509.NewCertPool()
+	// rootCAs := x509.NewCertPool()
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
 	ok := rootCAs.AppendCertsFromPEM(caCertPEM)
 	if !ok {
 		err := fmt.Errorf("rootCAs.AppendCertsFromPEM(caCertPEM) returned !ok")
