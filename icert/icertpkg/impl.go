@@ -123,7 +123,7 @@ func genCACert(organization string, generateKeyAlgorithm string, ttl time.Durati
 	return
 }
 
-func genCert(organization string, ipAddress string, generateKeyAlgorithm string, ttl time.Duration, caCertFile string, caKeyFile string, certFile string, keyFile string) (err error) {
+func genIPAddressCert(organization string, ipAddress string, generateKeyAlgorithm string, ttl time.Duration, caCertFile string, caKeyFile string, ipAddressCertFile string, ipAddressKeyFile string) (err error) {
 	var (
 		caTLSCertificate        tls.Certificate
 		caX509Certificate       *x509.Certificate
@@ -219,17 +219,17 @@ func genCert(organization string, ipAddress string, generateKeyAlgorithm string,
 	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: x509Certificate})
 	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8PrivateKey})
 
-	if certFile == keyFile {
-		err = ioutil.WriteFile(certFile, append(certPEM, keyPEM...), GeneratedFilePerm)
+	if ipAddressCertFile == ipAddressKeyFile {
+		err = ioutil.WriteFile(ipAddressCertFile, append(certPEM, keyPEM...), GeneratedFilePerm)
 		if nil != err {
 			return
 		}
 	} else {
-		err = ioutil.WriteFile(certFile, certPEM, GeneratedFilePerm)
+		err = ioutil.WriteFile(ipAddressCertFile, certPEM, GeneratedFilePerm)
 		if nil != err {
 			return
 		}
-		err = ioutil.WriteFile(keyFile, keyPEM, GeneratedFilePerm)
+		err = ioutil.WriteFile(ipAddressKeyFile, keyPEM, GeneratedFilePerm)
 		if nil != err {
 			return
 		}
