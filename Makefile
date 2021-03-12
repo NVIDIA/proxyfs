@@ -35,7 +35,7 @@ gopkgsubdirs = \
 	utils \
 	version \
 	emswift/emswiftpkg \
-	icert/icertpkg
+	icert/icertpkg \
 	imgr/imgrpkg
 
 goplugindirs = \
