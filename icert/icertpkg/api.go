@@ -46,16 +46,16 @@ func GenCACert(organization string, generateKeyAlgorithm string, ttl time.Durati
 	return genCACert(organization, generateKeyAlgorithm, ttl, certFile, keyFile)
 }
 
-// GenCert is called to generate a Certificate for the specified organization
-// and IP Address using the requested generateKeyAlgorithm who's validity
-// lasts for the desired ttl starting from time.Now(). The Certificate will
-// be signed by the CA Certificate specified via caCertFile and caKeyFile.
+// GenIPAddressCert is called to generate a Certificate for the specified
+// organization and IP Address using the requested generateKeyAlgorithm who's
+// validity lasts for the desired ttl starting from time.Now(). The Certificate
+// will be signed by the CA Certificate specified via caCertFile and caKeyFile.
 // The caCertFile and caKeyFile values may be identical. The resultant
 // PEM-encoded Certificate is written to certFile. The PEM-encoded private
 // key for the Certificate is written to keyFile. If certFile and keyFile
 // are the same, both the Certificate and its private key will be written to
 // the common file.
 //
-func GenCert(organization string, ipAddress string, generateKeyAlgorithm string, ttl time.Duration, caCertFile string, caKeyFile string, certFile string, keyFile string) (err error) {
-	return genCert(organization, ipAddress, generateKeyAlgorithm, ttl, caCertFile, caKeyFile, certFile, keyFile)
+func GenIPAddressCert(organization string, ipAddress string, generateKeyAlgorithm string, ttl time.Duration, caCertFile string, caKeyFile string, certFile string, keyFile string) (err error) {
+	return genIPAddressCert(organization, ipAddress, generateKeyAlgorithm, ttl, caCertFile, caKeyFile, certFile, keyFile)
 }
