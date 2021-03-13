@@ -3,52 +3,122 @@
 
 package main
 
+import (
+	"flag"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/NVIDIA/proxyfs/icert/icertpkg"
+)
+
+type stringSlice []string
+
+func (sS *stringSlice) String() (toReturn string) {
+	toReturn = fmt.Sprint(*sS)
+	return
+}
+
+func (sS *stringSlice) Set(s string) (err error) {
+	*sS = append(*sS, s)
+	err = nil
+	return
+}
+
+var (
+	caFlag = flag.Bool("ca", false, "generated CA Certicate usable for signing Endpoint Certificates")
+
+	generateKeyAlgorithmEd25519Flag = flag.Bool(icertpkg.GenerateKeyAlgorithmEd25519, false, "generate key via Ed25519")
+	generateKeyAlgorithmRSAFlag     = flag.Bool(icertpkg.GenerateKeyAlgorithmRSA, false, "generate key via RSA")
+
+	organizationFlag  stringSlice
+	countryFlag       stringSlice
+	provinceFlag      stringSlice
+	localityFlag      stringSlice
+	streetAddressFlag stringSlice
+	postalCodeFlag    stringSlice
+
+	ttlFlag = flag.Duration("ttl", time.Duration(0), "generated Certificate's time to live")
+
+	dnsNamesFlag    stringSlice
+	ipAddressesFlag stringSlice
+
+	caCertPemFilePathFlag = flag.String("caCert", "", "path to CA Certificate")
+	caKeyPemFilePathFlag  = flag.String("caKey", "", "path to CA Certificate's PrivateKey")
+
+	endpointCertPemFilePathFlag = flag.String("cert", "", "path to Endpoint Certificate")
+	endpointKeyPemFilePathFlag  = flag.String("key", "", "path to Endpoint Certificate's PrivateKey")
+)
+
 func main() {
-	// var (
-	// 	err error
-	// )
+	flag.Var(&organizationFlag, "organization", "generated Certificate's Subject.Organization")
+	flag.Var(&countryFlag, "country", "generated Certificate's Subject.Country")
+	flag.Var(&provinceFlag, "province", "generated Certificate's Subject.Province")
+	flag.Var(&localityFlag, "locality", "generated Certificate's Subject.Locality")
+	flag.Var(&streetAddressFlag, "streetAddress", "generated Certificate's Subject.StreetAddress")
+	flag.Var(&postalCodeFlag, "postalCode", "generated Certificate's Subject.PostalCode")
 
-	// err = icertpkg.GenCACert("Test Organization CA", icertpkg.GenerateKeyAlgorithmEd25519, time.Duration(time.Hour), "./ed25519_ca_cert.pem", "./ed25519_ca_key.pem")
-	// if nil != err {
-	// 	fmt.Printf("UNDO: icertpkg.GenCACert(,icertpkg.GenerateKeyAlgorithmEd25519,,\"./ed25519_ca_cert.pem\",\"./ed25519_ca_key.pem\") returned err: %v\n", err)
-	// 	os.Exit(1)
-	// }
-	// err = icertpkg.GenCACert("Test Organization CA", icertpkg.GenerateKeyAlgorithmEd25519, time.Duration(time.Hour), "./ed25519_ca_combined.pem", "./ed25519_ca_combined.pem")
-	// if nil != err {
-	// 	fmt.Printf("UNDO: icertpkg.GenCACert(,icertpkg.GenerateKeyAlgorithmEd25519,,\"./ed25519_ca_combined.pem\",\"./ed25519_ca_combined.pem\") returned err: %v\n", err)
-	// 	os.Exit(2)
-	// }
+	flag.Var(&dnsNamesFlag, "dns", "generated Certificate's DNS Name")
+	flag.Var(&ipAddressesFlag, "ip", "generated Certificate's IP Address")
 
-	// err = icertpkg.GenCACert("Test Organization CA", icertpkg.GenerateKeyAlgorithmRSA, time.Duration(time.Hour), "./rsa_ca_cert.pem", "./rsa_ca_key.pem")
-	// if nil != err {
-	// 	fmt.Printf("UNDO: icertpkg.GenCACert(,icertpkg.GenerateKeyAlgorithmRSA,,\"./rsa_ca_cert.pem\",\"./rsa_ca_key.pem\") returned err: %v\n", err)
-	// 	os.Exit(3)
-	// }
-	// err = icertpkg.GenCACert("Test Organization CA", icertpkg.GenerateKeyAlgorithmRSA, time.Duration(time.Hour), "./rsa_ca_combined.pem", "./rsa_ca_combined.pem")
-	// if nil != err {
-	// 	fmt.Printf("UNDO: icertpkg.GenCACert(,icertpkg.GenerateKeyAlgorithmRSA,,\"./rsa_ca_combined.pem\",\"./rsa_ca_combined.pem\") returned err: %v\n", err)
-	// 	os.Exit(4)
-	// }
+	flag.Parse()
 
-	// err = icertpkg.GenCert("Test Organization Endpoint", "127.0.0.1", icertpkg.GenerateKeyAlgorithmEd25519, time.Duration(time.Hour), "./ed25519_ca_cert.pem", "./ed25519_ca_key.pem", "./ed25519_cert.pem", "./ed25519_key.pem")
-	// if nil != err {
-	// 	fmt.Printf("UNDO: icertpkg.GenCert(,,icertpkg.GenerateKeyAlgorithmEd25519,,\"./ed25519_ca_cert.pem\",\"./ed25519_ca_key.pem\",\"./ed25519_cert.pem\",\"./ed25519_key.pem\") returned err: %v\n", err)
-	// 	os.Exit(5)
-	// }
-	// err = icertpkg.GenCert("Test Organization Endpoint", "127.0.0.1", icertpkg.GenerateKeyAlgorithmEd25519, time.Duration(time.Hour), "./ed25519_ca_combined.pem", "./ed25519_ca_combined.pem", "./ed25519_combined.pem", "./ed25519_combined.pem")
-	// if nil != err {
-	// 	fmt.Printf("UNDO: icertpkg.GenCert(,,icertpkg.GenerateKeyAlgorithmEd25519,,\"./ed25519_ca_combined.pem\",\"./ed25519_ca_combined.pem\",\"./ed25519_combined.pem\",\"./ed25519_combined.pem\") returned err: %v\n", err)
-	// 	os.Exit(6)
-	// }
+	fmt.Printf("                         caFlag: %v\n", *caFlag)
+	fmt.Println()
+	fmt.Printf("generateKeyAlgorithmEd25519Flag: %v\n", *generateKeyAlgorithmEd25519Flag)
+	fmt.Printf("    generateKeyAlgorithmRSAFlag: %v\n", *generateKeyAlgorithmRSAFlag)
+	fmt.Println()
+	fmt.Printf("               organizationFlag: %v\n", organizationFlag)
+	fmt.Printf("                    countryFlag: %v\n", countryFlag)
+	fmt.Printf("                   provinceFlag: %v\n", provinceFlag)
+	fmt.Printf("                   localityFlag: %v\n", localityFlag)
+	fmt.Printf("              streetAddressFlag: %v\n", streetAddressFlag)
+	fmt.Printf("                 postalCodeFlag: %v\n", postalCodeFlag)
+	fmt.Println()
+	fmt.Printf("                        ttlFlag: %v\n", *ttlFlag)
+	fmt.Println()
+	fmt.Printf("                   dnsNamesFlag: %v\n", dnsNamesFlag)
+	fmt.Printf("                ipAddressesFlag: %v\n", ipAddressesFlag)
+	fmt.Println()
+	fmt.Printf("          caCertPemFilePathFlag: \"%v\"\n", *caCertPemFilePathFlag)
+	fmt.Printf("           caKeyPemFilePathFlag: \"%v\"\n", *caKeyPemFilePathFlag)
+	fmt.Println()
+	fmt.Printf("    endpointCertPemFilePathFlag: \"%v\"\n", *endpointCertPemFilePathFlag)
+	fmt.Printf("     endpointKeyPemFilePathFlag: \"%v\"\n", *endpointKeyPemFilePathFlag)
 
-	// err = icertpkg.GenCert("Test Organization Endpoint", "127.0.0.1", icertpkg.GenerateKeyAlgorithmRSA, time.Duration(time.Hour), "./rsa_ca_cert.pem", "./rsa_ca_key.pem", "./rsa_cert.pem", "./rsa_key.pem")
-	// if nil != err {
-	// 	fmt.Printf("UNDO: icertpkg.GenCert(,,icertpkg.GenerateKeyAlgorithmRSA,,\"./rsa_ca_cert.pem\",\"./rsa_ca_key.pem\",\"./rsa_cert.pem\",\"./rsa_key.pem\") returned err: %v\n", err)
-	// 	os.Exit(7)
-	// }
-	// err = icertpkg.GenCert("Test Organization Endpoint", "127.0.0.1", icertpkg.GenerateKeyAlgorithmRSA, time.Duration(time.Hour), "./rsa_ca_combined.pem", "./rsa_ca_combined.pem", "./rsa_combined.pem", "./rsa_combined.pem")
-	// if nil != err {
-	// 	fmt.Printf("UNDO: icertpkg.GenCert(,,icertpkg.GenerateKeyAlgorithmRSA,,\"./rsa_ca_combined.pem\",\"./rsa_ca_combined.pem\",\"./rsa_combined.pem\",\"./rsa_combined.pem\") returned err: %v\n", err)
-	// 	os.Exit(8)
-	// }
+	if (*generateKeyAlgorithmEd25519Flag && *generateKeyAlgorithmRSAFlag) ||
+		(!*generateKeyAlgorithmEd25519Flag && !*generateKeyAlgorithmRSAFlag) {
+		fmt.Printf("Precisely one of -%s or -%s must be specified\n", icertpkg.GenerateKeyAlgorithmEd25519, icertpkg.GenerateKeyAlgorithmRSA)
+		os.Exit(1)
+	}
+
+	if time.Duration(0) == *ttlFlag {
+		fmt.Printf("A non-zero -ttl must be specified\n")
+		os.Exit(1)
+	}
+
+	if ("" == *caCertPemFilePathFlag) || ("" == *caKeyPemFilePathFlag) {
+		fmt.Printf("Both -caCert and -caKey must be specified\n")
+		os.Exit(1)
+	}
+
+	if *caFlag {
+		if (0 != len(dnsNamesFlag)) || (0 != len(ipAddressesFlag)) {
+			fmt.Printf("If -ca is specified, neither -dns nor -ip may be specified\n")
+			os.Exit(1)
+		}
+		if ("" != *endpointCertPemFilePathFlag) || ("" != *endpointKeyPemFilePathFlag) {
+			fmt.Printf("If -ca is specified, neither -cert nor -key may be specified\n")
+			os.Exit(1)
+		}
+	} else {
+		if (0 == len(dnsNamesFlag)) && (0 == len(ipAddressesFlag)) {
+			fmt.Printf("If -ca is not specified, at least one -dns or -ip must be specified\n")
+			os.Exit(1)
+		}
+		if ("" == *endpointCertPemFilePathFlag) || ("" == *endpointKeyPemFilePathFlag) {
+			fmt.Printf("If -ca is not specified, both -cert and -key must be specified\n")
+			os.Exit(1)
+		}
+	}
 }
