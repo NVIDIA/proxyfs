@@ -6,6 +6,8 @@
 package icertpkg
 
 import (
+	"crypto/x509/pkix"
+	"net"
 	"time"
 )
 
@@ -34,28 +36,28 @@ const (
 	GeneratedFilePerm = 0644
 )
 
-// GenCACert is called to generate a Certificate Authority for the specified
-// organization using the requested generateKeyAlgorithm who's validity lasts
-// for the desired ttl starting from time.Now(). The resultant PEM-encoded
-// CA Certificate is written to certFile. The PEM-encoded private key for
-// the CA Certificate is written to keyFile. If certFile and keyFile are
-// the same, both the CA Certificate and its private key will be written to
-// the common file.
+// GenCACert is called to generate a Certificate Authority using the requested
+// generateKeyAlgorithm for the specified subject who's validity last for the
+// desired ttl starting from time.Now(). The resultant PEM-encoded CA Certificate
+// is written to certFile. The PEM-encoded private key for the CA Certificate is
+// written to keyFile. If certFile and keyFile are the same, both the CA Certificate
+// and its private key will be written to the common file.
 //
-func GenCACert(organization string, generateKeyAlgorithm string, ttl time.Duration, certFile string, keyFile string) (err error) {
-	return genCACert(organization, generateKeyAlgorithm, ttl, certFile, keyFile)
+func GenCACert(generateKeyAlgorithm string, subject pkix.Name, ttl time.Duration, certFile string, keyFile string) (err error) {
+	return genCACert(generateKeyAlgorithm, subject, ttl, certFile, keyFile)
 }
 
-// GenIPAddressCert is called to generate a Certificate for the specified
-// organization and IP Address using the requested generateKeyAlgorithm who's
-// validity lasts for the desired ttl starting from time.Now(). The Certificate
-// will be signed by the CA Certificate specified via caCertFile and caKeyFile.
-// The caCertFile and caKeyFile values may be identical. The resultant
-// PEM-encoded Certificate is written to certFile. The PEM-encoded private
-// key for the Certificate is written to keyFile. If certFile and keyFile
-// are the same, both the Certificate and its private key will be written to
-// the common file.
+// GenEndpointCert is called to generate a Certificate using the requested
+// generateKeyAlgorithm for the specified subject who's validity lasts for
+// the desired ttl starting from time.Now(). The endpoints for which the
+// Certificate will apply will be the specified dnsNames and/or ipAddresses.
+// The Certificate will be signed by the CA Certificate specified via caCertFile
+// and caKeyFile. The caCertFile and caKeyFile values may be identical. The
+// resultant PEM-encoded Certificate is written to certFile. The PEM-encoded
+// private key for the Certificate is written to keyFile. If certFile and
+// keyFile are the same, both the Certificate and its private key will be
+// written to the common file.
 //
-func GenIPAddressCert(organization string, ipAddress string, generateKeyAlgorithm string, ttl time.Duration, caCertFile string, caKeyFile string, certFile string, keyFile string) (err error) {
-	return genIPAddressCert(organization, ipAddress, generateKeyAlgorithm, ttl, caCertFile, caKeyFile, certFile, keyFile)
+func GenEndpointCert(generateKeyAlgorithm string, subject pkix.Name, dnsNames []string, ipAddresses []net.IP, ttl time.Duration, caCertFile string, caKeyFile string, endpointCertFile string, endpointKeyFile string) (err error) {
+	return genEndpointCert(generateKeyAlgorithm, subject, dnsNames, ipAddresses, ttl, caCertFile, caKeyFile, endpointCertFile, endpointKeyFile)
 }

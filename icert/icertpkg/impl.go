@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-func genCACert(organization string, generateKeyAlgorithm string, ttl time.Duration, certFile string, keyFile string) (err error) {
+func genCACert(generateKeyAlgorithm string, subject pkix.Name, ttl time.Duration, certFile string, keyFile string) (err error) {
 	var (
 		caX509Certificate         []byte
 		caX509CertificateTemplate *x509.Certificate
@@ -46,15 +46,8 @@ func genCACert(organization string, generateKeyAlgorithm string, ttl time.Durati
 	timeNow = time.Now()
 
 	caX509CertificateTemplate = &x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization:  []string{organization},
-			Country:       []string{},
-			Province:      []string{},
-			Locality:      []string{},
-			StreetAddress: []string{},
-			PostalCode:    []string{},
-		},
+		SerialNumber:          serialNumber,
+		Subject:               subject,
 		NotBefore:             timeNow,
 		NotAfter:              timeNow.Add(ttl),
 		IsCA:                  true,
@@ -123,7 +116,7 @@ func genCACert(organization string, generateKeyAlgorithm string, ttl time.Durati
 	return
 }
 
-func genIPAddressCert(organization string, ipAddress string, generateKeyAlgorithm string, ttl time.Duration, caCertFile string, caKeyFile string, ipAddressCertFile string, ipAddressKeyFile string) (err error) {
+func genEndpointCert(generateKeyAlgorithm string, subject pkix.Name, dnsNames []string, ipAddresses []net.IP, ttl time.Duration, caCertFile string, caKeyFile string, endpointCertFile string, endpointKeyFile string) (err error) {
 	var (
 		caTLSCertificate        tls.Certificate
 		caX509Certificate       *x509.Certificate
@@ -152,16 +145,10 @@ func genIPAddressCert(organization string, ipAddress string, generateKeyAlgorith
 	timeNow = time.Now()
 
 	x509CertificateTemplate = &x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization:  []string{organization},
-			Country:       []string{},
-			Province:      []string{},
-			Locality:      []string{},
-			StreetAddress: []string{},
-			PostalCode:    []string{},
-		},
-		IPAddresses:           []net.IP{net.ParseIP(ipAddress)},
+		SerialNumber:          serialNumber,
+		Subject:               subject,
+		DNSNames:              dnsNames,
+		IPAddresses:           ipAddresses,
 		NotBefore:             timeNow,
 		NotAfter:              timeNow.Add(ttl),
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
@@ -219,17 +206,17 @@ func genIPAddressCert(organization string, ipAddress string, generateKeyAlgorith
 	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: x509Certificate})
 	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8PrivateKey})
 
-	if ipAddressCertFile == ipAddressKeyFile {
-		err = ioutil.WriteFile(ipAddressCertFile, append(certPEM, keyPEM...), GeneratedFilePerm)
+	if endpointCertFile == endpointKeyFile {
+		err = ioutil.WriteFile(endpointCertFile, append(certPEM, keyPEM...), GeneratedFilePerm)
 		if nil != err {
 			return
 		}
 	} else {
-		err = ioutil.WriteFile(ipAddressCertFile, certPEM, GeneratedFilePerm)
+		err = ioutil.WriteFile(endpointCertFile, certPEM, GeneratedFilePerm)
 		if nil != err {
 			return
 		}
-		err = ioutil.WriteFile(ipAddressKeyFile, keyPEM, GeneratedFilePerm)
+		err = ioutil.WriteFile(endpointKeyFile, keyPEM, GeneratedFilePerm)
 		if nil != err {
 			return
 		}
