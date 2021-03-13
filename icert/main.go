@@ -4,8 +4,10 @@
 package main
 
 import (
+	"crypto/x509/pkix"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -25,32 +27,39 @@ func (sS *stringSlice) Set(s string) (err error) {
 	return
 }
 
-var (
-	caFlag = flag.Bool("ca", false, "generated CA Certicate usable for signing Endpoint Certificates")
-
-	generateKeyAlgorithmEd25519Flag = flag.Bool(icertpkg.GenerateKeyAlgorithmEd25519, false, "generate key via Ed25519")
-	generateKeyAlgorithmRSAFlag     = flag.Bool(icertpkg.GenerateKeyAlgorithmRSA, false, "generate key via RSA")
-
-	organizationFlag  stringSlice
-	countryFlag       stringSlice
-	provinceFlag      stringSlice
-	localityFlag      stringSlice
-	streetAddressFlag stringSlice
-	postalCodeFlag    stringSlice
-
-	ttlFlag = flag.Duration("ttl", time.Duration(0), "generated Certificate's time to live")
-
-	dnsNamesFlag    stringSlice
-	ipAddressesFlag stringSlice
-
-	caCertPemFilePathFlag = flag.String("caCert", "", "path to CA Certificate")
-	caKeyPemFilePathFlag  = flag.String("caKey", "", "path to CA Certificate's PrivateKey")
-
-	endpointCertPemFilePathFlag = flag.String("cert", "", "path to Endpoint Certificate")
-	endpointKeyPemFilePathFlag  = flag.String("key", "", "path to Endpoint Certificate's PrivateKey")
-)
-
 func main() {
+	var (
+		verboseFlag = flag.Bool("v", false, "verbose mode")
+
+		caFlag = flag.Bool("ca", false, "generated CA Certicate usable for signing Endpoint Certificates")
+
+		generateKeyAlgorithmEd25519Flag = flag.Bool(icertpkg.GenerateKeyAlgorithmEd25519, false, "generate key via Ed25519")
+		generateKeyAlgorithmRSAFlag     = flag.Bool(icertpkg.GenerateKeyAlgorithmRSA, false, "generate key via RSA")
+
+		organizationFlag  stringSlice
+		countryFlag       stringSlice
+		provinceFlag      stringSlice
+		localityFlag      stringSlice
+		streetAddressFlag stringSlice
+		postalCodeFlag    stringSlice
+
+		ttlFlag = flag.Duration("ttl", time.Duration(0), "generated Certificate's time to live")
+
+		dnsNamesFlag    stringSlice
+		ipAddressesFlag stringSlice
+
+		caCertPemFilePathFlag = flag.String("caCert", "", "path to CA Certificate")
+		caKeyPemFilePathFlag  = flag.String("caKey", "", "path to CA Certificate's PrivateKey")
+
+		endpointCertPemFilePathFlag = flag.String("cert", "", "path to Endpoint Certificate")
+		endpointKeyPemFilePathFlag  = flag.String("key", "", "path to Endpoint Certificate's PrivateKey")
+
+		err                  error
+		generateKeyAlgorithm string
+		ipAddresses          []net.IP
+		subject              pkix.Name
+	)
+
 	flag.Var(&organizationFlag, "organization", "generated Certificate's Subject.Organization")
 	flag.Var(&countryFlag, "country", "generated Certificate's Subject.Country")
 	flag.Var(&provinceFlag, "province", "generated Certificate's Subject.Province")
@@ -63,31 +72,41 @@ func main() {
 
 	flag.Parse()
 
-	fmt.Printf("                         caFlag: %v\n", *caFlag)
-	fmt.Println()
-	fmt.Printf("generateKeyAlgorithmEd25519Flag: %v\n", *generateKeyAlgorithmEd25519Flag)
-	fmt.Printf("    generateKeyAlgorithmRSAFlag: %v\n", *generateKeyAlgorithmRSAFlag)
-	fmt.Println()
-	fmt.Printf("               organizationFlag: %v\n", organizationFlag)
-	fmt.Printf("                    countryFlag: %v\n", countryFlag)
-	fmt.Printf("                   provinceFlag: %v\n", provinceFlag)
-	fmt.Printf("                   localityFlag: %v\n", localityFlag)
-	fmt.Printf("              streetAddressFlag: %v\n", streetAddressFlag)
-	fmt.Printf("                 postalCodeFlag: %v\n", postalCodeFlag)
-	fmt.Println()
-	fmt.Printf("                        ttlFlag: %v\n", *ttlFlag)
-	fmt.Println()
-	fmt.Printf("                   dnsNamesFlag: %v\n", dnsNamesFlag)
-	fmt.Printf("                ipAddressesFlag: %v\n", ipAddressesFlag)
-	fmt.Println()
-	fmt.Printf("          caCertPemFilePathFlag: \"%v\"\n", *caCertPemFilePathFlag)
-	fmt.Printf("           caKeyPemFilePathFlag: \"%v\"\n", *caKeyPemFilePathFlag)
-	fmt.Println()
-	fmt.Printf("    endpointCertPemFilePathFlag: \"%v\"\n", *endpointCertPemFilePathFlag)
-	fmt.Printf("     endpointKeyPemFilePathFlag: \"%v\"\n", *endpointKeyPemFilePathFlag)
+	if *verboseFlag {
+		fmt.Printf("                         caFlag: %v\n", *caFlag)
+		fmt.Println()
+		fmt.Printf("generateKeyAlgorithmEd25519Flag: %v\n", *generateKeyAlgorithmEd25519Flag)
+		fmt.Printf("    generateKeyAlgorithmRSAFlag: %v\n", *generateKeyAlgorithmRSAFlag)
+		fmt.Println()
+		fmt.Printf("               organizationFlag: %v\n", organizationFlag)
+		fmt.Printf("                    countryFlag: %v\n", countryFlag)
+		fmt.Printf("                   provinceFlag: %v\n", provinceFlag)
+		fmt.Printf("                   localityFlag: %v\n", localityFlag)
+		fmt.Printf("              streetAddressFlag: %v\n", streetAddressFlag)
+		fmt.Printf("                 postalCodeFlag: %v\n", postalCodeFlag)
+		fmt.Println()
+		fmt.Printf("                        ttlFlag: %v\n", *ttlFlag)
+		fmt.Println()
+		fmt.Printf("                   dnsNamesFlag: %v\n", dnsNamesFlag)
+		fmt.Printf("                ipAddressesFlag: %v\n", ipAddressesFlag)
+		fmt.Println()
+		fmt.Printf("          caCertPemFilePathFlag: \"%v\"\n", *caCertPemFilePathFlag)
+		fmt.Printf("           caKeyPemFilePathFlag: \"%v\"\n", *caKeyPemFilePathFlag)
+		fmt.Println()
+		fmt.Printf("    endpointCertPemFilePathFlag: \"%v\"\n", *endpointCertPemFilePathFlag)
+		fmt.Printf("     endpointKeyPemFilePathFlag: \"%v\"\n", *endpointKeyPemFilePathFlag)
+	}
 
-	if (*generateKeyAlgorithmEd25519Flag && *generateKeyAlgorithmRSAFlag) ||
-		(!*generateKeyAlgorithmEd25519Flag && !*generateKeyAlgorithmRSAFlag) {
+	if *generateKeyAlgorithmEd25519Flag {
+		if *generateKeyAlgorithmRSAFlag {
+			fmt.Printf("Precisely one of -%s or -%s must be specified\n", icertpkg.GenerateKeyAlgorithmEd25519, icertpkg.GenerateKeyAlgorithmRSA)
+			os.Exit(1)
+		}
+
+		generateKeyAlgorithm = icertpkg.GenerateKeyAlgorithmEd25519
+	} else if *generateKeyAlgorithmRSAFlag {
+		generateKeyAlgorithm = icertpkg.GenerateKeyAlgorithmRSA
+	} else {
 		fmt.Printf("Precisely one of -%s or -%s must be specified\n", icertpkg.GenerateKeyAlgorithmEd25519, icertpkg.GenerateKeyAlgorithmRSA)
 		os.Exit(1)
 	}
@@ -119,6 +138,43 @@ func main() {
 		if ("" == *endpointCertPemFilePathFlag) || ("" == *endpointKeyPemFilePathFlag) {
 			fmt.Printf("If -ca is not specified, both -cert and -key must be specified\n")
 			os.Exit(1)
+		}
+	}
+
+	subject = pkix.Name{
+		Organization:  organizationFlag,
+		Country:       countryFlag,
+		Province:      provinceFlag,
+		Locality:      localityFlag,
+		StreetAddress: streetAddressFlag,
+		PostalCode:    postalCodeFlag,
+	}
+
+	if *caFlag {
+		err = icertpkg.GenCACert(generateKeyAlgorithm, subject, *ttlFlag, *caCertPemFilePathFlag, *caKeyPemFilePathFlag)
+		if nil != err {
+			fmt.Printf("icertpkg.GenCACert() failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		if *verboseFlag {
+			fmt.Printf("icertpkg.GenCACert() generated caCert: \"%s\" and caKey: \"%s\"\n", *caCertPemFilePathFlag, *caKeyPemFilePathFlag)
+		}
+	} else {
+		ipAddresses = make([]net.IP, 0, len(ipAddressesFlag))
+
+		for _, ipAddress := range ipAddressesFlag {
+			ipAddresses = append(ipAddresses, net.ParseIP(ipAddress))
+		}
+
+		err = icertpkg.GenEndpointCert(generateKeyAlgorithm, subject, dnsNamesFlag, ipAddresses, *ttlFlag, *caCertPemFilePathFlag, *caKeyPemFilePathFlag, *endpointCertPemFilePathFlag, *endpointKeyPemFilePathFlag)
+		if nil != err {
+			fmt.Printf("icertpkg.GenEndpointCert() failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		if *verboseFlag {
+			fmt.Printf("icertpkg.GenEndpointCert() generated cert: \"%s\" and key: \"%s\"\n", *endpointCertPemFilePathFlag, *endpointKeyPemFilePathFlag)
 		}
 	}
 }
