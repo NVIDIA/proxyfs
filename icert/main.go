@@ -122,21 +122,21 @@ func main() {
 	}
 
 	if *caFlag {
-		if (0 != len(dnsNamesFlag)) || (0 != len(ipAddressesFlag)) {
-			fmt.Printf("If -ca is specified, neither -dns nor -ip may be specified\n")
-			os.Exit(1)
-		}
 		if ("" != *endpointCertPemFilePathFlag) || ("" != *endpointKeyPemFilePathFlag) {
 			fmt.Printf("If -ca is specified, neither -cert nor -key may be specified\n")
 			os.Exit(1)
 		}
-	} else {
-		if (0 == len(dnsNamesFlag)) && (0 == len(ipAddressesFlag)) {
-			fmt.Printf("If -ca is not specified, at least one -dns or -ip must be specified\n")
+		if (0 != len(dnsNamesFlag)) || (0 != len(ipAddressesFlag)) {
+			fmt.Printf("If -ca is specified, neither -dns nor -ip may be specified\n")
 			os.Exit(1)
 		}
+	} else {
 		if ("" == *endpointCertPemFilePathFlag) || ("" == *endpointKeyPemFilePathFlag) {
 			fmt.Printf("If -ca is not specified, both -cert and -key must be specified\n")
+			os.Exit(1)
+		}
+		if (0 == len(dnsNamesFlag)) && (0 == len(ipAddressesFlag)) {
+			fmt.Printf("If -ca is not specified, at least one -dns or -ip must be specified\n")
 			os.Exit(1)
 		}
 	}
