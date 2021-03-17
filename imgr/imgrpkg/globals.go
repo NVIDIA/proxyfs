@@ -19,7 +19,6 @@ import (
 type configStruct struct {
 	PrivateIPAddr  string
 	PublicIPAddr   string
-	JSONRPCPort    uint16 // To be served only on PrivateIPAddr via TCP
 	RetryRPCPort   uint16 // To be served only on PublicIPAddr  via TLS
 	HTTPServerPort uint16 // To be served only on PrivateIPAddr via TCP
 
@@ -118,10 +117,6 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 	globals.config.PrivateIPAddr, err = confMap.FetchOptionValueString("IMGR", "PrivateIPAddr")
-	if nil != err {
-		logFatal(err)
-	}
-	globals.config.JSONRPCPort, err = confMap.FetchOptionValueUint16("IMGR", "JSONRPCPort")
 	if nil != err {
 		logFatal(err)
 	}
@@ -224,7 +219,6 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 func uninitializeGlobals() (err error) {
 	globals.config.PrivateIPAddr = ""
 	globals.config.PublicIPAddr = ""
-	globals.config.JSONRPCPort = 0
 	globals.config.RetryRPCPort = 0
 	globals.config.HTTPServerPort = 0
 
