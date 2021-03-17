@@ -80,7 +80,7 @@ func testUpCall(t *testing.T) {
 	// Send an upcall() from the server to the client and
 	// verify that client method is called.
 	var msg1 []byte = []byte("server msg back to client")
-	rrSvr.SendCallback(myUniqueClientID, msg1)
+	rrSvr.SendCallback(rrClnt.GetMyUniqueID(), msg1)
 
 	// Wait until Interrupt() was called
 	cb.Lock()

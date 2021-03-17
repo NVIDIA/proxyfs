@@ -390,7 +390,7 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 		sendWg.Add(1)
 		go func(z int, i int) {
 			sendIt(t, client, z, sendCnt, &sendWg, &prevWg, agentID, method, i)
-			rrSvr.SendCallback(clientID, msg1)
+			rrSvr.SendCallback(client.GetMyUniqueID(), msg1)
 		}(z, i)
 
 		// Occasionally drop the connection to the server to

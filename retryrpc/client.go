@@ -66,6 +66,11 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 		for {
 			err = client.initialDial()
 			if err == nil {
+
+				// Now that we have a connection - we can setup bucketstats
+				if client.connection.state == CONNECTED {
+					bucketstats.Register("proxyfs.retryrpc", client.GetStatsGroupName(), &client.stats)
+				}
 				break
 			}
 			client.Unlock()
@@ -80,11 +85,6 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 			if client.connection.state != INITIAL {
 				break
 			}
-		}
-
-		// Now that we have a connection - we can setup bucketstats
-		if client.connection.state == CONNECTED {
-			bucketstats.Register("proxyfs.retryrpc", client.GetStatsGroupName(), &client.stats)
 		}
 	}
 
