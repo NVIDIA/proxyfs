@@ -6,6 +6,7 @@ package imgrpkg
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -58,13 +59,10 @@ func stopHTTPServer() (err error) {
 func (dummy *globalsStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
 	switch request.Method {
 	case http.MethodDelete:
-		globals.httpServerWG.Add(1)
-		go serveHTTPDelete(responseWriter, request)
+		serveHTTPDelete(responseWriter, request)
 	case http.MethodGet:
-		globals.httpServerWG.Add(1)
 		serveHTTPGet(responseWriter, request)
 	case http.MethodPut:
-		globals.httpServerWG.Add(1)
 		serveHTTPPut(responseWriter, request)
 	default:
 		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
@@ -84,8 +82,6 @@ func serveHTTPDelete(responseWriter http.ResponseWriter, request *http.Request) 
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
-
-	globals.httpServerWG.Done()
 }
 
 func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
@@ -109,12 +105,6 @@ func serveHTTPGet(responseWriter http.ResponseWriter, request *http.Request) {
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
-
-	globals.httpServerWG.Done()
-}
-
-func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
-	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
 }
 
 func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
@@ -128,6 +118,7 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Requ
 		logFatalf("json.Marshal(globals.config) failed: %v", err)
 	}
 
+	responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(confMapJSON)))
 	responseWriter.Header().Set("Content-Type", "application/json")
 	responseWriter.WriteHeader(http.StatusOK)
 
@@ -145,6 +136,7 @@ func serveHTTPGetOfStats(responseWriter http.ResponseWriter, request *http.Reque
 
 	statsAsString = bucketstats.SprintStats(bucketstats.StatFormatParsable1, "*", "*")
 
+	responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(statsAsString)))
 	responseWriter.Header().Set("Content-Type", "text/plain")
 	responseWriter.WriteHeader(http.StatusOK)
 
@@ -152,6 +144,10 @@ func serveHTTPGetOfStats(responseWriter http.ResponseWriter, request *http.Reque
 	if nil != err {
 		logWarnf("responseWriter.Write([]byte(statsAsString)) failed: %v", err)
 	}
+}
+
+func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
 }
 
 func serveHTTPPut(responseWriter http.ResponseWriter, request *http.Request) {
@@ -167,8 +163,6 @@ func serveHTTPPut(responseWriter http.ResponseWriter, request *http.Request) {
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
-
-	globals.httpServerWG.Done()
 }
 
 func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
