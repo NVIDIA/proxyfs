@@ -363,6 +363,11 @@ func (client *Client) Send(method string, request interface{}, reply interface{}
 	return client.send(method, request, reply)
 }
 
+// GetMyUniqueID returns the unique ID of the client
+func (client *Client) GetMyUniqueID() string {
+	return client.myUniqueID
+}
+
 // GetStatsGroupName returns the bucketstats GroupName for this client
 func (client *Client) GetStatsGroupName() (s string) {
 
