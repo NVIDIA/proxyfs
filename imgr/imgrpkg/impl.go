@@ -23,11 +23,6 @@ func start(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	err = startJSONRPCServer()
-	if nil != err {
-		return
-	}
-
 	err = startHTTPServer()
 	if nil != err {
 		return
@@ -38,11 +33,6 @@ func start(confMap conf.ConfMap) (err error) {
 
 func stop() (err error) {
 	err = stopHTTPServer()
-	if nil != err {
-		return
-	}
-
-	err = stopJSONRPCServer()
 	if nil != err {
 		return
 	}
