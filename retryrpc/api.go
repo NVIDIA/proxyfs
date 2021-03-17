@@ -41,6 +41,7 @@ type Server struct {
 	svrMap           map[string]*methodArgs // Key: Method name
 	ipaddr           string                 // IP address server listens too
 	port             int                    // Port of server
+	clientIDNonce    uint64                 // Nonce used to create a unique client ID
 	netListener      net.Listener
 	tlsListener      net.Listener
 
@@ -267,8 +268,6 @@ type clientState int
 const (
 	// INITIAL means the Client struct has just been created
 	INITIAL clientState = iota + 1
-	// DISCONNECTED means the Client has lost the connection to the server
-	DISCONNECTED
 	// CONNECTED means the Client is connected to the server
 	CONNECTED
 	// RETRANSMITTING means a goroutine is in the middle of recovering
@@ -354,8 +353,6 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 		err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
 		return nil, err
 	}
-
-	bucketstats.Register("proxyfs.retryrpc", client.GetStatsGroupName(), &client.stats)
 
 	return client, err
 }

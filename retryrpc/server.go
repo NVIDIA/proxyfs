@@ -21,7 +21,6 @@ import (
 
 // Variable to control debug output
 var printDebugLogs bool = false
-var debugPutGet bool = false
 
 // TODO - test if Register has been called???
 
@@ -54,6 +53,8 @@ func (server *Server) run() {
 		server.connLock.Lock()
 		elm := server.connections.PushBack(conn)
 		server.connLock.Unlock()
+
+		// TODO - update comment per two cases initialDial() and reDial()....
 
 		// The first message sent on this socket by the client is the uniqueID.
 		//
@@ -179,6 +180,10 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 	myConnCtx.activeRPCsWG.Done()
 }
 
+// TODO - update this comment for initialDial() vs reDial() cases!!!
+// should we rename function????
+
+//
 // getClientIDAndWait reads the first message off the new connection.
 // The client sends its uniqueID before sending it's first RPC.
 //
@@ -206,26 +211,65 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		return
 	}
 
-	if msgType != PassID {
-		err = fmt.Errorf("Server expecting msgType PassID and received: %v", msgType)
+	if (msgType != PassID) && (msgType != AskMyUniqueID) {
+		err = fmt.Errorf("Server expecting msgType PassID or AskMyUniqueID and received: %v", msgType)
 		return
 	}
 
-	var connUniqueID string
-	err = json.Unmarshal(buf, &connUniqueID)
-	if err != nil {
-		return
-	}
+	if msgType == PassID {
+		var connUniqueID string
+		err = json.Unmarshal(buf, &connUniqueID)
+		if err != nil {
+			return
+		}
 
-	// Check if this is the first time we have seen this client
-	server.Lock()
-	lci, ok := server.perClientInfo[connUniqueID]
-	if !ok {
+		// Check if this is the first time we have seen this client
+		server.Lock()
+		lci, ok := server.perClientInfo[connUniqueID]
+		if !ok {
+			// TODO - what???
+			server.Unlock()
+		} else {
+			server.Unlock()
+			ci = lci
+
+			// Wait for the serviceClient() goroutine from a prior connection to exit
+			// before proceeding.
+			ci.cCtx.Lock()
+			for !ci.cCtx.serviceClientExited {
+				ci.cCtx.cond.Wait()
+			}
+			ci.cCtx.Unlock()
+
+			// Now wait for any outstanding RPCs to complete
+			ci.cCtx.activeRPCsWG.Wait()
+
+			// Set cCtx back pointer to ci
+			ci.Lock()
+			cCtx.Lock()
+			cCtx.ci = ci
+			cCtx.Unlock()
+
+			ci.cCtx = cCtx
+			ci.Unlock()
+		}
+	} else {
+		var (
+			localIOR ioReply
+		)
+
 		// First time we have seen this client
-		c := &clientInfo{cCtx: cCtx, myUniqueID: connUniqueID}
+
+		// Create a unique client ID and return to client
+		server.Lock()
+		server.clientIDNonce++
+		newUniqueID := fmt.Sprintf("unqClnt-%v", server.clientIDNonce)
+
+		// Setup new client data structures
+		c := &clientInfo{cCtx: cCtx, myUniqueID: newUniqueID}
 		c.completedRequest = make(map[requestID]*completedEntry)
 		c.completedRequestLRU = list.New()
-		server.perClientInfo[connUniqueID] = c
+		server.perClientInfo[newUniqueID] = c
 		server.Unlock()
 		ci = c
 		cCtx.Lock()
@@ -233,29 +277,15 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		cCtx.Unlock()
 
 		bucketstats.Register("proxyfs.retryrpc", c.myUniqueID, &c.stats)
-	} else {
-		server.Unlock()
-		ci = lci
 
-		// Wait for the serviceClient() goroutine from a prior connection to exit
-		// before proceeding.
-		ci.cCtx.Lock()
-		for ci.cCtx.serviceClientExited != true {
-			ci.cCtx.cond.Wait()
-		}
-		ci.cCtx.Unlock()
+		// Build reply and send back to client
+		localIOR.JResult = []byte(newUniqueID)
+		setupHdrReply(&localIOR, ReturnUniqueID)
 
-		// Now wait for any outstanding RPCs to complete
-		ci.cCtx.activeRPCsWG.Wait()
+		// TODO -
+		fmt.Printf("SERVER: returning: %+v\n", localIOR)
 
-		// Set cCtx back pointer to ci
-		ci.Lock()
-		cCtx.Lock()
-		cCtx.ci = ci
-		cCtx.Unlock()
-
-		ci.cCtx = cCtx
-		ci.Unlock()
+		server.returnResults(&localIOR, cCtx)
 	}
 
 	return ci, err
@@ -266,7 +296,7 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 	for {
 		// Get RPC request
 		buf, msgType, getErr := getIO(uint64(0), server.deadlineIO, cCtx.conn)
-		if os.IsTimeout(getErr) == false && getErr != nil {
+		if !os.IsTimeout(getErr) && getErr != nil {
 
 			// Drop response on the floor.   Client will either reconnect or
 			// this response will age out of the queues.
@@ -278,17 +308,18 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 		}
 
 		server.Lock()
-		if server.halting == true {
+		if server.halting {
 			server.Unlock()
 			return
 		}
 
-		if os.IsTimeout(getErr) == true {
+		if os.IsTimeout(getErr) {
 			server.Unlock()
 			continue
 		}
 
 		if msgType != RPC {
+			// TODO - panic? log message....
 			fmt.Printf("serviceClient() received invalid msgType: %v - dropping\n", msgType)
 			continue
 		}
@@ -442,7 +473,7 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 
 			ci.Lock()
 			ci.cCtx.Lock()
-			if ci.isEmpty() && ci.cCtx.serviceClientExited == true {
+			if ci.isEmpty() && ci.cCtx.serviceClientExited {
 				bucketstats.UnRegister("proxyfs.retryrpc", ci.myUniqueID)
 				delete(server.perClientInfo, key)
 				logger.Infof("Trim - DELETE inactive clientInfo with ID: %v", ci.myUniqueID)

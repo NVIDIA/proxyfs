@@ -64,7 +64,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 		connectionRetryDelay = ConnectionRetryInitialDelay
 
 		for {
-			err = client.dial()
+			err = client.initialDial()
 			if err == nil {
 				break
 			}
@@ -81,6 +81,11 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 				break
 			}
 		}
+
+		// Now that we have a connection - we can setup bucketstats
+		if client.connection.state == CONNECTED {
+			bucketstats.Register("proxyfs.retryrpc", client.GetStatsGroupName(), &client.stats)
+		}
 	}
 
 	// Put request data into structure to be be marshaled into JSON
@@ -88,7 +93,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	jreq.Params[0] = rpcRequest
 	jreq.MyUniqueID = client.myUniqueID
 
-	if client.halting == true {
+	if client.halting {
 		client.Unlock()
 		e := fmt.Errorf("Calling retryrpc.Send() without dialing")
 		logger.PanicfWithError(e, "")
@@ -364,7 +369,7 @@ func (client *Client) retransmit(genNum uint64) {
 	connectionRetryDelay = ConnectionRetryInitialDelay
 
 	for {
-		err := client.dial()
+		err := client.reDial()
 		// If we were able to connect then break - otherwise retry
 		// after a delay
 		if err == nil {
@@ -380,7 +385,7 @@ func (client *Client) retransmit(genNum uint64) {
 		connectionRetryDelay *= ConnectionRetryDelayMultiplier
 		client.Lock()
 		// While the lock was dropped we may be halting....
-		if client.halting == true {
+		if client.halting {
 			client.Unlock()
 			return
 		}
@@ -395,7 +400,41 @@ func (client *Client) retransmit(genNum uint64) {
 	client.Unlock()
 }
 
-// Send myUniqueID to server
+// Get myUniqueID from server.   This is called when the client is
+// creating this connection and wants a unique ID from the server.
+//
+// NOTE: Client lock is already held during this call.
+func (client *Client) getMyUniqueID(tlsConn *tls.Conn) (err error) {
+
+	// Setup ioreq to write structure on socket to server
+	iinreq, err := buildINeedIDRequest()
+	if err != nil {
+		e := fmt.Errorf("Client buildINeedIDRequest returned err: %v", err)
+		logger.PanicfWithError(e, "")
+		return err
+	}
+
+	// We only have the header to send
+	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
+	err = binary.Write(tlsConn, binary.BigEndian, iinreq.Hdr)
+	if err != nil {
+		return
+	}
+
+	// Ask the server for the unique ID.
+	//
+	// TODO - return error back up.... close() the connection???
+	// upper layer should do the redial
+	client.myUniqueID, err = client.readClientID(client.connection.genNum, tlsConn)
+	if err != nil {
+		// TODO - close() connection
+	}
+
+	return
+}
+
+// Send myUniqueID to server.   This is called when the client already
+// knows myUniqueID
 //
 // NOTE: Client lock is already held during this call.
 func (client *Client) sendMyInfo(tlsConn *tls.Conn) (err error) {
@@ -415,7 +454,7 @@ func (client *Client) sendMyInfo(tlsConn *tls.Conn) (err error) {
 		return
 	}
 
-	// Send MyUniqueID
+	// We are an existinc client - send "MyUniqueID"
 	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
 	bytesWritten, writeErr := tlsConn.Write(isreq.MyUniqueID)
 
@@ -435,11 +474,16 @@ func (client *Client) sendMyInfo(tlsConn *tls.Conn) (err error) {
 	return
 }
 
-// dial sets up connection to server
+// reDial sets up a connection to the server as a result of
+// retransmit being called.
+//
+// This is different than initialDial() which gets called the
+// first time send() is called.
+//
 // It is assumed that the client lock is held.
 //
 // NOTE: Client lock is held
-func (client *Client) dial() (err error) {
+func (client *Client) reDial() (err error) {
 	var entryState = client.connection.state
 
 	client.connection.tlsConfig = &tls.Config{
@@ -466,6 +510,116 @@ func (client *Client) dial() (err error) {
 	// Send myUniqueID to server.   If this fails the dial will
 	// be retried.
 	err = client.sendMyInfo(tlsConn)
+	if err != nil {
+		_ = client.connection.tlsConn.Close()
+		client.connection.tlsConn = nil
+		client.connection.state = entryState
+		return
+	}
+
+	// Start readResponse goroutine to read responses from server
+	client.goroutineWG.Add(1)
+	go client.readReplies(client.connection.genNum, tlsConn)
+
+	return
+}
+
+// readClientID reads unique client ID response from server
+//
+// Client lock is held
+//
+// NOTE: Client lock is held
+func (client *Client) readClientID(callingGenNum uint64, tlsConn *tls.Conn) (myUniqueID string, err error) {
+	var localCnt int
+
+	for {
+
+		// Wait reply from server
+		buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, tlsConn)
+
+		// This must happen before checking error
+		if client.halting {
+			return
+		}
+
+		// Ignore timeouts on idle connections while reading header
+		//
+		// We consider a connection to be idle if we have no outstanding requests when
+		// we get the timeout.   Otherwise, we call retransmit.
+		if os.IsTimeout(getErr) && localCnt == 0 {
+			continue
+		}
+
+		// TODO - don't loop forever - breakout after some many tries
+
+		if getErr != nil {
+
+			// TODO - if error initially, just close socket, return error and let initialDial()
+			// retry.   close may already be done by upper layer... verify
+			/*
+				// If we had an error reading socket - call retransmit() and exit
+				// the goroutine.  retransmit()/dial() will start another
+				// readReplies() goroutine.
+				client.retransmit(callingGenNum)
+			*/
+			return
+		}
+
+		if msgType != ReturnUniqueID {
+			// TODO - panic???
+			err = fmt.Errorf("CLIENT - invalid msgType: %v", msgType)
+			return
+		}
+
+		fmt.Printf("CLIENT: read buf: %v\n", string(buf))
+		myUniqueID = string(buf)
+		fmt.Printf("readClientID returned: %v\n", myUniqueID)
+
+		return
+	}
+}
+
+// initialDial does the initial dial of the server and retrieves the
+// unique ID for this connection from the server.
+//
+// If the connection fails and retransmit() is called then we will
+// redial with reDial() instead of initialDial().
+//
+// The reason for the different dial function is that in one case
+// we already know myUniqueId and in the other case we must get
+// myUniqueId from the server.
+//
+// It is assumed that the client lock is held.
+//
+// NOTE: Client lock is held
+func (client *Client) initialDial() (err error) {
+	var entryState = client.connection.state
+
+	client.connection.tlsConfig = &tls.Config{
+		RootCAs: client.connection.x509CertPool,
+	}
+
+	// Now dial the server
+	d := &net.Dialer{KeepAlive: client.keepAlivePeriod}
+	tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
+	if dialErr != nil {
+		err = fmt.Errorf("tls.Dial() failed: %v", dialErr)
+		return
+	}
+
+	if client.connection.tlsConn != nil {
+		client.connection.tlsConn.Close()
+		client.connection.tlsConn = nil
+	}
+
+	client.connection.tlsConn = tlsConn
+	client.connection.state = CONNECTED
+	client.connection.genNum++
+
+	// Ask server for my unique ID
+	//
+	// If this fails the dial will be retried.
+	err = client.getMyUniqueID(tlsConn)
 	if err != nil {
 		_ = client.connection.tlsConn.Close()
 		client.connection.tlsConn = nil

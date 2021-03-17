@@ -121,7 +121,14 @@ const (
 	RPC MsgType = iota + 1
 	// Upcall represents an upcall from server to client
 	Upcall
-	// PassID is the message sent by the client to identify itself to server
+	// AskMyUniqueID is the message sent by the client during it's initial connection
+	// to get it's unique client ID.
+	AskMyUniqueID
+	// ReturnUniqueID is the message sent by the server to client after initial connection.
+	// The server is returning the unique ID created for this client.
+	ReturnUniqueID
+	// PassID is the message sent by the client to identify itself to server.
+	// This is used when we are retransmitting.
 	PassID
 )
 
@@ -147,11 +154,20 @@ type ioReply struct {
 }
 
 // internalSetIDRequest is the structure sent over the wire
-// when the connection is first made.   This is how the server
-// learns the client ID
+// when the connection existed, was broken and is being recreated
+// by the client as a result of reDial().   This is how the server
+// learns existing client ID.
 type internalSetIDRequest struct {
 	Hdr        ioHeader
 	MyUniqueID []byte // Client unique ID as byte
+}
+
+// internalINeedIDRequest is the structure sent over the wire
+// when the connection is first made.   This is how the client
+// learns its client ID
+type internalINeedIDRequest struct {
+	Hdr      ioHeader
+	UniqueID []byte // Client unique ID as byte
 }
 
 type replyCtx struct {
@@ -232,6 +248,19 @@ func buildSetIDRequest(myUniqueID string) (isreq *internalSetIDRequest, err erro
 	return
 }
 
+func buildINeedIDRequest() (iinreq *internalINeedIDRequest, err error) {
+	iinreq = &internalINeedIDRequest{}
+	if err != nil {
+		return nil, err
+	}
+	iinreq.Hdr.Len = uint32(0)
+	iinreq.Hdr.Protocol = uint16(JSON)
+	iinreq.Hdr.Version = currentRetryVersion
+	iinreq.Hdr.Type = AskMyUniqueID
+	iinreq.Hdr.Magic = headerMagic
+	return
+}
+
 func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, msgType MsgType, err error) {
 	if printDebugLogs {
 		logger.Infof("conn: %v", conn)
@@ -251,11 +280,12 @@ func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, 
 		return
 	}
 
+	msgType = hdr.Type
 	if hdr.Len == 0 {
-		err = fmt.Errorf("hdr.Len == 0")
+		// TODO - ?????
+		// err = fmt.Errorf("hdr.Len == 0")
 		return
 	}
-	msgType = hdr.Type
 
 	// Now read the rest of the structure off the wire.
 	var numBytes int
