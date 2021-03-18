@@ -13,7 +13,7 @@ func start(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	err = startInodeTableManagement()
+	err = startVolumeManagement()
 	if nil != err {
 		return
 	}
@@ -42,7 +42,7 @@ func stop() (err error) {
 		return
 	}
 
-	err = stopInodeTableManagement()
+	err = stopVolumeManagement()
 	if nil != err {
 		return
 	}
