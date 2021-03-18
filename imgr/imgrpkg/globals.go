@@ -91,11 +91,30 @@ type statsStruct struct {
 	InodeTableCacheMisses bucketstats.Totaler
 }
 
+type mountStruct struct {
+	volume         *volumeStruct // volume.{R|}Lock() also protects each mountStruct
+	mountID        string
+	authTokenValid bool
+	authToken      string
+	lastAuthTime   time.Time
+}
+
+type volumeStruct struct {
+	sync.RWMutex           // must globals.{R|}Lock() before volume.{R|}Lock()
+	name                   string
+	storageURL             string
+	mountMap               map[string]*mountStruct // key == mountStruct.mountID
+	numMountAuthTokenValid uint64
+	deleting               bool
+}
+
 type globalsStruct struct {
 	sync.RWMutex
 	config          configStruct
 	logFile         *os.File // == nil if config.LogFilePath == ""
 	inodeTableCache sortedmap.BPlusTreeCache
+	volumeMap       sortedmap.LLRBTree      // key == volumeStruct.name; value == *volumeStruct
+	mountMap        map[string]*mountStruct // key == mountStruct.mountID
 	httpServer      *http.Server
 	httpServerWG    sync.WaitGroup
 	stats           *statsStruct

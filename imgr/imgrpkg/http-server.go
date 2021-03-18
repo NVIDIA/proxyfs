@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -57,51 +58,77 @@ func stopHTTPServer() (err error) {
 }
 
 func (dummy *globalsStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		err         error
+		requestBody []byte
+		requestPath string
+	)
+
+	requestPath = strings.TrimRight(request.URL.Path, "/")
+
+	requestBody, err = ioutil.ReadAll(request.Body)
+	if nil == err {
+		err = request.Body.Close()
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
+	} else {
+		_ = request.Body.Close()
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 	switch request.Method {
 	case http.MethodDelete:
-		serveHTTPDelete(responseWriter, request)
+		serveHTTPDelete(responseWriter, request, requestPath)
 	case http.MethodGet:
-		serveHTTPGet(responseWriter, request)
+		serveHTTPGet(responseWriter, request, requestPath)
 	case http.MethodPut:
-		serveHTTPPut(responseWriter, request)
+		serveHTTPPut(responseWriter, request, requestPath, requestBody)
 	default:
 		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
-func serveHTTPDelete(responseWriter http.ResponseWriter, request *http.Request) {
-	var (
-		path string
-	)
-
-	path = strings.TrimRight(request.URL.Path, "/")
-
+func serveHTTPDelete(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	switch {
-	case strings.HasPrefix(path, "/volume"):
-		serveHTTPDeleteOfVolume(responseWriter, request)
+	case strings.HasPrefix(requestPath, "/volume"):
+		serveHTTPDeleteOfVolume(responseWriter, request, requestPath)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
 }
 
-func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
-	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
-}
-
-func serveHTTPGet(responseWriter http.ResponseWriter, request *http.Request) {
+func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	var (
-		path string
+		err       error
+		pathSplit []string
 	)
 
-	path = strings.TrimRight(request.URL.Path, "/")
+	pathSplit = strings.Split(requestPath, "/")
 
+	switch len(pathSplit) {
+	case 3:
+		err = deleteVolume(pathSplit[2])
+		if nil == err {
+			responseWriter.WriteHeader(http.StatusNoContent)
+		} else {
+			responseWriter.WriteHeader(http.StatusNotFound)
+		}
+	default:
+		responseWriter.WriteHeader(http.StatusBadRequest)
+	}
+}
+
+func serveHTTPGet(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	switch {
-	case "/config" == path:
+	case "/config" == requestPath:
 		serveHTTPGetOfConfig(responseWriter, request)
-	case "/stats" == path:
+	case "/stats" == requestPath:
 		serveHTTPGetOfStats(responseWriter, request)
-	case strings.HasPrefix(path, "/volume"):
-		serveHTTPGetOfVolume(responseWriter, request)
+	case strings.HasPrefix(requestPath, "/volume"):
+		serveHTTPGetOfVolume(responseWriter, request, requestPath)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
@@ -146,25 +173,75 @@ func serveHTTPGetOfStats(responseWriter http.ResponseWriter, request *http.Reque
 	}
 }
 
-func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
-	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
-}
-
-func serveHTTPPut(responseWriter http.ResponseWriter, request *http.Request) {
+func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	var (
-		path string
+		err          error
+		jsonToReturn []byte
+		pathSplit    []string
 	)
 
-	path = strings.TrimRight(request.URL.Path, "/")
+	pathSplit = strings.Split(requestPath, "/")
 
+	switch len(pathSplit) {
+	case 2:
+		jsonToReturn = getVolumeListAsJSON()
+
+		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(jsonToReturn)))
+		responseWriter.Header().Set("Content-Type", "application/json")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, err = responseWriter.Write(jsonToReturn)
+		if nil != err {
+			logWarnf("responseWriter.Write(jsonToReturn) failed: %v", err)
+		}
+	case 3:
+		jsonToReturn, err = getVolumeAsJSON(pathSplit[2])
+		if nil == err {
+			responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(jsonToReturn)))
+			responseWriter.Header().Set("Content-Type", "application/json")
+			responseWriter.WriteHeader(http.StatusOK)
+
+			_, err = responseWriter.Write(jsonToReturn)
+			if nil != err {
+				logWarnf("responseWriter.Write(jsonToReturn) failed: %v", err)
+			}
+		} else {
+			responseWriter.WriteHeader(http.StatusNotFound)
+		}
+	default:
+		responseWriter.WriteHeader(http.StatusBadRequest)
+	}
+}
+
+func serveHTTPPut(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
 	switch {
-	case strings.HasPrefix(path, "/volume"):
-		serveHTTPPutOfVolume(responseWriter, request)
+	case strings.HasPrefix(requestPath, "/volume"):
+		serveHTTPPutOfVolume(responseWriter, request, requestPath, requestBody)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
 }
 
-func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
-	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
+	var (
+		err        error
+		pathSplit  []string
+		storageURL string
+	)
+
+	pathSplit = strings.Split(requestPath, "/")
+
+	switch len(pathSplit) {
+	case 3:
+		storageURL = string(requestBody[:])
+
+		err = putVolume(pathSplit[2], storageURL)
+		if nil == err {
+			responseWriter.WriteHeader(http.StatusCreated)
+		} else {
+			responseWriter.WriteHeader(http.StatusConflict)
+		}
+	default:
+		responseWriter.WriteHeader(http.StatusBadRequest)
+	}
 }
