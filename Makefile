@@ -36,7 +36,8 @@ gopkgsubdirs = \
 	version \
 	emswift/emswiftpkg \
 	icert/icertpkg \
-	imgr/imgrpkg
+	imgr/imgrpkg \
+	iswift/iswiftpkg
 
 goplugindirs = \
 	iauth/iauth-swift
@@ -48,6 +49,7 @@ gobinsubdirs = \
 	icert \
 	imgr \
 	inodeworkout \
+	iswift \
 	pfs-crash \
 	pfs-fsck \
 	pfs-restart-test \
