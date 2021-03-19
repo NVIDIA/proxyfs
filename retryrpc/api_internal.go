@@ -97,9 +97,10 @@ type pendingCtx struct {
 // methodArgs defines the method provided by the RPC server
 // as well as the request type and reply type arguments
 type methodArgs struct {
-	methodPtr *reflect.Method
-	request   reflect.Type
-	reply     reflect.Type
+	methodPtr    *reflect.Method
+	passClientID bool
+	request      reflect.Type
+	reply        reflect.Type
 }
 
 // completedLRUEntry tracks time entry was completed for
@@ -281,11 +282,6 @@ func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, 
 	}
 
 	msgType = hdr.Type
-	if hdr.Len == 0 {
-		// TODO - ?????
-		// err = fmt.Errorf("hdr.Len == 0")
-		return
-	}
 
 	// Now read the rest of the structure off the wire.
 	var numBytes int

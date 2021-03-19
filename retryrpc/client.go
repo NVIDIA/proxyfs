@@ -422,12 +422,10 @@ func (client *Client) getMyUniqueID(tlsConn *tls.Conn) (err error) {
 	}
 
 	// Ask the server for the unique ID.
-	//
-	// TODO - return error back up.... close() the connection???
-	// upper layer should do the redial
+	// If we error, just return it and let caller close the connection.
 	client.myUniqueID, err = client.readClientID(client.connection.genNum, tlsConn)
 	if err != nil {
-		// TODO - close() connection
+		return
 	}
 
 	return
@@ -454,7 +452,7 @@ func (client *Client) sendMyInfo(tlsConn *tls.Conn) (err error) {
 		return
 	}
 
-	// We are an existinc client - send "MyUniqueID"
+	// We are an existing client - send "MyUniqueID"
 	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
 	bytesWritten, writeErr := tlsConn.Write(isreq.MyUniqueID)
 
@@ -552,29 +550,19 @@ func (client *Client) readClientID(callingGenNum uint64, tlsConn *tls.Conn) (myU
 
 		// TODO - don't loop forever - breakout after some many tries
 
+		// Upper layer will close connection as a result of any error
 		if getErr != nil {
-
-			// TODO - if error initially, just close socket, return error and let initialDial()
-			// retry.   close may already be done by upper layer... verify
-			/*
-				// If we had an error reading socket - call retransmit() and exit
-				// the goroutine.  retransmit()/dial() will start another
-				// readReplies() goroutine.
-				client.retransmit(callingGenNum)
-			*/
+			err = getErr
 			return
 		}
 
 		if msgType != ReturnUniqueID {
-			// TODO - panic???
 			err = fmt.Errorf("CLIENT - invalid msgType: %v", msgType)
+			logger.PanicfWithError(err, "")
 			return
 		}
 
-		fmt.Printf("CLIENT: read buf: %v\n", string(buf))
 		myUniqueID = string(buf)
-		fmt.Printf("readClientID returned: %v\n", myUniqueID)
-
 		return
 	}
 }
