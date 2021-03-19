@@ -18,30 +18,10 @@ import (
 // circular dependency if the test was in retryrpc.
 func TestRetryRPC(t *testing.T) {
 
+	testRegister(t)
 	testServer(t)
 	testBtree(t)
 	testStatsAndBucketstats(t)
-}
-
-type MyType struct {
-	field1 int
-}
-
-type MyRequest struct {
-	Field1 int
-}
-
-type MyResponse struct {
-	Error error
-}
-
-func (m *MyType) ExportedFunction(request MyRequest, response *MyResponse) (err error) {
-	request.Field1 = 1
-	return
-}
-
-func (m *MyType) unexportedFunction(i int) {
-	m.field1 = i
 }
 
 func getNewServer(lt time.Duration, dontStartTrimmers bool) (rrSvr *Server, ip string, p int) {
@@ -58,6 +38,28 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool) (rrSvr *Server, ip s
 	ip = ipaddr
 	p = port
 	return
+}
+
+// Test register function finds all expected functions
+func testRegister(t *testing.T) {
+	assert := assert.New(t)
+	zero := 0
+	assert.Equal(0, zero)
+
+	// Create new rpctest server - needed for calling
+	// RPCs
+	myJrpcfs := rpctest.NewServer()
+
+	rrSvr, _, _ := getNewServer(10*time.Second, false)
+	assert.NotNil(rrSvr)
+
+	// Register the Server - sets up the methods supported by the
+	// server
+	err := rrSvr.Register(myJrpcfs)
+	assert.Nil(err)
+
+	// Make sure we discovered the correct functions
+	assert.Equal(4, len(rrSvr.svrMap))
 }
 
 // Test basic Server creation and deletion
@@ -100,13 +102,21 @@ func testServer(t *testing.T) {
 	assert.Equal("pong 8 bytes", pingReply.Message)
 	assert.Equal(1, rrSvr.CompletedCnt())
 
+	// Send an RPC which expects the client ID and which should return success
+	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
+	pingReply = &rpctest.PingReply{}
+	sendErr = rrClnt.Send("RpcPingWithClientID", pingRequest, pingReply)
+	assert.Nil(sendErr)
+	assert.Equal("Client ID: unqClnt-1 pong 8 bytes", pingReply.Message)
+	assert.Equal(2, rrSvr.CompletedCnt())
+
 	// Send an RPC which should return an error
 	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
 	pingReply = &rpctest.PingReply{}
 	sendErr = rrClnt.Send("RpcPingWithError", pingRequest, pingReply)
 	assert.NotNil(sendErr)
 
-	assert.Equal(2, rrSvr.CompletedCnt())
+	assert.Equal(3, rrSvr.CompletedCnt())
 
 	// Send an RPC which should return an error
 	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
@@ -114,7 +124,7 @@ func testServer(t *testing.T) {
 	sendErr = rrClnt.Send("RpcInvalidMethod", pingRequest, pingReply)
 	assert.NotNil(sendErr)
 
-	assert.Equal(3, rrSvr.CompletedCnt())
+	assert.Equal(4, rrSvr.CompletedCnt())
 
 	// Stop the client before exiting
 	rrClnt.Close()

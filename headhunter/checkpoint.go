@@ -3059,6 +3059,7 @@ func (volume *volumeStruct) checkpointDaemon() {
 		bPlusTreeObjectCacheStats = globals.bPlusTreeObjectCache.Stats()
 		createdDeletedObjectsCacheStats = globals.createdDeletedObjectsCache.Stats()
 
+		globals.Lock()
 		inodeRecCacheHitsDelta = inodeRecCacheStats.CacheHits - globals.inodeRecCachePriorCacheHits
 		inodeRecCacheMissesDelta = inodeRecCacheStats.CacheMisses - globals.inodeRecCachePriorCacheMisses
 
@@ -3070,8 +3071,6 @@ func (volume *volumeStruct) checkpointDaemon() {
 
 		createdDeletedObjectsCacheHitsDelta = createdDeletedObjectsCacheStats.CacheHits - globals.createdDeletedObjectsCachePriorCacheHits
 		createdDeletedObjectsCacheMissesDelta = createdDeletedObjectsCacheStats.CacheMisses - globals.createdDeletedObjectsCachePriorCacheMisses
-
-		globals.Lock()
 
 		if 0 != inodeRecCacheHitsDelta {
 			stats.IncrementOperationsBy(&stats.InodeRecCacheHits, inodeRecCacheHitsDelta)

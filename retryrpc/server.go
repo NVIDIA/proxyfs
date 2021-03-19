@@ -143,7 +143,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// be unmarshaled again to retrieve the parameters specific to
 		// the RPC.
 		startRPC := time.Now()
-		ior := server.callRPCAndFormatReply(buf, &jReq)
+		ior := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq)
 		ci.stats.RPCLenUsec.Add(uint64(time.Since(startRPC) / time.Microsecond))
 		ci.stats.RPCcompleted.Add(1)
 
@@ -213,6 +213,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 
 	if (msgType != PassID) && (msgType != AskMyUniqueID) {
 		err = fmt.Errorf("Server expecting msgType PassID or AskMyUniqueID and received: %v", msgType)
+		logger.PanicfWithError(err, "")
 		return
 	}
 
@@ -220,6 +221,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		var connUniqueID string
 		err = json.Unmarshal(buf, &connUniqueID)
 		if err != nil {
+			logger.PanicfWithError(err, "Unmarshal returned error")
 			return
 		}
 
@@ -227,7 +229,8 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		server.Lock()
 		lci, ok := server.perClientInfo[connUniqueID]
 		if !ok {
-			// TODO - what???
+			err = fmt.Errorf("Server - msgType PassID but can't find uniqueID in perClientInfo")
+			logger.PanicfWithError(err, "getClientIDAndWait() buf: %v connUniqueID: %v err: %+v", buf, connUniqueID, err)
 			server.Unlock()
 		} else {
 			server.Unlock()
@@ -281,9 +284,6 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		// Build reply and send back to client
 		localIOR.JResult = []byte(newUniqueID)
 		setupHdrReply(&localIOR, ReturnUniqueID)
-
-		// TODO -
-		fmt.Printf("SERVER: returning: %+v\n", localIOR)
 
 		server.returnResults(&localIOR, cCtx)
 	}
@@ -340,9 +340,12 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 }
 
 // callRPCAndMarshal calls the RPC and returns results to requestor
-func (server *Server) callRPCAndFormatReply(buf []byte, jReq *jsonRequest) (ior *ioReply) {
+func (server *Server) callRPCAndFormatReply(buf []byte, clientID string, jReq *jsonRequest) (ior *ioReply) {
 	var (
-		err error
+		err          error
+		returnValues []reflect.Value
+		typOfReq     reflect.Type
+		dummyReq     interface{}
 	)
 
 	// Setup the reply structure with common fields
@@ -355,8 +358,8 @@ func (server *Server) callRPCAndFormatReply(buf []byte, jReq *jsonRequest) (ior 
 
 		// Another unmarshal of buf to find the parameters specific to
 		// this RPC
-		typOfReq := ma.request.Elem()
-		dummyReq := reflect.New(typOfReq).Interface()
+		typOfReq = ma.request.Elem()
+		dummyReq = reflect.New(typOfReq).Interface()
 
 		sReq := svrRequest{}
 		sReq.Params[0] = dummyReq
@@ -366,6 +369,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, jReq *jsonRequest) (ior 
 			return
 		}
 		req := reflect.ValueOf(dummyReq)
+		cid := reflect.ValueOf(clientID)
 
 		// Create the reply structure
 		typOfReply := ma.reply.Elem()
@@ -373,7 +377,11 @@ func (server *Server) callRPCAndFormatReply(buf []byte, jReq *jsonRequest) (ior 
 
 		// Call the method
 		function := ma.methodPtr.Func
-		returnValues := function.Call([]reflect.Value{server.receiver, req, myReply})
+		if ma.passClientID {
+			returnValues = function.Call([]reflect.Value{server.receiver, cid, req, myReply})
+		} else {
+			returnValues = function.Call([]reflect.Value{server.receiver, req, myReply})
+		}
 
 		// The return value for the method is an error.
 		errInter := returnValues[0].Interface()

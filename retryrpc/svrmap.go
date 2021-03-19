@@ -10,7 +10,9 @@ import (
 	"unicode/utf8"
 )
 
-var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
+var (
+	typeOfError = reflect.TypeOf((*error)(nil)).Elem()
+)
 
 // Find all methods for the type which can be exported.
 // Build svrMap listing methods available as well as their
@@ -30,20 +32,9 @@ func (server *Server) buildSvrMap(typ reflect.Type) {
 			continue
 		}
 
-		if mtype.NumIn() != 3 {
-			continue
-		}
-		argType := mtype.In(1)
-		if !isExportedOrBuiltinType(argType) {
-			continue
-		}
-
-		replyType := mtype.In(2)
-		if replyType.Kind() != reflect.Ptr {
-			continue
-		}
-
-		if !isExportedOrBuiltinType(replyType) {
+		// Will have 3 arguments if pass request/reply
+		// Will have 4 arguments if expect clientID and request/reply
+		if (mtype.NumIn() != 3) && (mtype.NumIn() != 4) {
 			continue
 		}
 
@@ -58,8 +49,46 @@ func (server *Server) buildSvrMap(typ reflect.Type) {
 
 		// We save off the request type so we know how to unmarshal the request.
 		// We use the reply type to allocate the reply struct and marshal the response.
-		ma := methodArgs{methodPtr: &method, request: argType, reply: replyType}
-		server.svrMap[mname] = &ma
+		if mtype.NumIn() == 3 {
+			argType := mtype.In(1)
+			if !isExportedOrBuiltinType(argType) {
+				continue
+			}
+			replyType := mtype.In(2)
+			if replyType.Kind() != reflect.Ptr {
+				continue
+			}
+
+			if !isExportedOrBuiltinType(replyType) {
+				continue
+			}
+
+			ma := methodArgs{methodPtr: &method, passClientID: false, request: argType, reply: replyType}
+			server.svrMap[mname] = &ma
+		} else if mtype.NumIn() == 4 {
+			argType := mtype.In(2)
+			if !isExportedOrBuiltinType(argType) {
+				continue
+			}
+
+			// Check if first argument is string for clientID
+			clientIDType := mtype.In(1)
+			if clientIDType.Kind() != reflect.String {
+				continue
+			}
+
+			replyType := mtype.In(3)
+			if replyType.Kind() != reflect.Ptr {
+				continue
+			}
+
+			if !isExportedOrBuiltinType(replyType) {
+				continue
+			}
+
+			ma := methodArgs{methodPtr: &method, passClientID: true, request: argType, reply: replyType}
+			server.svrMap[mname] = &ma
+		}
 	}
 }
 
