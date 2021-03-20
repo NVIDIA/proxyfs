@@ -25,7 +25,6 @@ const (
 	testRpcLeaseMultiNumInstances         int   = 5
 	testRpcLeaseSingleInodeNumber         int64 = 1
 	testRpcLeaseSingleNumInstances        int   = 101 // Must be >= 4
-	testRpcLeaseTimeFormatASDF                  = time.StampMilli
 	testRpcLeaseTimeFormat                      = "15:04:05.000"
 )
 
@@ -44,6 +43,118 @@ type testRpcLeaseClientStruct struct {
 	alreadyUnmounted bool                  // if true, no RpcUnmount will be issued
 	wg               *sync.WaitGroup       // signaled when testRpcLeaseClient instance exits
 	t                *testing.T
+}
+
+func BenchmarkRpcLease(b *testing.B) {
+	var (
+		benchmarkIteration        int
+		deadlineIO                time.Duration
+		err                       error
+		keepAlivePeriod           time.Duration
+		leaseReply                *LeaseReply
+		leaseRequest              *LeaseRequest
+		mountByAccountNameRequest *MountByAccountNameRequest
+		mountByAccountNameReply   *MountByAccountNameReply
+		retryRPCClient            *retryrpc.Client
+		retryrpcClientConfig      *retryrpc.ClientConfig
+		server                    *Server
+		testRpcLeaseClient        *testRpcLeaseClientStruct
+		unmountReply              *Reply
+		unmountRequest            *UnmountRequest
+	)
+
+	server = &Server{}
+
+	mountByAccountNameRequest = &MountByAccountNameRequest{
+		AccountName:  testAccountName,
+		MountOptions: 0,
+		AuthUserID:   0,
+		AuthGroupID:  0,
+	}
+	mountByAccountNameReply = &MountByAccountNameReply{}
+
+	err = server.RpcMountByAccountName(mountByAccountNameRequest, mountByAccountNameReply)
+	if nil != err {
+		b.Fatalf("server.RpcMountByAccountName(AccountName=\"%s\",) failed: %v", mountByAccountNameRequest.AccountName, err)
+	}
+
+	deadlineIO, err = time.ParseDuration(testRpcLeaseRetryRPCDeadlineIO)
+	if nil != err {
+		b.Fatalf("time.ParseDuration(\"%s\") failed: %v", testRpcLeaseRetryRPCDeadlineIO, err)
+	}
+	keepAlivePeriod, err = time.ParseDuration(testRpcLeaseRetryRPCKeepAlivePeriod)
+	if nil != err {
+		b.Fatalf("time.ParseDuration(\"%s\") failed: %v", testRpcLeaseRetryRPCKeepAlivePeriod, err)
+	}
+
+	retryrpcClientConfig = &retryrpc.ClientConfig{
+		MyUniqueID:               string(mountByAccountNameReply.MountID),
+		IPAddr:                   mountByAccountNameReply.RetryRPCPublicIPAddr,
+		Port:                     int(mountByAccountNameReply.RetryRPCPort),
+		RootCAx509CertificatePEM: mountByAccountNameReply.RootCAx509CertificatePEM,
+		Callbacks:                testRpcLeaseClient,
+		DeadlineIO:               deadlineIO,
+		KeepAlivePeriod:          keepAlivePeriod,
+	}
+
+	retryRPCClient, err = retryrpc.NewClient(retryrpcClientConfig)
+	if nil != err {
+		b.Fatalf("retryrpc.NewClient() failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for benchmarkIteration = 0; benchmarkIteration < b.N; benchmarkIteration++ {
+		leaseRequest = &LeaseRequest{
+			InodeHandle: InodeHandle{
+				MountID:     mountByAccountNameReply.MountID,
+				InodeNumber: testRpcLeaseSingleInodeNumber,
+			},
+			LeaseRequestType: LeaseRequestTypeExclusive,
+		}
+		leaseReply = &LeaseReply{}
+
+		err = retryRPCClient.Send("RpcLease", leaseRequest, leaseReply)
+		if nil != err {
+			b.Fatalf("retryRPCClient.Send(\"RpcLease\",LeaseRequestTypeExclusive) failed: %v", err)
+		}
+
+		if LeaseReplyTypeExclusive != leaseReply.LeaseReplyType {
+			b.Fatalf("RpcLease() returned LeaseReplyType %v... expected LeaseRequestTypeExclusive", leaseReply.LeaseReplyType)
+		}
+
+		leaseRequest = &LeaseRequest{
+			InodeHandle: InodeHandle{
+				MountID:     mountByAccountNameReply.MountID,
+				InodeNumber: testRpcLeaseSingleInodeNumber,
+			},
+			LeaseRequestType: LeaseRequestTypeRelease,
+		}
+		leaseReply = &LeaseReply{}
+
+		err = retryRPCClient.Send("RpcLease", leaseRequest, leaseReply)
+		if nil != err {
+			b.Fatalf("retryRPCClient.Send(\"RpcLease\",LeaseRequestTypeRelease) failed: %v", err)
+		}
+
+		if LeaseReplyTypeReleased != leaseReply.LeaseReplyType {
+			b.Fatalf("RpcLease() returned LeaseReplyType %v... expected LeaseReplyTypeReleased", leaseReply.LeaseReplyType)
+		}
+	}
+
+	b.StopTimer()
+
+	retryRPCClient.Close()
+
+	unmountRequest = &UnmountRequest{
+		MountID: mountByAccountNameReply.MountID,
+	}
+	unmountReply = &Reply{}
+
+	err = server.RpcUnmount(unmountRequest, unmountReply)
+	if nil != err {
+		b.Fatalf("server.RpcUnmount(MountID=\"%s\",) failed: %v", unmountRequest.MountID, err)
+	}
 }
 
 func TestRpcLease(t *testing.T) {
@@ -415,8 +526,6 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) instanceGoroutine() {
 		leaseRequestType, ok = <-testRpcLeaseClient.chIn
 
 		if ok {
-			time.Sleep(testRpcLeaseDelayBeforeSendingRequest)
-
 			leaseRequest = &LeaseRequest{
 				InodeHandle: InodeHandle{
 					MountID:     mountByAccountNameReply.MountID,
@@ -508,6 +617,10 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) sendLeaseRequest(leaseReques
 	time.Sleep(testRpcLeaseDelayBeforeSendingRequest)
 	testRpcLeaseClient.chIn <- leaseRequestType
 	time.Sleep(testRpcLeaseDelayAfterSendingRequest)
+}
+
+func (testRpcLeaseClient *testRpcLeaseClientStruct) sendLeaseRequestPromptly(leaseRequestType LeaseRequestType) {
+	testRpcLeaseClient.chIn <- leaseRequestType
 }
 
 func (testRpcLeaseClient *testRpcLeaseClientStruct) validateChOutValueIsLeaseReplyType(expectedLeaseReplyType LeaseReplyType) {
