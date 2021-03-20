@@ -221,6 +221,7 @@ func putVolume(name string, storageURL string) (err error) {
 		mountMap:               make(map[string]*mountStruct),
 		numMountAuthTokenValid: 0,
 		deleting:               false,
+		inodeTable:             nil,
 	}
 
 	ok, err = globals.volumeMap.Put(volume.name, volume)

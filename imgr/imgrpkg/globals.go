@@ -106,6 +106,7 @@ type volumeStruct struct {
 	mountMap               map[string]*mountStruct // key == mountStruct.mountID
 	numMountAuthTokenValid uint64
 	deleting               bool
+	inodeTable             sortedmap.BPlusTree
 }
 
 type globalsStruct struct {
