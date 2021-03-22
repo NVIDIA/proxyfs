@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 
@@ -218,7 +219,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 	}
 
 	if msgType == PassID {
-		var connUniqueID string
+		var connUniqueID uint64
 		err = json.Unmarshal(buf, &connUniqueID)
 		if err != nil {
 			logger.PanicfWithError(err, "Unmarshal returned error")
@@ -266,7 +267,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		// Create a unique client ID and return to client
 		server.Lock()
 		server.clientIDNonce++
-		newUniqueID := fmt.Sprintf("unqClnt-%v", server.clientIDNonce)
+		newUniqueID := server.clientIDNonce
 
 		// Setup new client data structures
 		c := &clientInfo{cCtx: cCtx, myUniqueID: newUniqueID}
@@ -279,10 +280,15 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		cCtx.ci = ci
 		cCtx.Unlock()
 
-		bucketstats.Register("proxyfs.retryrpc", c.myUniqueID, &c.stats)
+		s10 := strconv.FormatInt(int64(newUniqueID), 10)
+		bucketstats.Register("proxyfs.retryrpc", s10, &c.stats)
 
 		// Build reply and send back to client
-		localIOR.JResult = []byte(newUniqueID)
+		var e error
+		localIOR.JResult, e = json.Marshal(newUniqueID)
+		if e != nil {
+			logger.PanicfWithError(e, "Marshal of newUniqueID: %v failed with err: %v", newUniqueID, err)
+		}
 		setupHdrReply(&localIOR, ReturnUniqueID)
 
 		server.returnResults(&localIOR, cCtx)
@@ -340,7 +346,7 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 }
 
 // callRPCAndMarshal calls the RPC and returns results to requestor
-func (server *Server) callRPCAndFormatReply(buf []byte, clientID string, jReq *jsonRequest) (ior *ioReply) {
+func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *jsonRequest) (ior *ioReply) {
 	var (
 		err          error
 		returnValues []reflect.Value
@@ -476,13 +482,14 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 		// We can only do the check if we are currently holding the
 		// lock.
 		for e := l.Front(); e != nil; e = e.Next() {
-			key := e.Value.(string)
+			key := e.Value.(uint64)
 			ci := server.perClientInfo[key]
 
 			ci.Lock()
 			ci.cCtx.Lock()
 			if ci.isEmpty() && ci.cCtx.serviceClientExited {
-				bucketstats.UnRegister("proxyfs.retryrpc", ci.myUniqueID)
+				s10 := strconv.FormatInt(int64(ci.myUniqueID), 10)
+				bucketstats.UnRegister("proxyfs.retryrpc", s10)
 				delete(server.perClientInfo, key)
 				logger.Infof("Trim - DELETE inactive clientInfo with ID: %v", ci.myUniqueID)
 			}
@@ -503,7 +510,7 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 // on TTL or RequestID acknowledgement from client.
 //
 // NOTE: We assume Server Lock is held
-func (server *Server) trimAClientBasedACK(uniqueID string, ci *clientInfo) (numItems int) {
+func (server *Server) trimAClientBasedACK(uniqueID uint64, ci *clientInfo) (numItems int) {
 
 	ci.Lock()
 

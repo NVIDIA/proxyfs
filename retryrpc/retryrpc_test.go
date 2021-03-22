@@ -88,7 +88,7 @@ func testServer(t *testing.T) {
 	rrSvr.Run()
 
 	// Now - setup a client to send requests to the server
-	clientConfig := &ClientConfig{MyUniqueID: "client 1", IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
+	clientConfig := &ClientConfig{IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
 		Callbacks: nil, DeadlineIO: 5 * time.Second}
 	rrClnt, newErr := NewClient(clientConfig)
 	assert.NotNil(rrClnt)
@@ -107,7 +107,7 @@ func testServer(t *testing.T) {
 	pingReply = &rpctest.PingReply{}
 	sendErr = rrClnt.Send("RpcPingWithClientID", pingRequest, pingReply)
 	assert.Nil(sendErr)
-	assert.Equal("Client ID: unqClnt-1 pong 8 bytes", pingReply.Message)
+	assert.Equal("Client ID: 1 pong 8 bytes", pingReply.Message)
 	assert.Equal(2, rrSvr.CompletedCnt())
 
 	// Send an RPC which should return an error
@@ -140,7 +140,7 @@ func testBtree(t *testing.T) {
 	assert.NotNil(rrSvr)
 
 	// Setup a client - we only will be targeting the btree
-	clientConfig := &ClientConfig{MyUniqueID: "client 1", IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
+	clientConfig := &ClientConfig{IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
 		Callbacks: nil, DeadlineIO: 5 * time.Second}
 	client, newErr := NewClient(clientConfig)
 	assert.NotNil(client)
