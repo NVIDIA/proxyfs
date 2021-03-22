@@ -339,8 +339,7 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 
 	cb := &stressMyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
-	clientID := fmt.Sprintf("client - %v", agentID)
-	clientConfig := &ClientConfig{MyUniqueID: clientID, IPAddr: ipAddr, Port: port,
+	clientConfig := &ClientConfig{IPAddr: ipAddr, Port: port,
 		RootCAx509CertificatePEM: rootCAx509CertificatePEM, Callbacks: cb, DeadlineIO: 5 * time.Second}
 	client, err := NewClient(clientConfig)
 	if err != nil {
