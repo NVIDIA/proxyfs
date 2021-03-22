@@ -61,7 +61,7 @@ type statsInfo struct {
 type clientInfo struct {
 	sync.Mutex
 	cCtx                     *connCtx                      // Current connCtx for client
-	myUniqueID               string                        // Unique ID of this client
+	myUniqueID               uint64                        // Unique ID of this client
 	completedRequest         map[requestID]*completedEntry // Key: "RequestID"
 	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
 	highestReplySeen         requestID                     // Highest consectutive requestID client has seen
@@ -185,7 +185,7 @@ type reqCtx struct {
 
 // jsonRequest is used to marshal an RPC request in/out of JSON
 type jsonRequest struct {
-	MyUniqueID       string         `json:"myuniqueid"`       // ID of client
+	MyUniqueID       uint64         `json:"myuniqueid"`       // ID of client
 	RequestID        requestID      `json:"requestid"`        // ID of this request
 	HighestReplySeen requestID      `json:"highestReplySeen"` // Used to trim completedRequests on server
 	Method           string         `json:"method"`
@@ -194,7 +194,7 @@ type jsonRequest struct {
 
 // jsonReply is used to marshal an RPC response in/out of JSON
 type jsonReply struct {
-	MyUniqueID string      `json:"myuniqueid"` // ID of client
+	MyUniqueID uint64      `json:"myuniqueid"` // ID of client
 	RequestID  requestID   `json:"requestid"`  // ID of this request
 	ErrStr     string      `json:"errstr"`
 	Result     interface{} `json:"result"`
@@ -235,7 +235,7 @@ func setupHdrReply(ioreply *ioReply, t MsgType) {
 	return
 }
 
-func buildSetIDRequest(myUniqueID string) (isreq *internalSetIDRequest, err error) {
+func buildSetIDRequest(myUniqueID uint64) (isreq *internalSetIDRequest, err error) {
 	isreq = &internalSetIDRequest{}
 	isreq.MyUniqueID, err = json.Marshal(myUniqueID)
 	if err != nil {

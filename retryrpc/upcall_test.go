@@ -33,8 +33,6 @@ func (cb *MyClient) Interrupt(payload []byte) {
 
 // Test getting an upcallbasic Server creation and deletion
 func testUpCall(t *testing.T) {
-	var myUniqueClientID string = "my upcall client 1"
-
 	assert := assert.New(t)
 	zero := 0
 	assert.Equal(0, zero)
@@ -62,7 +60,7 @@ func testUpCall(t *testing.T) {
 	cb := &MyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
 
-	clientConfig := &ClientConfig{MyUniqueID: myUniqueClientID, IPAddr: ipaddr, Port: port,
+	clientConfig := &ClientConfig{IPAddr: ipaddr, Port: port,
 		RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM, Callbacks: cb,
 		DeadlineIO: 5 * time.Second}
 	rrClnt, newErr := NewClient(clientConfig)

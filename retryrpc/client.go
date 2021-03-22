@@ -527,7 +527,7 @@ func (client *Client) reDial() (err error) {
 // Client lock is held
 //
 // NOTE: Client lock is held
-func (client *Client) readClientID(callingGenNum uint64, tlsConn *tls.Conn) (myUniqueID string, err error) {
+func (client *Client) readClientID(callingGenNum uint64, tlsConn *tls.Conn) (myUniqueID uint64, err error) {
 	var localCnt int
 
 	for {
@@ -562,7 +562,10 @@ func (client *Client) readClientID(callingGenNum uint64, tlsConn *tls.Conn) (myU
 			return
 		}
 
-		myUniqueID = string(buf)
+		err = json.Unmarshal(buf, &myUniqueID)
+		if err != nil {
+			logger.PanicfWithError(err, "Unmarshal of buf: %v to myUniqueID failed with err: %v", buf, err)
+		}
 		return
 	}
 }

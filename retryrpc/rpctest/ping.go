@@ -50,7 +50,7 @@ func (s *Server) RpcPingWithError(in *PingReq, reply *PingReply) (err error) {
 }
 
 // RpcPingWithClientID returns an error
-func (s *Server) RpcPingWithClientID(clientID string, in *PingReq, reply *PingReply) (err error) {
+func (s *Server) RpcPingWithClientID(clientID uint64, in *PingReq, reply *PingReply) (err error) {
 	reply.Message = fmt.Sprintf("Client ID: %v pong %d bytes", clientID, len(in.Message))
 
 	return nil

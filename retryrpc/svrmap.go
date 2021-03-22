@@ -71,9 +71,9 @@ func (server *Server) buildSvrMap(typ reflect.Type) {
 				continue
 			}
 
-			// Check if first argument is string for clientID
+			// Check if first argument is uint64 for clientID
 			clientIDType := mtype.In(1)
-			if clientIDType.Kind() != reflect.String {
+			if clientIDType.Kind() != reflect.Uint64 {
 				continue
 			}
 

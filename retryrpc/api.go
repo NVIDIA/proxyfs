@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 
@@ -53,7 +54,7 @@ type Server struct {
 	Creds                *ServerCreds
 	listenersWG          sync.WaitGroup
 	receiver             reflect.Value          // Package receiver being served
-	perClientInfo        map[string]*clientInfo // Key: "clientID".  Tracks clients
+	perClientInfo        map[uint64]*clientInfo // Key: "clientID".  Tracks clients
 	completedTickerDone  chan bool
 	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
 	completedShortTicker *time.Ticker // Shorter ~100ms timer to trim known completed
@@ -83,7 +84,7 @@ func NewServer(config *ServerConfig) *Server {
 		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
 		keepAlivePeriod: config.KeepAlivePeriod, dontStartTrimmers: config.dontStartTrimmers}
 	server.svrMap = make(map[string]*methodArgs)
-	server.perClientInfo = make(map[string]*clientInfo)
+	server.perClientInfo = make(map[uint64]*clientInfo)
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
 
@@ -176,7 +177,7 @@ func (server *Server) Run() {
 //
 // The message is "best effort" - if we fail to write on socket then the
 // message is silently dropped on floor.
-func (server *Server) SendCallback(clientID string, msg []byte) {
+func (server *Server) SendCallback(clientID uint64, msg []byte) {
 
 	// TODO - what if client no longer in list of current clients?
 	var (
@@ -229,7 +230,8 @@ func (server *Server) Close() {
 	// Cleanup bucketstats so that unit tests can run
 	for _, ci := range server.perClientInfo {
 		ci.Lock()
-		bucketstats.UnRegister("proxyfs.retryrpc", ci.myUniqueID)
+		s10 := strconv.FormatInt(int64(ci.myUniqueID), 10)
+		bucketstats.UnRegister("proxyfs.retryrpc", s10)
 		ci.Unlock()
 
 	}
@@ -293,7 +295,7 @@ type Client struct {
 	// tick at mount and increment from there?
 	// Handle reset of time?
 	connection         connectionTracker
-	myUniqueID         string      // Unique ID across all clients
+	myUniqueID         uint64      // Unique ID across all clients
 	cb                 interface{} // Callbacks to client
 	deadlineIO         time.Duration
 	keepAlivePeriod    time.Duration
@@ -314,7 +316,6 @@ type ClientCallbacks interface {
 
 // ClientConfig is used to configure a retryrpc Client
 type ClientConfig struct {
-	MyUniqueID               string
 	IPAddr                   string        // IP Address of Server
 	Port                     int           // Port of Server
 	RootCAx509CertificatePEM []byte        // Root certificate
@@ -338,8 +339,8 @@ type ClientConfig struct {
 // starting point for requestID.
 func NewClient(config *ClientConfig) (client *Client, err error) {
 
-	client = &Client{myUniqueID: config.MyUniqueID, cb: config.Callbacks,
-		keepAlivePeriod: config.KeepAlivePeriod, deadlineIO: config.DeadlineIO}
+	client = &Client{cb: config.Callbacks, keepAlivePeriod: config.KeepAlivePeriod,
+		deadlineIO: config.DeadlineIO}
 	portStr := fmt.Sprintf("%d", config.Port)
 	client.connection.state = INITIAL
 	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, portStr)
@@ -364,14 +365,14 @@ func (client *Client) Send(method string, request interface{}, reply interface{}
 }
 
 // GetMyUniqueID returns the unique ID of the client
-func (client *Client) GetMyUniqueID() string {
+func (client *Client) GetMyUniqueID() uint64 {
 	return client.myUniqueID
 }
 
 // GetStatsGroupName returns the bucketstats GroupName for this client
 func (client *Client) GetStatsGroupName() (s string) {
-
-	return clientSideGroupPrefix + client.myUniqueID
+	s10 := strconv.FormatInt(int64(client.myUniqueID), 10)
+	return clientSideGroupPrefix + s10
 }
 
 // Close gracefully shuts down the client
