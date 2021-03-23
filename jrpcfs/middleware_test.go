@@ -161,6 +161,8 @@ func testSetup() []func() {
 		"JSONRPCServer.RetryRPCPort=32357", // ...and similarly here...
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.RetryRPCAckTrim=10ms",
+		"JSONRPCServer.RetryRPCCertFilePath=",
+		"JSONRPCServer.RetryRPCKeyFilePath=",
 		"JSONRPCServer.DataPathLogging=false",
 		"JSONRPCServer.MinLeaseDuration=100ms",
 		"JSONRPCServer.LeaseInterruptInterval=100ms",

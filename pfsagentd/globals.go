@@ -7,6 +7,7 @@ import (
 	"container/list"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math"
 	"net/http"
@@ -73,6 +74,7 @@ type configStruct struct {
 	FUSEMaxWrite                 uint32
 	RetryRPCDeadlineIO           time.Duration
 	RetryRPCKeepAlivePeriod      time.Duration
+	RetryRPCCACertFilePath       string
 }
 
 type retryDelayElementStruct struct {
@@ -331,6 +333,7 @@ type globalsStruct struct {
 	sync.Mutex
 	config                          configStruct
 	logFile                         *os.File // == nil if configStruct.LogFilePath == ""
+	retryRPCCACertPEM               []byte
 	retryRPCPublicIPAddr            string
 	retryRPCPort                    uint16
 	retryRPCClient                  *retryrpc.Client
@@ -653,9 +656,23 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
+	globals.config.RetryRPCCACertFilePath, err = confMap.FetchOptionValueString("Agent", "RetryRPCCACertFilePath")
+	if nil != err {
+		globals.config.RetryRPCCACertFilePath = ""
+	}
+
 	configJSONified = utils.JSONify(globals.config, true)
 
 	logInfof("\n%s", configJSONified)
+
+	if "" == globals.config.RetryRPCCACertFilePath {
+		globals.retryRPCCACertPEM = nil
+	} else {
+		globals.retryRPCCACertPEM, err = ioutil.ReadFile(globals.config.RetryRPCCACertFilePath)
+		if nil != err {
+			logFatal(err)
+		}
+	}
 
 	globals.entryValidSec, globals.entryValidNSec = nsToUnixTime(uint64(globals.config.EntryDuration))
 	globals.attrValidSec, globals.attrValidNSec = nsToUnixTime(uint64(globals.config.AttrDuration))
@@ -742,6 +759,7 @@ func uninitializeGlobals() {
 	bucketstats.UnRegister("PFSAgent", "")
 
 	globals.logFile = nil
+	globals.retryRPCCACertPEM = nil
 	globals.retryRPCPublicIPAddr = ""
 	globals.retryRPCPort = 0
 	globals.retryRPCClient = nil

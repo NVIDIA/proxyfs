@@ -126,6 +126,7 @@ func testSetup(t *testing.T) {
 		"Agent.FUSEMaxWrite=131072", // Linux max... 128KiB is good enough for testing
 		"Agent.RetryRPCDeadlineIO=60s",
 		"Agent.RetryRPCKeepAlivePeriod=60s",
+		"Agent.RetryRPCCACertFilePath=",
 
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=54324",
@@ -240,6 +241,8 @@ func testSetup(t *testing.T) {
 		"JSONRPCServer.RetryRPCPort=54328",
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.RetryRPCAckTrim=10ms",
+		"JSONRPCServer.RetryRPCCertFilePath=",
+		"JSONRPCServer.RetryRPCKeyFilePath=",
 		"JSONRPCServer.DataPathLogging=false",
 		"JSONRPCServer.MinLeaseDuration=250ms",
 		"JSONRPCServer.LeaseInterruptInterval=250ms",
