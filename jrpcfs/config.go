@@ -95,6 +95,7 @@ type mountStruct struct {
 	volume                 *volumeStruct
 	mountIDAsByteArray     MountIDAsByteArray
 	mountIDAsString        MountIDAsString
+	retryRpcUniqueID       uint64
 	acceptingLeaseRequests bool                                      // also an indicator (when false) that mount is being unmounted
 	leaseRequestMap        map[inode.InodeNumber]*leaseRequestStruct // if     present, there is an ongoing Lease Request for this inode.InodeNumber
 	//                                                                  if not present, there is no ongoing Lease Request for this inode.InodeNumber
