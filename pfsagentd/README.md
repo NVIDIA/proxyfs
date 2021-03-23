@@ -77,6 +77,7 @@ FUSECongestionThreshhold:                                     0
 FUSEMaxWrite:                                            131072
 RetryRPCDeadlineIO:                                         60s
 RetryRPCKeepAlivePeriod:                                    60s
+RetryRPCCACertFilePath:                                         # Defaults to /dev/null
 ```
 
 In the above example, some important fields are as follows:

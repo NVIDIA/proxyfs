@@ -203,6 +203,8 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | RetryRPCAckTrim                          | No           | 100ms              | Yes                      | No                           |
 |                                           | RetryRPCDeadlineIO                       | No           | 60s                | Yes                      | No                           |
 |                                           | RetryRPCKeepAlivePeriod                  | No           | 60s                | Yes                      | No                           |
+|                                           | RetryRPCCertFilePath                     | No           | ""                 | Yes                      | No                           |
+|                                           | RetryRPCKeyFilePath                      | No           | ""                 | Yes                      | No                           |
 |                                           | MinLeaseDuration                         | No           | 250ms              | Yes                      | No                           |
 |                                           | LeaseInterruptInterval                   | No           | 250ms              | Yes                      | No                           |
 |                                           | LeaseInterruptLimit                      | No           | 20                 | Yes                      | No                           |

@@ -6,6 +6,7 @@ package jrpcfs
 import (
 	"container/list"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"sync"
 	"time"
@@ -134,10 +135,15 @@ type globalsStruct struct {
 	retryRPCAckTrim         time.Duration
 	retryRPCDeadlineIO      time.Duration
 	retryRPCKeepAlivePeriod time.Duration
+	retryRPCCertFilePath    string
+	retryRPCKeyFilePath     string
 	minLeaseDuration        time.Duration
 	leaseInterruptInterval  time.Duration
 	leaseInterruptLimit     uint32
 	dataPathLogging         bool
+
+	retryRPCCertPEM []byte
+	retryRPCKeyPEM  []byte
 
 	volumeMap                    map[string]*volumeStruct            // key == volumeStruct.volumeName
 	mountMapByMountIDAsByteArray map[MountIDAsByteArray]*mountStruct // key == mountStruct.mountIDAsByteArray
@@ -220,6 +226,32 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 			logger.Infof("failed to get JSONRPCServer.RetryRPCKeepAlivePeriod from config file - defaulting to 60s")
 			globals.retryRPCKeepAlivePeriod = 60 * time.Second
 		}
+		globals.retryRPCCertFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCCertFilePath")
+		if nil == err {
+			globals.retryRPCCertPEM, err = ioutil.ReadFile(globals.retryRPCCertFilePath)
+			if nil != err {
+				logger.ErrorfWithError(err, "failed to load PEM-formatted [JSONRPCServer]RetryRPCCertFilePath [\"%s\"]: %v", globals.retryRPCCertFilePath, err)
+				return
+			}
+		} else {
+			logger.Infof("failed to get JSONRPCServer.RetryRPCCertFilePath from config file - defaulting to \"\"")
+			globals.retryRPCCertFilePath = ""
+		}
+		globals.retryRPCKeyFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCKeyFilePath")
+		if nil == err {
+			if "" == globals.retryRPCCertFilePath {
+				logger.Error("if [JSOPNRPCServer]RetryRPCKeyFilePath is specified, [JSOPNRPCServer]RetryRPCCertFilePath must be specified as well")
+				return
+			}
+			globals.retryRPCKeyPEM, err = ioutil.ReadFile(globals.retryRPCKeyFilePath)
+			if nil != err {
+				logger.ErrorfWithError(err, "failed to load PEM-formatted [JSONRPCServer]RetryRPCKeyFilePath [\"%s\"]: %v", globals.retryRPCKeyFilePath, err)
+				return
+			}
+		} else {
+			logger.Infof("failed to get JSONRPCServer.RetryRPCKeyFilePath from config file - defaulting to \"\"")
+			globals.retryRPCKeyFilePath = ""
+		}
 	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
 		globals.retryRPCPort = 0
@@ -227,6 +259,10 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		globals.retryRPCAckTrim = time.Duration(0)
 		globals.retryRPCDeadlineIO = time.Duration(0)
 		globals.retryRPCKeepAlivePeriod = time.Duration(0)
+		globals.retryRPCCertFilePath = ""
+		globals.retryRPCKeyFilePath = ""
+		globals.retryRPCCertPEM = nil
+		globals.retryRPCKeyPEM = nil
 	}
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings
