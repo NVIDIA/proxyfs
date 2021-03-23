@@ -57,26 +57,10 @@ func BenchmarkRpcLease(b *testing.B) {
 		mountByAccountNameReply   *MountByAccountNameReply
 		retryRPCClient            *retryrpc.Client
 		retryrpcClientConfig      *retryrpc.ClientConfig
-		server                    *Server
 		testRpcLeaseClient        *testRpcLeaseClientStruct
 		unmountReply              *Reply
 		unmountRequest            *UnmountRequest
 	)
-
-	server = &Server{}
-
-	mountByAccountNameRequest = &MountByAccountNameRequest{
-		AccountName:  testAccountName,
-		MountOptions: 0,
-		AuthUserID:   0,
-		AuthGroupID:  0,
-	}
-	mountByAccountNameReply = &MountByAccountNameReply{}
-
-	err = server.RpcMountByAccountName(mountByAccountNameRequest, mountByAccountNameReply)
-	if nil != err {
-		b.Fatalf("server.RpcMountByAccountName(AccountName=\"%s\",) failed: %v", mountByAccountNameRequest.AccountName, err)
-	}
 
 	deadlineIO, err = time.ParseDuration(testRpcLeaseRetryRPCDeadlineIO)
 	if nil != err {
@@ -88,10 +72,9 @@ func BenchmarkRpcLease(b *testing.B) {
 	}
 
 	retryrpcClientConfig = &retryrpc.ClientConfig{
-		MyUniqueID:               string(mountByAccountNameReply.MountID),
-		IPAddr:                   mountByAccountNameReply.RetryRPCPublicIPAddr,
-		Port:                     int(mountByAccountNameReply.RetryRPCPort),
-		RootCAx509CertificatePEM: mountByAccountNameReply.RootCAx509CertificatePEM,
+		IPAddr:                   globals.publicIPAddr,
+		Port:                     int(globals.retryRPCPort),
+		RootCAx509CertificatePEM: nil,
 		Callbacks:                testRpcLeaseClient,
 		DeadlineIO:               deadlineIO,
 		KeepAlivePeriod:          keepAlivePeriod,
@@ -100,6 +83,19 @@ func BenchmarkRpcLease(b *testing.B) {
 	retryRPCClient, err = retryrpc.NewClient(retryrpcClientConfig)
 	if nil != err {
 		b.Fatalf("retryrpc.NewClient() failed: %v", err)
+	}
+
+	mountByAccountNameRequest = &MountByAccountNameRequest{
+		AccountName:  testAccountName,
+		MountOptions: 0,
+		AuthUserID:   0,
+		AuthGroupID:  0,
+	}
+	mountByAccountNameReply = &MountByAccountNameReply{}
+
+	err = retryRPCClient.Send("RpcMountByAccountName", mountByAccountNameRequest, mountByAccountNameReply)
+	if nil != err {
+		b.Fatalf("retryRPCClient.Send(\"RpcMountByAccountName\",,) failed: %v", err)
 	}
 
 	b.ResetTimer()
@@ -144,17 +140,17 @@ func BenchmarkRpcLease(b *testing.B) {
 
 	b.StopTimer()
 
-	retryRPCClient.Close()
-
 	unmountRequest = &UnmountRequest{
 		MountID: mountByAccountNameReply.MountID,
 	}
 	unmountReply = &Reply{}
 
-	err = server.RpcUnmount(unmountRequest, unmountReply)
+	err = retryRPCClient.Send("RpcUnmount", unmountRequest, unmountReply)
 	if nil != err {
-		b.Fatalf("server.RpcUnmount(MountID=\"%s\",) failed: %v", unmountRequest.MountID, err)
+		b.Fatalf("retryRPCClient.Send(\"RpcUnmount\",,) failed: %v", err)
 	}
+
+	retryRPCClient.Close()
 }
 
 func TestRpcLease(t *testing.T) {
@@ -466,25 +462,9 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) instanceGoroutine() {
 		ok                        bool
 		retryRPCClient            *retryrpc.Client
 		retryrpcClientConfig      *retryrpc.ClientConfig
-		server                    *Server
 		unmountReply              *Reply
 		unmountRequest            *UnmountRequest
 	)
-
-	server = &Server{}
-
-	mountByAccountNameRequest = &MountByAccountNameRequest{
-		AccountName:  testAccountName,
-		MountOptions: 0,
-		AuthUserID:   0,
-		AuthGroupID:  0,
-	}
-	mountByAccountNameReply = &MountByAccountNameReply{}
-
-	err = server.RpcMountByAccountName(mountByAccountNameRequest, mountByAccountNameReply)
-	if nil != err {
-		testRpcLeaseClient.Fatalf("server.RpcMountByAccountName(AccountName=\"%s\",) failed: %v", mountByAccountNameRequest.AccountName, err)
-	}
 
 	deadlineIO, err = time.ParseDuration(testRpcLeaseRetryRPCDeadlineIO)
 	if nil != err {
@@ -496,10 +476,9 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) instanceGoroutine() {
 	}
 
 	retryrpcClientConfig = &retryrpc.ClientConfig{
-		MyUniqueID:               string(mountByAccountNameReply.MountID),
-		IPAddr:                   mountByAccountNameReply.RetryRPCPublicIPAddr,
-		Port:                     int(mountByAccountNameReply.RetryRPCPort),
-		RootCAx509CertificatePEM: mountByAccountNameReply.RootCAx509CertificatePEM,
+		IPAddr:                   globals.publicIPAddr,
+		Port:                     int(globals.retryRPCPort),
+		RootCAx509CertificatePEM: nil,
 		Callbacks:                testRpcLeaseClient,
 		DeadlineIO:               deadlineIO,
 		KeepAlivePeriod:          keepAlivePeriod,
@@ -508,6 +487,19 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) instanceGoroutine() {
 	retryRPCClient, err = retryrpc.NewClient(retryrpcClientConfig)
 	if nil != err {
 		testRpcLeaseClient.Fatalf("retryrpc.NewClient() failed: %v", err)
+	}
+
+	mountByAccountNameRequest = &MountByAccountNameRequest{
+		AccountName:  testAccountName,
+		MountOptions: 0,
+		AuthUserID:   0,
+		AuthGroupID:  0,
+	}
+	mountByAccountNameReply = &MountByAccountNameReply{}
+
+	err = retryRPCClient.Send("RpcMountByAccountName", mountByAccountNameRequest, mountByAccountNameReply)
+	if nil != err {
+		testRpcLeaseClient.Fatalf("retryRPCClient.Send(\"RpcMountByAccountName\",,) failed: %v", err)
 	}
 
 	for {
@@ -534,23 +526,23 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) instanceGoroutine() {
 
 			testRpcLeaseClient.chOut <- leaseReply.LeaseReplyType
 		} else {
-			retryRPCClient.Close()
-
 			unmountRequest = &UnmountRequest{
 				MountID: mountByAccountNameReply.MountID,
 			}
 			unmountReply = &Reply{}
 
-			err = server.RpcUnmount(unmountRequest, unmountReply)
+			err = retryRPCClient.Send("RpcUnmount", unmountRequest, unmountReply)
 			if testRpcLeaseClient.alreadyUnmounted {
 				if nil == err {
-					testRpcLeaseClient.Fatalf("server.RpcUnmount(MountID=\"%s\",) should have failed", unmountRequest.MountID)
+					testRpcLeaseClient.Fatalf("retryRPCClient.Send(\"RpcUnmount\",,) should have failed")
 				}
 			} else {
 				if nil != err {
-					testRpcLeaseClient.Fatalf("server.RpcUnmount(MountID=\"%s\",) failed: %v", unmountRequest.MountID, err)
+					testRpcLeaseClient.Fatalf("retryRPCClient.Send(\"RpcUnmount\",,) failed: %v", err)
 				}
 			}
+
+			retryRPCClient.Close()
 
 			testRpcLeaseClient.wg.Done()
 
