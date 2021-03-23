@@ -71,7 +71,6 @@ func doMountProxyFS() {
 	globals.rootCAx509CertificatePEM = mountReply.RootCAx509CertificatePEM
 
 	retryrpcConfig := &retryrpc.ClientConfig{
-		MyUniqueID:               string(globals.mountID),
 		IPAddr:                   globals.retryRPCPublicIPAddr,
 		Port:                     int(globals.retryRPCPort),
 		RootCAx509CertificatePEM: globals.rootCAx509CertificatePEM,

@@ -1335,7 +1335,7 @@ func (s *Server) RpcMkdirPath(in *MkdirPathRequest, reply *Reply) (err error) {
 	return
 }
 
-func performMount(volumeHandle fs.VolumeHandle) (mountIDAsByteArray MountIDAsByteArray, mountIDAsString MountIDAsString, err error) {
+func performMount(volumeHandle fs.VolumeHandle, clientID uint64) (mountIDAsByteArray MountIDAsByteArray, mountIDAsString MountIDAsString, err error) {
 	var (
 		i             int
 		keepTrying    bool
@@ -1383,6 +1383,7 @@ func performMount(volumeHandle fs.VolumeHandle) (mountIDAsByteArray MountIDAsByt
 		volume:                 volume,
 		mountIDAsByteArray:     mountIDAsByteArray,
 		mountIDAsString:        mountIDAsString,
+		retryRpcUniqueID:       clientID,
 		acceptingLeaseRequests: true,
 		leaseRequestMap:        make(map[inode.InodeNumber]*leaseRequestStruct),
 	}
@@ -1398,7 +1399,7 @@ func performMount(volumeHandle fs.VolumeHandle) (mountIDAsByteArray MountIDAsByt
 	return
 }
 
-func (s *Server) RpcMountByAccountName(in *MountByAccountNameRequest, reply *MountByAccountNameReply) (err error) {
+func (s *Server) RpcMountByAccountName(clientID uint64, in *MountByAccountNameRequest, reply *MountByAccountNameReply) (err error) {
 	enterGate()
 	defer leaveGate()
 
@@ -1408,7 +1409,7 @@ func (s *Server) RpcMountByAccountName(in *MountByAccountNameRequest, reply *Mou
 
 	volumeHandle, err := fs.FetchVolumeHandleByAccountName(in.AccountName)
 	if nil == err {
-		_, reply.MountID, err = performMount(volumeHandle)
+		_, reply.MountID, err = performMount(volumeHandle, clientID)
 		if nil == err {
 			reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
 			reply.RetryRPCPublicIPAddr = globals.publicIPAddr
@@ -1420,7 +1421,7 @@ func (s *Server) RpcMountByAccountName(in *MountByAccountNameRequest, reply *Mou
 	return
 }
 
-func (s *Server) RpcMountByVolumeName(in *MountByVolumeNameRequest, reply *MountByVolumeNameReply) (err error) {
+func (s *Server) RpcMountByVolumeName(clientID uint64, in *MountByVolumeNameRequest, reply *MountByVolumeNameReply) (err error) {
 	enterGate()
 	defer leaveGate()
 
@@ -1430,7 +1431,7 @@ func (s *Server) RpcMountByVolumeName(in *MountByVolumeNameRequest, reply *Mount
 
 	volumeHandle, err := fs.FetchVolumeHandleByVolumeName(in.VolumeName)
 	if nil == err {
-		_, reply.MountID, err = performMount(volumeHandle)
+		_, reply.MountID, err = performMount(volumeHandle, clientID)
 		if nil == err {
 			reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
 			reply.RetryRPCPublicIPAddr = globals.publicIPAddr
