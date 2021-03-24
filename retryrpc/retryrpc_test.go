@@ -29,8 +29,8 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool) (rrSvr *Server, ip s
 		ipaddr = "127.0.0.1"
 		port   = 24456
 	)
-	config := &ServerConfig{LongTrim: lt, ShortTrim: 100 * time.Millisecond, IPAddr: "127.0.0.1",
-		Port: 24456, DeadlineIO: 5 * time.Second, dontStartTrimmers: dontStartTrimmers}
+	config := &ServerConfig{LongTrim: lt, ShortTrim: 100 * time.Millisecond, IPAddr: ipaddr,
+		Port: port, DeadlineIO: 5 * time.Second, dontStartTrimmers: dontStartTrimmers}
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 10 seconds.
