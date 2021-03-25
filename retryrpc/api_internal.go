@@ -417,7 +417,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 
 	serverEd25519PrivateKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: serverEd25519PrivateKeyDER})
 
-	serverCreds.serverTLSCertificate, err = tls.X509KeyPair(serverX509CertificatePEM, serverEd25519PrivateKeyPEM)
+	serverCreds.ServerTLSCertificate, err = tls.X509KeyPair(serverX509CertificatePEM, serverEd25519PrivateKeyPEM)
 
 	return
 }

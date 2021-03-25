@@ -4,15 +4,14 @@
 package jrpcfs
 
 import (
-	"time"
+	"crypto/tls"
+	"fmt"
 
 	"github.com/NVIDIA/proxyfs/logger"
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
-func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
-	retryRPCTTLCompleted time.Duration, retryRPCAckTrim time.Duration,
-	retryRPCDeadlineIO time.Duration, retryRPCKeepAlivePeriod time.Duration) {
+func retryRPCServerUp(jserver *Server) {
 
 	var err error
 
@@ -21,8 +20,32 @@ func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
 	}
 
 	// Create a new RetryRPC Server.
-	retryConfig := &retryrpc.ServerConfig{LongTrim: retryRPCTTLCompleted, ShortTrim: retryRPCAckTrim, IPAddr: publicIPAddr,
-		Port: int(retryRPCPort), DeadlineIO: retryRPCDeadlineIO, KeepAlivePeriod: retryRPCKeepAlivePeriod}
+	retryConfig := &retryrpc.ServerConfig{LongTrim: globals.retryRPCTTLCompleted, ShortTrim: globals.retryRPCAckTrim,
+		IPAddr: globals.publicIPAddr, Port: int(globals.retryRPCPort), DeadlineIO: globals.retryRPCDeadlineIO,
+		KeepAlivePeriod: globals.retryRPCKeepAlivePeriod}
+
+	// Retrive credentials from globals if they are valid.
+	//
+	// If the credentials are invalid, create self-signed certifcate and log message
+	if globals.rootCAx509CertificatePEM == nil || globals.retryRPCCertPEM == nil || globals.retryRPCKeyPEM == nil {
+		var (
+			constructErr error
+		)
+		retryConfig.ServerCreds, constructErr = retryrpc.ConstructCreds(globals.publicIPAddr)
+		if constructErr != nil {
+			logger.PanicfWithError(constructErr, "Unable to create ServerCreds")
+		}
+		logger.Infof("Invalid credentials passed retryrpc - creating self-signed. Passed rootCAx509CertificatePEM: %v retryRPCCertPEM: %v retryRPCKeyPEM: %v",
+			globals.rootCAx509CertificatePEM, globals.retryRPCCertPEM, globals.retryRPCKeyPEM)
+	} else {
+		svrCert, tmpErr := tls.X509KeyPair(globals.retryRPCCertPEM, globals.retryRPCKeyPEM)
+		if tmpErr != nil {
+			pMsg := fmt.Errorf("tls.X509KeyPair failed with error: %v", tmpErr)
+			panic(pMsg)
+
+		}
+		retryConfig.ServerCreds = &retryrpc.ServerCreds{RootCAx509CertificatePEM: globals.rootCAx509CertificatePEM, ServerTLSCertificate: svrCert}
+	}
 
 	rrSvr := retryrpc.NewServer(retryConfig)
 
