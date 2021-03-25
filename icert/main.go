@@ -151,7 +151,7 @@ func main() {
 	}
 
 	if *caFlag {
-		err = icertpkg.GenCACert(generateKeyAlgorithm, subject, *ttlFlag, *caCertPemFilePathFlag, *caKeyPemFilePathFlag)
+		_, _, err = icertpkg.GenCACert(generateKeyAlgorithm, subject, *ttlFlag, *caCertPemFilePathFlag, *caKeyPemFilePathFlag)
 		if nil != err {
 			fmt.Printf("icertpkg.GenCACert() failed: %v\n", err)
 			os.Exit(1)
@@ -167,7 +167,7 @@ func main() {
 			ipAddresses = append(ipAddresses, net.ParseIP(ipAddress))
 		}
 
-		err = icertpkg.GenEndpointCert(generateKeyAlgorithm, subject, dnsNamesFlag, ipAddresses, *ttlFlag, *caCertPemFilePathFlag, *caKeyPemFilePathFlag, *endpointCertPemFilePathFlag, *endpointKeyPemFilePathFlag)
+		_, _, err = icertpkg.GenEndpointCert(generateKeyAlgorithm, subject, dnsNamesFlag, ipAddresses, *ttlFlag, *caCertPemFilePathFlag, *caKeyPemFilePathFlag, *endpointCertPemFilePathFlag, *endpointKeyPemFilePathFlag)
 		if nil != err {
 			fmt.Printf("icertpkg.GenEndpointCert() failed: %v\n", err)
 			os.Exit(1)
