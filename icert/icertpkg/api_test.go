@@ -126,8 +126,8 @@ func testAPI(t *testing.T, generateKeyAlgorithm string, combined bool) {
 		t.Fatalf("GenCACert() failed: %v", err)
 	}
 
-	_, _, err = genEndpointCert(
-		// endpointCertPEM, endpointKeyPEM, err = genEndpointCert(
+	_, _, err = GenEndpointCert(
+		// endpointCertPEM, endpointKeyPEM, err = GenEndpointCert(
 		generateKeyAlgorithm,
 		pkix.Name{
 			Organization:  []string{testOrganizationEndpoint},
@@ -161,7 +161,7 @@ func testAPI(t *testing.T, generateKeyAlgorithm string, combined bool) {
 	}
 	// serverTLSCertificate, err = tls.X509KeyPair(endpointCertPEM, endpointKeyPEM)
 	// if nil != err {
-	// 	t.Fatalf("tls.LoadX509KeyPair() failed: %v", err)
+	// 	t.Fatalf("tls.X509KeyPair() failed: %v", err)
 	// }
 
 	serverNetListener, err = tls.Listen("tcp", ipAddressPort, &tls.Config{Certificates: []tls.Certificate{serverTLSCertificate}})

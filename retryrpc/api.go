@@ -27,13 +27,6 @@ import (
 	"github.com/google/btree"
 )
 
-// ServerCreds tracks the root CA and the
-// server CA
-type ServerCreds struct {
-	RootCAx509CertificatePEM []byte
-	ServerTLSCertificate     tls.Certificate
-}
-
 // Server tracks the state of the server
 type Server struct {
 	sync.Mutex
@@ -51,7 +44,7 @@ type Server struct {
 	connLock             sync.Mutex
 	connections          *list.List
 	connWG               sync.WaitGroup
-	Creds                *ServerCreds
+	tlsCertificate       tls.Certificate
 	listenersWG          sync.WaitGroup
 	receiver             reflect.Value          // Package receiver being served
 	perClientInfo        map[uint64]*clientInfo // Key: "clientID".  Tracks clients
@@ -66,51 +59,28 @@ type Server struct {
 
 // ServerConfig is used to configure a retryrpc Server
 type ServerConfig struct {
-	LongTrim          time.Duration // How long the results of an RPC are stored on a Server before removed
-	ShortTrim         time.Duration // How frequently completed and ACKed RPCs results are removed from Server
-	IPAddr            string        // IP Address that Server uses to listen
-	Port              int           // Port that Server uses to listen
-	DeadlineIO        time.Duration // How long I/Os on sockets wait even if idle
-	KeepAlivePeriod   time.Duration // How frequently a KEEPALIVE is sent
-	ServerCreds       *ServerCreds  // Credentials
-	dontStartTrimmers bool          // Used for testing
+	LongTrim          time.Duration   // How long the results of an RPC are stored on a Server before removed
+	ShortTrim         time.Duration   // How frequently completed and ACKed RPCs results are removed from Server
+	IPAddr            string          // IP Address that Server uses to listen
+	Port              int             // Port that Server uses to listen
+	DeadlineIO        time.Duration   // How long I/Os on sockets wait even if idle
+	KeepAlivePeriod   time.Duration   // How frequently a KEEPALIVE is sent
+	TLSCertificate    tls.Certificate // TLS Certificate to present to Clients
+	dontStartTrimmers bool            // Used for testing
 }
 
 // NewServer creates the Server object
 func NewServer(config *ServerConfig) *Server {
-	var (
-		err error
-	)
-
 	server := &Server{ipaddr: config.IPAddr, port: config.Port, completedLongTTL: config.LongTrim,
 		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
 		keepAlivePeriod: config.KeepAlivePeriod, dontStartTrimmers: config.dontStartTrimmers,
-		Creds: config.ServerCreds}
+		tlsCertificate: config.TLSCertificate}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[uint64]*clientInfo)
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
 
-	if config.ServerCreds == nil {
-		logger.Errorf("config.ServerCreds is nil")
-		panic(err)
-
-	}
-
 	return server
-}
-
-// ConstructCreds is used by unit tests to create self-signed credentials in the
-// ServerConfig structure before passing the struct to NewServer
-//
-// Only useful for unit tests
-func ConstructCreds(ipaddr string) (creds *ServerCreds, err error) {
-	creds, err = constructServerCreds(ipaddr)
-	if err != nil {
-		logger.Errorf("Construction of server credentials failed with err: %v", err)
-		panic(err)
-	}
-	return
 }
 
 // Register creates the map of server methods
@@ -127,7 +97,7 @@ func (server *Server) Start() (err error) {
 	hostPortStr := net.JoinHostPort(server.ipaddr, portStr)
 
 	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{server.Creds.ServerTLSCertificate},
+		Certificates: []tls.Certificate{server.tlsCertificate},
 	}
 
 	listenConfig := &net.ListenConfig{KeepAlive: server.keepAlivePeriod}

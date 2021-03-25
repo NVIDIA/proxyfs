@@ -4,45 +4,114 @@
 package retryrpc
 
 import (
+	"crypto/tls"
+	"crypto/x509/pkix"
+	"net"
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/proxyfs/bucketstats"
-	"github.com/NVIDIA/proxyfs/logger"
-	"github.com/NVIDIA/proxyfs/retryrpc/rpctest"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/icert/icertpkg"
+	"github.com/NVIDIA/proxyfs/retryrpc/rpctest"
 )
+
+const (
+	testIPAddr = "127.0.0.1"
+	testPort   = 24456
+)
+
+type testTLSCertsStruct struct {
+	caCertPEMBlock       []byte
+	caKeyPEMBlock        []byte
+	endpointCertPEMBlock []byte
+	endpointKeyPEMBlock  []byte
+	endpointTLSCert      tls.Certificate
+}
+
+var testTLSCerts *testTLSCertsStruct
+
+// Utility function to initialize testTLSCerts
+func testTLSCertsAllocate(t *testing.T) {
+	var (
+		err error
+	)
+
+	testTLSCerts = &testTLSCertsStruct{}
+
+	testTLSCerts.caCertPEMBlock, testTLSCerts.caKeyPEMBlock, err = icertpkg.GenCACert(
+		icertpkg.GenerateKeyAlgorithmEd25519,
+		pkix.Name{
+			Organization:  []string{"Test Organization CA"},
+			Country:       []string{},
+			Province:      []string{},
+			Locality:      []string{},
+			StreetAddress: []string{},
+			PostalCode:    []string{},
+		},
+		time.Hour,
+		"",
+		"")
+	if nil != err {
+		t.Fatalf("icertpkg.GenCACert() failed: %v", err)
+	}
+
+	testTLSCerts.endpointCertPEMBlock, testTLSCerts.endpointKeyPEMBlock, err = icertpkg.GenEndpointCert(
+		icertpkg.GenerateKeyAlgorithmEd25519,
+		pkix.Name{
+			Organization:  []string{"Test Organization Endpoint"},
+			Country:       []string{},
+			Province:      []string{},
+			Locality:      []string{},
+			StreetAddress: []string{},
+			PostalCode:    []string{},
+		},
+		[]string{},
+		[]net.IP{net.ParseIP("127.0.0.1")},
+		time.Hour,
+		testTLSCerts.caCertPEMBlock,
+		testTLSCerts.caKeyPEMBlock,
+		"",
+		"")
+	if nil != err {
+		t.Fatalf("icertpkg.genEndpointCert() failed: %v", err)
+	}
+
+	testTLSCerts.endpointTLSCert, err = tls.X509KeyPair(testTLSCerts.endpointCertPEMBlock, testTLSCerts.endpointKeyPEMBlock)
+	if nil != err {
+		t.Fatalf("tls.LoadX509KeyPair() failed: %v", err)
+	}
+}
 
 // Test basic retryrpc primitives
 //
 // This unit test exists here since it uses jrpcfs which would be a
 // circular dependency if the test was in retryrpc.
 func TestRetryRPC(t *testing.T) {
-
+	testTLSCertsAllocate(t)
 	testRegister(t)
 	testServer(t)
 	testBtree(t)
 	testStatsAndBucketstats(t)
 }
 
-func getNewServer(lt time.Duration, dontStartTrimmers bool) (rrSvr *Server, ip string, p int) {
-	var (
-		ipaddr = "127.0.0.1"
-		port   = 24456
-		err    error
-	)
-	config := &ServerConfig{LongTrim: lt, ShortTrim: 100 * time.Millisecond, IPAddr: ipaddr,
-		Port: port, DeadlineIO: 5 * time.Second, dontStartTrimmers: dontStartTrimmers}
-	config.ServerCreds, err = ConstructCreds(ipaddr)
-	if err != nil {
-		logger.PanicfWithError(err, "Unable to create ServerCreds")
+func getNewServer(lt time.Duration, dontStartTrimmers bool) (rrSvr *Server) {
+	config := &ServerConfig{
+		LongTrim:          lt,
+		ShortTrim:         100 * time.Millisecond,
+		IPAddr:            testIPAddr,
+		Port:              testPort,
+		DeadlineIO:        60 * time.Second,
+		KeepAlivePeriod:   60 * time.Second,
+		TLSCertificate:    testTLSCerts.endpointTLSCert,
+		dontStartTrimmers: dontStartTrimmers,
 	}
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 10 seconds.
 	rrSvr = NewServer(config)
-	ip = ipaddr
-	p = port
+
 	return
 }
 
@@ -56,7 +125,7 @@ func testRegister(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr, _, _ := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -78,7 +147,7 @@ func testServer(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr, ipaddr, port := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -94,8 +163,14 @@ func testServer(t *testing.T) {
 	rrSvr.Run()
 
 	// Now - setup a client to send requests to the server
-	clientConfig := &ClientConfig{IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
-		Callbacks: nil, DeadlineIO: 5 * time.Second}
+	clientConfig := &ClientConfig{
+		IPAddr:                   testIPAddr,
+		Port:                     testPort,
+		RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+		Callbacks:                nil,
+		DeadlineIO:               60 * time.Second,
+		KeepAlivePeriod:          60 * time.Second,
+	}
 	rrClnt, newErr := NewClient(clientConfig)
 	assert.NotNil(rrClnt)
 	assert.Nil(newErr)
@@ -142,12 +217,18 @@ func testServer(t *testing.T) {
 func testBtree(t *testing.T) {
 	assert := assert.New(t)
 
-	rrSvr, ipaddr, port := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false)
 	assert.NotNil(rrSvr)
 
 	// Setup a client - we only will be targeting the btree
-	clientConfig := &ClientConfig{IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
-		Callbacks: nil, DeadlineIO: 5 * time.Second}
+	clientConfig := &ClientConfig{
+		IPAddr:                   testIPAddr,
+		Port:                     testPort,
+		RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+		Callbacks:                nil,
+		DeadlineIO:               60 * time.Second,
+		KeepAlivePeriod:          60 * time.Second,
+	}
 	client, newErr := NewClient(clientConfig)
 	assert.NotNil(client)
 	assert.Nil(newErr)
