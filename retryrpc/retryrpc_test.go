@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/logger"
 	"github.com/NVIDIA/proxyfs/retryrpc/rpctest"
 	"github.com/stretchr/testify/assert"
 )
@@ -28,9 +29,14 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool) (rrSvr *Server, ip s
 	var (
 		ipaddr = "127.0.0.1"
 		port   = 24456
+		err    error
 	)
 	config := &ServerConfig{LongTrim: lt, ShortTrim: 100 * time.Millisecond, IPAddr: ipaddr,
 		Port: port, DeadlineIO: 5 * time.Second, dontStartTrimmers: dontStartTrimmers}
+	config.ServerCreds, err = ConstructCreds(ipaddr)
+	if err != nil {
+		logger.PanicfWithError(err, "Unable to create ServerCreds")
+	}
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 10 seconds.

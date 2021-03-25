@@ -31,7 +31,7 @@ import (
 // server CA
 type ServerCreds struct {
 	RootCAx509CertificatePEM []byte
-	serverTLSCertificate     tls.Certificate
+	ServerTLSCertificate     tls.Certificate
 }
 
 // Server tracks the state of the server
@@ -72,6 +72,7 @@ type ServerConfig struct {
 	Port              int           // Port that Server uses to listen
 	DeadlineIO        time.Duration // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod   time.Duration // How frequently a KEEPALIVE is sent
+	ServerCreds       *ServerCreds  // Credentials
 	dontStartTrimmers bool          // Used for testing
 }
 
@@ -80,21 +81,36 @@ func NewServer(config *ServerConfig) *Server {
 	var (
 		err error
 	)
+
 	server := &Server{ipaddr: config.IPAddr, port: config.Port, completedLongTTL: config.LongTrim,
 		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
-		keepAlivePeriod: config.KeepAlivePeriod, dontStartTrimmers: config.dontStartTrimmers}
+		keepAlivePeriod: config.KeepAlivePeriod, dontStartTrimmers: config.dontStartTrimmers,
+		Creds: config.ServerCreds}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[uint64]*clientInfo)
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
 
-	server.Creds, err = constructServerCreds(server.ipaddr)
+	if config.ServerCreds == nil {
+		logger.Errorf("config.ServerCreds is nil")
+		panic(err)
+
+	}
+
+	return server
+}
+
+// ConstructCreds is used by unit tests to create self-signed credentials in the
+// ServerConfig structure before passing the struct to NewServer
+//
+// Only useful for unit tests
+func ConstructCreds(ipaddr string) (creds *ServerCreds, err error) {
+	creds, err = constructServerCreds(ipaddr)
 	if err != nil {
 		logger.Errorf("Construction of server credentials failed with err: %v", err)
 		panic(err)
 	}
-
-	return server
+	return
 }
 
 // Register creates the map of server methods
@@ -111,7 +127,7 @@ func (server *Server) Start() (err error) {
 	hostPortStr := net.JoinHostPort(server.ipaddr, portStr)
 
 	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{server.Creds.serverTLSCertificate},
+		Certificates: []tls.Certificate{server.Creds.ServerTLSCertificate},
 	}
 
 	listenConfig := &net.ListenConfig{KeepAlive: server.keepAlivePeriod}
@@ -278,13 +294,12 @@ const (
 )
 
 type connectionTracker struct {
-	state                    clientState
-	genNum                   uint64 // Generation number of tlsConn - avoid racing recoveries
-	tlsConfig                *tls.Config
-	tlsConn                  *tls.Conn // Our connection to the server
-	x509CertPool             *x509.CertPool
-	rootCAx509CertificatePEM []byte
-	hostPortStr              string
+	state        clientState
+	genNum       uint64 // Generation number of tlsConn - avoid racing recoveries
+	tlsConfig    *tls.Config
+	tlsConn      *tls.Conn // Our connection to the server
+	x509CertPool *x509.CertPool
+	hostPortStr  string
 }
 
 // Client tracking structure
@@ -341,14 +356,18 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 
 	client = &Client{cb: config.Callbacks, keepAlivePeriod: config.KeepAlivePeriod,
 		deadlineIO: config.DeadlineIO}
+	if config.RootCAx509CertificatePEM == nil {
+		err = fmt.Errorf("config.RootCAx509CertificatePEM cannot be nil")
+		return
+	}
 	portStr := fmt.Sprintf("%d", config.Port)
 	client.connection.state = INITIAL
 	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, portStr)
 	client.outstandingRequest = make(map[requestID]*reqCtx)
-	client.connection.x509CertPool = x509.NewCertPool()
 	client.bt = btree.New(2)
 
 	// Add cert for root CA to our pool
+	client.connection.x509CertPool = x509.NewCertPool()
 	ok := client.connection.x509CertPool.AppendCertsFromPEM(config.RootCAx509CertificatePEM)
 	if !ok {
 		err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")

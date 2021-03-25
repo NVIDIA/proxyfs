@@ -306,8 +306,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	ioServerUp(globals.privateIPAddr, globals.fastPortString)
 
 	// Init Retry RPC server
-	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted, globals.retryRPCAckTrim,
-		globals.retryRPCDeadlineIO, globals.retryRPCKeepAlivePeriod)
+	retryRPCServerUp(jserver)
 
 	err = nil
 	return
