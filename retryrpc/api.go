@@ -36,8 +36,8 @@ type Server struct {
 	ipaddr           string                 // IP address server listens too
 	port             int                    // Port of server
 	clientIDNonce    uint64                 // Nonce used to create a unique client ID
-	netListener      net.Listener
-	tlsListener      net.Listener
+	netListener      net.Listener           // Accepts on this to skip TLS upgrade
+	tlsListener      net.Listener           // Accepts on this to use  TLS upgrade
 
 	halting              bool
 	goroutineWG          sync.WaitGroup // Used to track outstanding goroutines
@@ -107,7 +107,9 @@ func (server *Server) Start() (err error) {
 		return
 	}
 
-	server.tlsListener = tls.NewListener(server.netListener, tlsConfig)
+	if 0 != len(server.tlsCertificate.Certificate) {
+		server.tlsListener = tls.NewListener(server.netListener, tlsConfig)
+	}
 
 	server.listenersWG.Add(1)
 
@@ -194,9 +196,16 @@ func (server *Server) Close() {
 	server.halting = true
 	server.Unlock()
 
-	err := server.tlsListener.Close()
-	if err != nil {
-		logger.Errorf("server.tlsListener.Close() returned err: %v", err)
+	if 0 == len(server.tlsCertificate.Certificate) {
+		err := server.netListener.Close()
+		if err != nil {
+			logger.Errorf("server.netListener.Close() returned err: %v", err)
+		}
+	} else {
+		err := server.tlsListener.Close()
+		if err != nil {
+			logger.Errorf("server.tlsListener.Close() returned err: %v", err)
+		}
 	}
 
 	server.listenersWG.Wait()
