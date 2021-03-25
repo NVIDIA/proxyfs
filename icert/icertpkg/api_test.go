@@ -59,23 +59,26 @@ func TestRSACombinedCertAndKeyFile(t *testing.T) {
 
 func testAPI(t *testing.T, generateKeyAlgorithm string, combined bool) {
 	var (
-		caCertPEM               []byte
-		caCertPemFilePath       string
-		caCertPool              *x509.CertPool
-		caKeyPemFilePath        string
-		clientErr               error
-		clientTLSConfig         *tls.Config
-		clientWG                sync.WaitGroup
-		endpointCertPemFilePath string
-		endpointKeyPemFilePath  string
-		err                     error
-		ipAddressPort           string
-		ok                      bool
-		tempDir                 string
-		serverErr               error
-		serverNetListener       net.Listener
-		serverTLSCertificate    tls.Certificate
-		serverWG                sync.WaitGroup
+		caCertPEM         []byte
+		caCertPEMFilePath string
+		caCertPool        *x509.CertPool
+		// caKeyPEM                []byte
+		caKeyPEMFilePath string
+		clientErr        error
+		clientTLSConfig  *tls.Config
+		clientWG         sync.WaitGroup
+		// endpointCertPEM         []byte
+		endpointCertPEMFilePath string
+		// endpointKeyPEM          []byte
+		endpointKeyPEMFilePath string
+		err                    error
+		ipAddressPort          string
+		ok                     bool
+		tempDir                string
+		serverErr              error
+		serverNetListener      net.Listener
+		serverTLSCertificate   tls.Certificate
+		serverWG               sync.WaitGroup
 	)
 
 	tempDir, err = ioutil.TempDir("", testTempDirPattern)
@@ -94,18 +97,19 @@ func testAPI(t *testing.T, generateKeyAlgorithm string, combined bool) {
 	}(t, tempDir)
 
 	if combined {
-		caCertPemFilePath = filepath.Join(tempDir, testCACombinedPEMFileName)
-		caKeyPemFilePath = caCertPemFilePath
-		endpointCertPemFilePath = filepath.Join(tempDir, testIPAddressCombinedPEMFileName)
-		endpointKeyPemFilePath = endpointCertPemFilePath
+		caCertPEMFilePath = filepath.Join(tempDir, testCACombinedPEMFileName)
+		caKeyPEMFilePath = caCertPEMFilePath
+		endpointCertPEMFilePath = filepath.Join(tempDir, testIPAddressCombinedPEMFileName)
+		endpointKeyPEMFilePath = endpointCertPEMFilePath
 	} else {
-		caCertPemFilePath = filepath.Join(tempDir, testCACertPEMFileName)
-		caKeyPemFilePath = filepath.Join(tempDir, testCAKeyPEMFileName)
-		endpointCertPemFilePath = filepath.Join(tempDir, testIPAddressCertPEMFileName)
-		endpointKeyPemFilePath = filepath.Join(tempDir, testIPAddressKeyPEMFileName)
+		caCertPEMFilePath = filepath.Join(tempDir, testCACertPEMFileName)
+		caKeyPEMFilePath = filepath.Join(tempDir, testCAKeyPEMFileName)
+		endpointCertPEMFilePath = filepath.Join(tempDir, testIPAddressCertPEMFileName)
+		endpointKeyPEMFilePath = filepath.Join(tempDir, testIPAddressKeyPEMFileName)
 	}
 
-	err = GenCACert(
+	_, _, err = GenCACert(
+		// caCertPEM, caKeyPEM, err = GenCACert(
 		generateKeyAlgorithm,
 		pkix.Name{
 			Organization:  []string{testOrganizationCA},
@@ -116,13 +120,14 @@ func testAPI(t *testing.T, generateKeyAlgorithm string, combined bool) {
 			PostalCode:    []string{},
 		},
 		testCertificateTTL,
-		caCertPemFilePath,
-		caKeyPemFilePath)
+		caCertPEMFilePath,
+		caKeyPEMFilePath)
 	if nil != err {
 		t.Fatalf("GenCACert() failed: %v", err)
 	}
 
-	err = genEndpointCert(
+	_, _, err = genEndpointCert(
+		// endpointCertPEM, endpointKeyPEM, err = genEndpointCert(
 		generateKeyAlgorithm,
 		pkix.Name{
 			Organization:  []string{testOrganizationEndpoint},
@@ -135,10 +140,12 @@ func testAPI(t *testing.T, generateKeyAlgorithm string, combined bool) {
 		[]string{testV4DomainName, testV6DomainName},
 		[]net.IP{net.ParseIP(testIPv4Address), net.ParseIP(testIPv6Address)},
 		testCertificateTTL,
-		caCertPemFilePath,
-		caKeyPemFilePath,
-		endpointCertPemFilePath,
-		endpointKeyPemFilePath)
+		caCertPEMFilePath,
+		caKeyPEMFilePath,
+		// caCertPEM,
+		// caKeyPEM,
+		endpointCertPEMFilePath,
+		endpointKeyPEMFilePath)
 	if nil != err {
 		t.Fatalf("genEndpointCert() failed: %v", err)
 	}
@@ -148,19 +155,23 @@ func testAPI(t *testing.T, generateKeyAlgorithm string, combined bool) {
 	ipAddressPort = net.JoinHostPort(testIPv4Address, testTLSPort)
 	// ipAddressPort = net.JoinHostPort(testIPv6Address, testTLSPort)
 
-	serverTLSCertificate, err = tls.LoadX509KeyPair(endpointCertPemFilePath, endpointKeyPemFilePath)
+	serverTLSCertificate, err = tls.LoadX509KeyPair(endpointCertPEMFilePath, endpointKeyPEMFilePath)
 	if nil != err {
 		t.Fatalf("tls.LoadX509KeyPair() failed: %v", err)
 	}
+	// serverTLSCertificate, err = tls.X509KeyPair(endpointCertPEM, endpointKeyPEM)
+	// if nil != err {
+	// 	t.Fatalf("tls.LoadX509KeyPair() failed: %v", err)
+	// }
 
 	serverNetListener, err = tls.Listen("tcp", ipAddressPort, &tls.Config{Certificates: []tls.Certificate{serverTLSCertificate}})
 	if nil != err {
 		t.Fatalf("tls.Listen() failed: %v", err)
 	}
 
-	caCertPEM, err = ioutil.ReadFile(caCertPemFilePath)
+	caCertPEM, err = ioutil.ReadFile(caCertPEMFilePath)
 	if nil != err {
-		t.Fatalf("ioutil.ReadFile(caCertPemFilePath) failed: %v", err)
+		t.Fatalf("ioutil.ReadFile(caCertPEMFilePath) failed: %v", err)
 	}
 
 	caCertPool = x509.NewCertPool()

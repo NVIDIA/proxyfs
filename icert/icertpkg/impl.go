@@ -19,14 +19,12 @@ import (
 	"time"
 )
 
-func genCACert(generateKeyAlgorithm string, subject pkix.Name, ttl time.Duration, certFile string, keyFile string) (err error) {
+func genCACert(generateKeyAlgorithm string, subject pkix.Name, ttl time.Duration, certFile string, keyFile string) (certPEMBlock []byte, keyPEMBlock []byte, err error) {
 	var (
 		caX509Certificate         []byte
 		caX509CertificateTemplate *x509.Certificate
-		certPEM                   []byte
 		ed25519PrivateKey         ed25519.PrivateKey
 		ed25519PublicKey          ed25519.PublicKey
-		keyPEM                    []byte
 		pkcs8PrivateKey           []byte
 		rsaPrivateKey             *rsa.PrivateKey
 		rsaPublicKey              crypto.PublicKey
@@ -93,22 +91,28 @@ func genCACert(generateKeyAlgorithm string, subject pkix.Name, ttl time.Duration
 		return
 	}
 
-	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caX509Certificate})
-	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8PrivateKey})
+	certPEMBlock = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caX509Certificate})
+	keyPEMBlock = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8PrivateKey})
 
-	if certFile == keyFile {
-		err = ioutil.WriteFile(certFile, append(certPEM, keyPEM...), GeneratedFilePerm)
-		if nil != err {
-			return
-		}
-	} else {
-		err = ioutil.WriteFile(certFile, certPEM, GeneratedFilePerm)
-		if nil != err {
-			return
-		}
-		err = ioutil.WriteFile(keyFile, keyPEM, GeneratedFilePerm)
-		if nil != err {
-			return
+	if ("" != certFile) || ("" != keyFile) {
+		if certFile == keyFile {
+			err = ioutil.WriteFile(certFile, append(certPEMBlock, keyPEMBlock...), GeneratedFilePerm)
+			if nil != err {
+				return
+			}
+		} else {
+			if "" != certFile {
+				err = ioutil.WriteFile(certFile, certPEMBlock, GeneratedFilePerm)
+				if nil != err {
+					return
+				}
+			}
+			if "" != keyFile {
+				err = ioutil.WriteFile(keyFile, keyPEMBlock, GeneratedFilePerm)
+				if nil != err {
+					return
+				}
+			}
 		}
 	}
 
@@ -116,14 +120,17 @@ func genCACert(generateKeyAlgorithm string, subject pkix.Name, ttl time.Duration
 	return
 }
 
-func genEndpointCert(generateKeyAlgorithm string, subject pkix.Name, dnsNames []string, ipAddresses []net.IP, ttl time.Duration, caCertFile string, caKeyFile string, endpointCertFile string, endpointKeyFile string) (err error) {
+func genEndpointCert(generateKeyAlgorithm string, subject pkix.Name, dnsNames []string, ipAddresses []net.IP, ttl time.Duration, caCert interface{}, caKey interface{}, endpointCertFile string, endpointKeyFile string) (endpointCertPEMBlock []byte, endpointKeyPEMBlock []byte, err error) {
 	var (
+		caCertAsByteSlice       []byte
+		caCertAsString          string
+		caKeyAsByteSlice        []byte
+		caKeyAsString           string
 		caTLSCertificate        tls.Certificate
 		caX509Certificate       *x509.Certificate
-		certPEM                 []byte
 		ed25519PrivateKey       ed25519.PrivateKey
 		ed25519PublicKey        ed25519.PublicKey
-		keyPEM                  []byte
+		ok                      bool
 		pkcs8PrivateKey         []byte
 		rsaPrivateKey           *rsa.PrivateKey
 		rsaPublicKey            crypto.PublicKey
@@ -156,9 +163,32 @@ func genEndpointCert(generateKeyAlgorithm string, subject pkix.Name, dnsNames []
 		BasicConstraintsValid: true,
 	}
 
-	caTLSCertificate, err = tls.LoadX509KeyPair(caCertFile, caKeyFile)
-	if nil != err {
-		return
+	caCertAsByteSlice, ok = caCert.([]byte)
+	if ok {
+		caKeyAsByteSlice, ok = caKey.([]byte)
+		if !ok {
+			err = fmt.Errorf("if caCert is a []byte, caKey must also be a []byte")
+			return
+		}
+		caTLSCertificate, err = tls.X509KeyPair(caCertAsByteSlice, caKeyAsByteSlice)
+		if nil != err {
+			return
+		}
+	} else {
+		caCertAsString, ok = caCert.(string)
+		if !ok {
+			err = fmt.Errorf("caCert must be either a []byte or a string")
+			return
+		}
+		caKeyAsString, ok = caKey.(string)
+		if !ok {
+			err = fmt.Errorf("if caCert is a string, caKey must also be a string")
+			return
+		}
+		caTLSCertificate, err = tls.LoadX509KeyPair(caCertAsString, caKeyAsString)
+		if nil != err {
+			return
+		}
 	}
 
 	caX509Certificate, err = x509.ParseCertificate(caTLSCertificate.Certificate[0])
@@ -203,22 +233,28 @@ func genEndpointCert(generateKeyAlgorithm string, subject pkix.Name, dnsNames []
 		return
 	}
 
-	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: x509Certificate})
-	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8PrivateKey})
+	endpointCertPEMBlock = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: x509Certificate})
+	endpointKeyPEMBlock = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8PrivateKey})
 
-	if endpointCertFile == endpointKeyFile {
-		err = ioutil.WriteFile(endpointCertFile, append(certPEM, keyPEM...), GeneratedFilePerm)
-		if nil != err {
-			return
-		}
-	} else {
-		err = ioutil.WriteFile(endpointCertFile, certPEM, GeneratedFilePerm)
-		if nil != err {
-			return
-		}
-		err = ioutil.WriteFile(endpointKeyFile, keyPEM, GeneratedFilePerm)
-		if nil != err {
-			return
+	if ("" != endpointCertFile) || ("" != endpointKeyFile) {
+		if endpointCertFile == endpointKeyFile {
+			err = ioutil.WriteFile(endpointCertFile, append(endpointCertPEMBlock, endpointKeyPEMBlock...), GeneratedFilePerm)
+			if nil != err {
+				return
+			}
+		} else {
+			if "" != endpointCertFile {
+				err = ioutil.WriteFile(endpointCertFile, endpointCertPEMBlock, GeneratedFilePerm)
+				if nil != err {
+					return
+				}
+			}
+			if "" != endpointKeyFile {
+				err = ioutil.WriteFile(endpointKeyFile, endpointKeyPEMBlock, GeneratedFilePerm)
+				if nil != err {
+					return
+				}
+			}
 		}
 	}
 
