@@ -26,7 +26,6 @@ var printDebugLogs bool = false
 // TODO - test if Register has been called???
 
 func (server *Server) closeClient(myConn net.Conn, myElm *list.Element) {
-
 	server.connLock.Lock()
 	server.connections.Remove(myElm)
 
@@ -38,9 +37,18 @@ func (server *Server) closeClient(myConn net.Conn, myElm *list.Element) {
 }
 
 func (server *Server) run() {
+	var (
+		conn net.Conn
+		err  error
+	)
+
 	defer server.goroutineWG.Done()
 	for {
-		conn, err := server.tlsListener.Accept()
+		if 0 == len(server.tlsCertificate.Certificate) {
+			conn, err = server.netListener.Accept()
+		} else {
+			conn, err = server.tlsListener.Accept()
+		}
 		if err != nil {
 			if !server.halting {
 				logger.ErrorfWithError(err, "net.Accept failed for Retry RPC listener")
@@ -80,19 +88,19 @@ func (server *Server) run() {
 		}
 
 		server.goroutineWG.Add(1)
-		go func(myConn net.Conn, myElm *list.Element) {
+		go func(myCi *clientInfo, myCCtx *connCtx, myConn net.Conn, myElm *list.Element) {
 			defer server.goroutineWG.Done()
 
-			logger.Infof("Servicing client: %v address: %v", ci.myUniqueID, myConn.RemoteAddr())
-			server.serviceClient(ci, cCtx)
+			logger.Infof("Servicing client: %v address: %v", myCi.myUniqueID, myConn.RemoteAddr())
+			server.serviceClient(myCi, myCCtx)
 
-			logger.Infof("Closing client: %v address: %v", ci.myUniqueID, myConn.RemoteAddr())
-			server.closeClient(conn, elm)
+			logger.Infof("Closing client: %v address: %v", myCi.myUniqueID, myConn.RemoteAddr())
+			server.closeClient(myConn, myElm)
 
 			// The clientInfo for this client will first be trimmed and then later
 			// deleted from the list of server.perClientInfo by the TTL trimmer.
 
-		}(conn, elm)
+		}(ci, cCtx, conn, elm)
 	}
 }
 
