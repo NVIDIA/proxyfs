@@ -395,11 +395,10 @@ type MountByAccountNameRequest struct {
 
 // MountByAccountNameReply is the reply object for RpcMountByAccountName.
 type MountByAccountNameReply struct {
-	MountID                  MountIDAsString
-	RootDirInodeNumber       int64
-	RetryRPCPublicIPAddr     string
-	RetryRPCPort             uint16
-	RootCAx509CertificatePEM []byte
+	MountID              MountIDAsString
+	RootDirInodeNumber   int64
+	RetryRPCPublicIPAddr string
+	RetryRPCPort         uint16
 }
 
 // MountByVolumeNameRequest is the request object for RpcMountByVolumeName.
@@ -412,11 +411,10 @@ type MountByVolumeNameRequest struct {
 
 // MountByVolumeNameReply is the reply object for RpcMountByVolumeName.
 type MountByVolumeNameReply struct {
-	MountID                  MountIDAsString
-	RootDirInodeNumber       int64
-	RetryRPCPublicIPAddr     string
-	RetryRPCPort             uint16
-	RootCAx509CertificatePEM []byte
+	MountID              MountIDAsString
+	RootDirInodeNumber   int64
+	RetryRPCPublicIPAddr string
+	RetryRPCPort         uint16
 }
 
 // UnmountRequest is the request object for RpcUnmount.

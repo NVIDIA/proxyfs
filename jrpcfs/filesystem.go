@@ -1414,7 +1414,6 @@ func (s *Server) RpcMountByAccountName(clientID uint64, in *MountByAccountNameRe
 			reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
 			reply.RetryRPCPublicIPAddr = globals.publicIPAddr
 			reply.RetryRPCPort = globals.retryRPCPort
-			reply.RootCAx509CertificatePEM = globals.rootCAx509CertificatePEM
 		}
 	}
 
@@ -1436,7 +1435,6 @@ func (s *Server) RpcMountByVolumeName(clientID uint64, in *MountByVolumeNameRequ
 			reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
 			reply.RetryRPCPublicIPAddr = globals.publicIPAddr
 			reply.RetryRPCPort = globals.retryRPCPort
-			reply.RootCAx509CertificatePEM = globals.rootCAx509CertificatePEM
 		}
 	}
 

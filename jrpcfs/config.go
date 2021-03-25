@@ -5,6 +5,7 @@ package jrpcfs
 
 import (
 	"container/list"
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -145,13 +146,14 @@ type globalsStruct struct {
 	retryRPCCertPEM []byte
 	retryRPCKeyPEM  []byte
 
+	retryRPCCertificate tls.Certificate
+
 	volumeMap                    map[string]*volumeStruct            // key == volumeStruct.volumeName
 	mountMapByMountIDAsByteArray map[MountIDAsByteArray]*mountStruct // key == mountStruct.mountIDAsByteArray
 	mountMapByMountIDAsString    map[MountIDAsString]*mountStruct    // key == mountStruct.mountIDAsString
 
 	// RetryRPC server
-	retryrpcSvr              *retryrpc.Server
-	rootCAx509CertificatePEM []byte
+	retryrpcSvr *retryrpc.Server
 
 	// Connection list and listener list to close during shutdown:
 	halting     bool
@@ -227,30 +229,39 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 			globals.retryRPCKeepAlivePeriod = 60 * time.Second
 		}
 		globals.retryRPCCertFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCCertFilePath")
-		if nil == err {
-			globals.retryRPCCertPEM, err = ioutil.ReadFile(globals.retryRPCCertFilePath)
-			if nil != err {
-				logger.ErrorfWithError(err, "failed to load PEM-formatted [JSONRPCServer]RetryRPCCertFilePath [\"%s\"]: %v", globals.retryRPCCertFilePath, err)
+		if (nil == err) && ("" != globals.retryRPCCertFilePath) {
+			globals.retryRPCKeyFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCKeyFilePath")
+			if (nil != err) || ("" != globals.retryRPCKeyFilePath) {
+				logger.Error("if [JSOPNRPCServer]RetryRPCCertFilePath is specified, [JSOPNRPCServer]RetryRPCKeyFilePath must be specified as well")
 				return
 			}
-		} else {
-			logger.Infof("failed to get JSONRPCServer.RetryRPCCertFilePath from config file - defaulting to \"\"")
-			globals.retryRPCCertFilePath = ""
-		}
-		globals.retryRPCKeyFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCKeyFilePath")
-		if nil == err {
-			if "" == globals.retryRPCCertFilePath {
-				logger.Error("if [JSOPNRPCServer]RetryRPCKeyFilePath is specified, [JSOPNRPCServer]RetryRPCCertFilePath must be specified as well")
+			globals.retryRPCCertPEM, err = ioutil.ReadFile(globals.retryRPCCertFilePath)
+			if nil != err {
+				logger.ErrorfWithError(err, "failed to load PEM-formatted [JSONRPCServer]RetryRPCCertFilePath [\"%s\"]", globals.retryRPCCertFilePath)
 				return
 			}
 			globals.retryRPCKeyPEM, err = ioutil.ReadFile(globals.retryRPCKeyFilePath)
 			if nil != err {
-				logger.ErrorfWithError(err, "failed to load PEM-formatted [JSONRPCServer]RetryRPCKeyFilePath [\"%s\"]: %v", globals.retryRPCKeyFilePath, err)
+				logger.ErrorfWithError(err, "failed to load PEM-formatted [JSONRPCServer]retryRPCKeyFilePath [\"%s\"]", globals.retryRPCKeyFilePath)
+				return
+			}
+			globals.retryRPCCertificate, err = tls.X509KeyPair(globals.retryRPCCertPEM, globals.retryRPCKeyPEM)
+			if nil != err {
+				logger.ErrorfWithError(err, "tls.LoadX509KeyPair(\"%s\", \"%s\") failed", globals.retryRPCCertFilePath, globals.retryRPCKeyFilePath)
 				return
 			}
 		} else {
-			logger.Infof("failed to get JSONRPCServer.RetryRPCKeyFilePath from config file - defaulting to \"\"")
+			globals.retryRPCKeyFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCKeyFilePath")
+			if (nil == err) && ("" != globals.retryRPCKeyFilePath) {
+				logger.Error("if [JSOPNRPCServer]RetryRPCKeyFilePath is specified, [JSOPNRPCServer]RetryRPCCertFilePath must be specified as well")
+				return
+			}
+			logger.Infof("failed to get JSONRPCServer.RetryRPC{Cert|Key}FilePath from config file - defaulting to \"\"")
+			globals.retryRPCCertFilePath = ""
 			globals.retryRPCKeyFilePath = ""
+			globals.retryRPCCertPEM = nil
+			globals.retryRPCKeyPEM = nil
+			globals.retryRPCCertificate = tls.Certificate{}
 		}
 	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
@@ -263,6 +274,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		globals.retryRPCKeyFilePath = ""
 		globals.retryRPCCertPEM = nil
 		globals.retryRPCKeyPEM = nil
+		globals.retryRPCCertificate = tls.Certificate{}
 	}
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings

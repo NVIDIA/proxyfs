@@ -74,7 +74,7 @@ func BenchmarkRpcLease(b *testing.B) {
 	retryrpcClientConfig = &retryrpc.ClientConfig{
 		IPAddr:                   globals.publicIPAddr,
 		Port:                     int(globals.retryRPCPort),
-		RootCAx509CertificatePEM: globals.retryrpcSvr.Creds.RootCAx509CertificatePEM, // Use same CA as server
+		RootCAx509CertificatePEM: nil,
 		Callbacks:                testRpcLeaseClient,
 		DeadlineIO:               deadlineIO,
 		KeepAlivePeriod:          keepAlivePeriod,
@@ -478,7 +478,7 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) instanceGoroutine() {
 	retryrpcClientConfig = &retryrpc.ClientConfig{
 		IPAddr:                   globals.publicIPAddr,
 		Port:                     int(globals.retryRPCPort),
-		RootCAx509CertificatePEM: globals.retryrpcSvr.Creds.RootCAx509CertificatePEM, // Use same CA as server
+		RootCAx509CertificatePEM: nil,
 		Callbacks:                testRpcLeaseClient,
 		DeadlineIO:               deadlineIO,
 		KeepAlivePeriod:          keepAlivePeriod,
