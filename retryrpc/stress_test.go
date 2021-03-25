@@ -28,6 +28,7 @@ func TestStress(t *testing.T) {
 		go http.ListenAndServe("localhost:12123", nil)
 	*/
 
+	testTLSCertsAllocate(t)
 	testLoop(t)
 	testLoopClientAckTrim(t)
 	testLoopTTLTrim(t)
@@ -47,7 +48,7 @@ func testLoop(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr, ipAddr, port := getNewServer(65*time.Second, false)
+	rrSvr := getNewServer(65*time.Second, false)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -63,7 +64,7 @@ func testLoop(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, "RpcPing", sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+	parallelAgentSenders(t, rrSvr, agentCount, "RpcPing", sendCount)
 
 	rrSvr.Close()
 }
@@ -87,7 +88,7 @@ func testLoopClientAckTrim(t *testing.T) {
 	myJrpcfs := rpctest.NewServer()
 
 	whenTTL := 10 * time.Millisecond
-	rrSvr, ipAddr, port := getNewServer(whenTTL, true)
+	rrSvr := getNewServer(whenTTL, true)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -103,7 +104,7 @@ func testLoopClientAckTrim(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, "RpcPing", sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+	parallelAgentSenders(t, rrSvr, agentCount, "RpcPing", sendCount)
 
 	// Now for both trimmers to run
 	tm := time.Now()
@@ -149,7 +150,7 @@ func testLoopTTLTrim(t *testing.T) {
 	myJrpcfs := rpctest.NewServer()
 
 	whenTTL := 10 * time.Millisecond
-	rrSvr, ipAddr, port := getNewServer(whenTTL, true)
+	rrSvr := getNewServer(whenTTL, true)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -165,7 +166,7 @@ func testLoopTTLTrim(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, "RpcPing", sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+	parallelAgentSenders(t, rrSvr, agentCount, "RpcPing", sendCount)
 
 	// Use the TTL trimmer to remove all messages after guaranteeing we are
 	// past time when they should be removed
@@ -199,7 +200,7 @@ func testSendLargeRPC(t *testing.T) {
 	myJrpcfs := rpctest.NewServer()
 
 	whenTTL := 10 * time.Millisecond
-	rrSvr, ipAddr, port := getNewServer(whenTTL, true)
+	rrSvr := getNewServer(whenTTL, true)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -215,7 +216,7 @@ func testSendLargeRPC(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, "RpcPingLarge", sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+	parallelAgentSenders(t, rrSvr, agentCount, "RpcPingLarge", sendCount)
 
 	// Now for both trimmers to run
 	tm := time.Now()
@@ -333,14 +334,19 @@ func (cb *stressMyClient) Interrupt(payload []byte) {
 }
 
 // Represents a pfsagent - sepearate client
-func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint64, method string,
-	agentWg *sync.WaitGroup, sendCnt int, rootCAx509CertificatePEM []byte) {
+func pfsagent(t *testing.T, rrSvr *Server, agentID uint64, method string, agentWg *sync.WaitGroup, sendCnt int) {
 	defer agentWg.Done()
 
 	cb := &stressMyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
-	clientConfig := &ClientConfig{IPAddr: ipAddr, Port: port,
-		RootCAx509CertificatePEM: rootCAx509CertificatePEM, Callbacks: cb, DeadlineIO: 5 * time.Second}
+	clientConfig := &ClientConfig{
+		IPAddr:                   testIPAddr,
+		Port:                     testPort,
+		RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+		Callbacks:                cb,
+		DeadlineIO:               60 * time.Second,
+		KeepAlivePeriod:          60 * time.Second,
+	}
 	client, err := NewClient(clientConfig)
 	if err != nil {
 		fmt.Printf("Dial() failed with err: %v\n", err)
@@ -403,8 +409,7 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 }
 
 // Start a bunch of "pfsagents" in parallel
-func parallelAgentSenders(t *testing.T, rrSrv *Server, ipAddr string, port int, agentCnt int,
-	method string, sendCnt int, rootCAx509CertificatePEM []byte) {
+func parallelAgentSenders(t *testing.T, rrSrv *Server, agentCnt int, method string, sendCnt int) {
 
 	var agentWg sync.WaitGroup
 
@@ -418,7 +423,7 @@ func parallelAgentSenders(t *testing.T, rrSrv *Server, ipAddr string, port int, 
 		agentID = clientSeed + uint64(i)
 
 		agentWg.Add(1)
-		go pfsagent(t, rrSrv, ipAddr, port, agentID, method, &agentWg, sendCnt, rootCAx509CertificatePEM)
+		go pfsagent(t, rrSrv, agentID, method, &agentWg, sendCnt)
 	}
 	agentWg.Wait()
 }

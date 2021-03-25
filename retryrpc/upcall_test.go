@@ -14,6 +14,7 @@ import (
 
 // Test Upcall() functionality
 func TestUpCall(t *testing.T) {
+	testTLSCertsAllocate(t)
 	testUpCall(t)
 }
 
@@ -41,7 +42,7 @@ func testUpCall(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr, ipaddr, port := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -60,9 +61,14 @@ func testUpCall(t *testing.T) {
 	cb := &MyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
 
-	clientConfig := &ClientConfig{IPAddr: ipaddr, Port: port,
-		RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM, Callbacks: cb,
-		DeadlineIO: 5 * time.Second}
+	clientConfig := &ClientConfig{
+		IPAddr:                   testIPAddr,
+		Port:                     testPort,
+		RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+		Callbacks:                cb,
+		DeadlineIO:               60 * time.Second,
+		KeepAlivePeriod:          60 * time.Second,
+	}
 	rrClnt, newErr := NewClient(clientConfig)
 	assert.NotNil(rrClnt)
 	assert.Nil(newErr)

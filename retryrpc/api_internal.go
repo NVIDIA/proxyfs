@@ -7,17 +7,10 @@ package retryrpc
 
 import (
 	"container/list"
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/binary"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"reflect"
 	"sync"
@@ -297,127 +290,6 @@ func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, 
 		err = fmt.Errorf("Incomplete read of body")
 		return
 	}
-
-	return
-}
-
-// constructServerCreds will generate root CA cert and server cert
-//
-// It is assumed that this is called on the "server" process and
-// the caller will provide a mechanism to pass
-// serverCreds.rootCAx509CertificatePEMkeys to the "clients".
-func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds, err error) {
-	var (
-		commonX509NotAfter            time.Time
-		commonX509NotBefore           time.Time
-		rootCAEd25519PrivateKey       ed25519.PrivateKey
-		rootCAEd25519PublicKey        ed25519.PublicKey
-		rootCAx509CertificateDER      []byte
-		rootCAx509CertificateTemplate *x509.Certificate
-		rootCAx509SerialNumber        *big.Int
-		serverEd25519PrivateKey       ed25519.PrivateKey
-		serverEd25519PrivateKeyDER    []byte
-		serverEd25519PrivateKeyPEM    []byte
-		serverEd25519PublicKey        ed25519.PublicKey
-		serverX509CertificateDER      []byte
-		serverX509CertificatePEM      []byte
-		serverX509CertificateTemplate *x509.Certificate
-		serverX509SerialNumber        *big.Int
-		timeNow                       time.Time
-	)
-
-	serverCreds = &ServerCreds{}
-
-	timeNow = time.Now()
-
-	// TODO - what should the length of this be?  What if we want to eject a client
-	// from the server?  How would that work?
-	//
-	// Do we even want the root CA at all?
-	commonX509NotBefore = time.Date(timeNow.Year()-1, time.January, 1, 0, 0, 0, 0, timeNow.Location())
-	commonX509NotAfter = time.Date(timeNow.Year()+99, time.January, 1, 0, 0, 0, 0, timeNow.Location())
-
-	rootCAx509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		err = fmt.Errorf("rand.Int() [1] failed: %v", err)
-		return
-	}
-
-	rootCAx509CertificateTemplate = &x509.Certificate{
-		SerialNumber: rootCAx509SerialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"CA Organization"},
-			CommonName:   "Root CA",
-		},
-		NotBefore:             commonX509NotBefore,
-		NotAfter:              commonX509NotAfter,
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-	}
-
-	// Generate public and private key
-	rootCAEd25519PublicKey, rootCAEd25519PrivateKey, err = ed25519.GenerateKey(nil)
-	if err != nil {
-		err = fmt.Errorf("ed25519.GenerateKey() [1] failed: %v", err)
-		return
-	}
-
-	// Create the certificate with the keys
-	rootCAx509CertificateDER, err = x509.CreateCertificate(rand.Reader,
-		rootCAx509CertificateTemplate, rootCAx509CertificateTemplate, rootCAEd25519PublicKey, rootCAEd25519PrivateKey)
-	if err != nil {
-		err = fmt.Errorf("x509.CreateCertificate() [1] failed: %v", err)
-		return
-	}
-
-	serverCreds.RootCAx509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootCAx509CertificateDER})
-
-	serverX509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		err = fmt.Errorf("rand.Int() [2] failed: %v", err)
-		return
-	}
-
-	serverX509CertificateTemplate = &x509.Certificate{
-		SerialNumber: serverX509SerialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"Server Organization"},
-			CommonName:   "Server",
-		},
-		NotBefore:   commonX509NotBefore,
-		NotAfter:    commonX509NotAfter,
-		KeyUsage:    x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses: []net.IP{net.ParseIP(serverIPAddrAsString)},
-	}
-
-	// Generate the server public/private keys
-	serverEd25519PublicKey, serverEd25519PrivateKey, err = ed25519.GenerateKey(nil)
-	if err != nil {
-		err = fmt.Errorf("ed25519.GenerateKey() [2] failed: %v", err)
-		return
-	}
-
-	// Create the server certificate with the server public/private keys
-	serverX509CertificateDER, err = x509.CreateCertificate(rand.Reader, serverX509CertificateTemplate, rootCAx509CertificateTemplate, serverEd25519PublicKey, rootCAEd25519PrivateKey)
-	if err != nil {
-		err = fmt.Errorf("x509.CreateCertificate() [2] failed: %v", err)
-		return
-	}
-
-	serverX509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverX509CertificateDER})
-
-	serverEd25519PrivateKeyDER, err = x509.MarshalPKCS8PrivateKey(serverEd25519PrivateKey)
-	if err != nil {
-		err = fmt.Errorf("x509.MarshalPKCS8PrivateKey() failed: %v", err)
-		return
-	}
-
-	serverEd25519PrivateKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: serverEd25519PrivateKeyDER})
-
-	serverCreds.ServerTLSCertificate, err = tls.X509KeyPair(serverX509CertificatePEM, serverEd25519PrivateKeyPEM)
 
 	return
 }
