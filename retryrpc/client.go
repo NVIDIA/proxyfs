@@ -295,7 +295,7 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 		//
 		// We consider a connection to be idle if we have no outstanding requests when
 		// we get the timeout.   Otherwise, we call retransmit.
-		if os.IsTimeout(getErr) == true && localCnt == 0 {
+		if os.IsTimeout(getErr) && localCnt == 0 {
 			continue
 		}
 
@@ -354,7 +354,7 @@ func (client *Client) retransmit(genNum uint64) {
 		return
 	}
 
-	if client.halting == true {
+	if client.halting {
 		client.Unlock()
 		return
 	}
@@ -528,46 +528,32 @@ func (client *Client) reDial() (err error) {
 //
 // NOTE: Client lock is held
 func (client *Client) readClientID(callingGenNum uint64, tlsConn *tls.Conn) (myUniqueID uint64, err error) {
-	var localCnt int
 
-	for {
+	// Wait reply from server
+	buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, tlsConn)
 
-		// Wait reply from server
-		buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, tlsConn)
-
-		// This must happen before checking error
-		if client.halting {
-			return
-		}
-
-		// Ignore timeouts on idle connections while reading header
-		//
-		// We consider a connection to be idle if we have no outstanding requests when
-		// we get the timeout.   Otherwise, we call retransmit.
-		if os.IsTimeout(getErr) && localCnt == 0 {
-			continue
-		}
-
-		// TODO - don't loop forever - breakout after some many tries
-
-		// Upper layer will close connection as a result of any error
-		if getErr != nil {
-			err = getErr
-			return
-		}
-
-		if msgType != ReturnUniqueID {
-			err = fmt.Errorf("CLIENT - invalid msgType: %v", msgType)
-			logger.PanicfWithError(err, "")
-			return
-		}
-
-		err = json.Unmarshal(buf, &myUniqueID)
-		if err != nil {
-			logger.PanicfWithError(err, "Unmarshal of buf: %v to myUniqueID failed with err: %v", buf, err)
-		}
+	// This must happen before checking error
+	if client.halting {
 		return
 	}
+
+	// Upper layer will close connection as a result of any error
+	if getErr != nil {
+		err = getErr
+		return
+	}
+
+	if msgType != ReturnUniqueID {
+		err = fmt.Errorf("CLIENT - invalid msgType: %v", msgType)
+		logger.PanicfWithError(err, "")
+		return
+	}
+
+	err = json.Unmarshal(buf, &myUniqueID)
+	if err != nil {
+		logger.PanicfWithError(err, "Unmarshal of buf: %v to myUniqueID failed with err: %v", buf, err)
+	}
+	return
 }
 
 // initialDial does the initial dial of the server and retrieves the

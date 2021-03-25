@@ -55,17 +55,18 @@ func (server *Server) run() {
 		elm := server.connections.PushBack(conn)
 		server.connLock.Unlock()
 
-		// TODO - update comment per two cases initialDial() and reDial()....
-
-		// The first message sent on this socket by the client is the uniqueID.
+		// The server first calculates a uniqueID for this client and writes it back
+		// on the socket.
 		//
-		// Read that first and create the relevant structures before calling
+		// Create the relevant data structures and write out the uniqueID before calling
 		// serviceClient().  We do the cleanup in this routine because there are
 		// race conditions with noisy clients repeatedly reconnecting.
 		//
 		// Those race conditions are resolved if we serialize the recovery.
 		cCtx := &connCtx{conn: conn}
 		cCtx.cond = sync.NewCond(&cCtx.Mutex)
+
+		// TODO move getClientIDAndWait() in the goroutine...
 		ci, err := server.getClientIDAndWait(cCtx)
 		if err != nil {
 			// Socket already had an error - just loop back
@@ -186,7 +187,12 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 
 //
 // getClientIDAndWait reads the first message off the new connection.
-// The client sends its uniqueID before sending it's first RPC.
+//
+// If the client is new, it will ask for a UniqueID.   This routine will
+// generate the new UniqueID and return it.
+//
+// If the client is existing, it will send it's UniqueID so that we
+// can use that to look up it's data structures.
 //
 // Then getClientIDAndWait waits until any outstanding RPCs on a prior
 // connection have completed before proceeding.
@@ -194,17 +200,12 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 // This avoids race conditions when there are cascading retransmits.
 // The algorithm is:
 //
-// 1. Client sends UniqueID to server when the socket is first open
+// 1. Client sends UniqueID to server when the connection is reestablished.
 // 2. After accepting new socket, the server waits for the UniqueID from
 //    the client.
-// 3. If this is the first connection from the client, the server creates a
-//    clientInfo structure for the client and proceeds to wait for RPCs.
-// 4. If this is a client returning on a new socket, the server blocks
+// 3. If this is a client returning on a new socket, the server blocks
 //    until all outstanding RPCs and related goroutines have completed for the
 //    client on the previous connection.
-// 5. Additionally, the server blocks on accepting new connections
-//    (which could be yet another reconnect for the same client) until the
-//    previous connection has closed down.
 func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err error) {
 	buf, msgType, getErr := getIO(uint64(0), server.deadlineIO, cCtx.conn)
 	if getErr != nil {
@@ -219,6 +220,8 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 	}
 
 	if msgType == PassID {
+
+		// Returning client
 		var connUniqueID uint64
 		err = json.Unmarshal(buf, &connUniqueID)
 		if err != nil {
@@ -226,7 +229,6 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 			return
 		}
 
-		// Check if this is the first time we have seen this client
 		server.Lock()
 		lci, ok := server.perClientInfo[connUniqueID]
 		if !ok {
@@ -325,8 +327,8 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 		}
 
 		if msgType != RPC {
-			// TODO - panic? log message....
-			fmt.Printf("serviceClient() received invalid msgType: %v - dropping\n", msgType)
+			err := fmt.Errorf("serviceClient() received invalid msgType: %v - dropping", msgType)
+			logger.PanicfWithError(err, "")
 			continue
 		}
 
