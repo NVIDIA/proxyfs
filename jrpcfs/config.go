@@ -231,7 +231,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		globals.retryRPCCertFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCCertFilePath")
 		if (nil == err) && ("" != globals.retryRPCCertFilePath) {
 			globals.retryRPCKeyFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCKeyFilePath")
-			if (nil != err) || ("" != globals.retryRPCKeyFilePath) {
+			if (nil != err) || ("" == globals.retryRPCKeyFilePath) {
 				logger.Error("if [JSOPNRPCServer]RetryRPCCertFilePath is specified, [JSOPNRPCServer]RetryRPCKeyFilePath must be specified as well")
 				return
 			}
