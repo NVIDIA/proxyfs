@@ -65,7 +65,7 @@ type ServerConfig struct {
 	Port              int             // Port that Server uses to listen
 	DeadlineIO        time.Duration   // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod   time.Duration   // How frequently a KEEPALIVE is sent
-	TLSCertificate    tls.Certificate // TLS Certificate to present to Clients
+	TLSCertificate    tls.Certificate // TLS Certificate to present to Clients (or tls.Certificate{} if using TCP)
 	dontStartTrimmers bool            // Used for testing
 }
 
@@ -93,8 +93,7 @@ func (server *Server) Register(retrySvr interface{}) (err error) {
 
 // Start listener
 func (server *Server) Start() (err error) {
-	portStr := fmt.Sprintf("%d", server.port)
-	hostPortStr := net.JoinHostPort(server.ipaddr, portStr)
+	hostPortStr := net.JoinHostPort(server.ipaddr, fmt.Sprintf("%d", server.port))
 
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{server.tlsCertificate},
@@ -276,8 +275,8 @@ type connectionTracker struct {
 	state        clientState
 	genNum       uint64 // Generation number of tlsConn - avoid racing recoveries
 	tlsConfig    *tls.Config
-	tlsConn      *tls.Conn // Our connection to the server
-	x509CertPool *x509.CertPool
+	tlsConn      *tls.Conn      // Our connection to the server
+	x509CertPool *x509.CertPool // If nil, use TCP; if !nil, use TLS
 	hostPortStr  string
 }
 
@@ -335,22 +334,22 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 
 	client = &Client{cb: config.Callbacks, keepAlivePeriod: config.KeepAlivePeriod,
 		deadlineIO: config.DeadlineIO}
-	if config.RootCAx509CertificatePEM == nil {
-		err = fmt.Errorf("config.RootCAx509CertificatePEM cannot be nil")
-		return
-	}
-	portStr := fmt.Sprintf("%d", config.Port)
+
 	client.connection.state = INITIAL
-	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, portStr)
+	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, fmt.Sprintf("%d", config.Port))
 	client.outstandingRequest = make(map[requestID]*reqCtx)
 	client.bt = btree.New(2)
 
-	// Add cert for root CA to our pool
-	client.connection.x509CertPool = x509.NewCertPool()
-	ok := client.connection.x509CertPool.AppendCertsFromPEM(config.RootCAx509CertificatePEM)
-	if !ok {
-		err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
-		return nil, err
+	if nil == config.RootCAx509CertificatePEM {
+		client.connection.x509CertPool = nil
+	} else {
+		// Add cert for root CA to our pool
+		client.connection.x509CertPool = x509.NewCertPool()
+		ok := client.connection.x509CertPool.AppendCertsFromPEM(config.RootCAx509CertificatePEM)
+		if !ok {
+			err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
+			return nil, err
+		}
 	}
 
 	return client, err
