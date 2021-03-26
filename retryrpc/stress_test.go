@@ -18,7 +18,24 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestStress(t *testing.T) {
+func TestTCPStress(t *testing.T) {
+
+	/*
+		 * DEBUG - used to debug memory leaks
+		 * Run " go tool pprof  http://localhost:12123/debug/pprof/heap"
+		 * to look at memory inuse
+		// Start the ws that listens for pprof requests
+		go http.ListenAndServe("localhost:12123", nil)
+	*/
+
+	testTLSCerts = nil
+	testLoop(t, false)
+	testLoopClientAckTrim(t, false)
+	testLoopTTLTrim(t, false)
+	testSendLargeRPC(t, false)
+}
+
+func TestTLSStress(t *testing.T) {
 
 	/*
 		 * DEBUG - used to debug memory leaks
@@ -29,13 +46,13 @@ func TestStress(t *testing.T) {
 	*/
 
 	testTLSCertsAllocate(t)
-	testLoop(t)
-	testLoopClientAckTrim(t)
-	testLoopTTLTrim(t)
-	testSendLargeRPC(t)
+	testLoop(t, true)
+	testLoopClientAckTrim(t, true)
+	testLoopTTLTrim(t, true)
+	testSendLargeRPC(t, true)
 }
 
-func testLoop(t *testing.T) {
+func testLoop(t *testing.T, useTLS bool) {
 	var (
 		agentCount = 15
 		sendCount  = 250
@@ -48,7 +65,7 @@ func testLoop(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr := getNewServer(65*time.Second, false)
+	rrSvr := getNewServer(65*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -64,7 +81,7 @@ func testLoop(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, agentCount, "RpcPing", sendCount)
+	parallelAgentSenders(t, rrSvr, agentCount, "RpcPing", sendCount, useTLS)
 
 	rrSvr.Close()
 }
@@ -74,7 +91,7 @@ func testLoop(t *testing.T) {
 // on the client code saying "this is the highest consecutive sqn we have
 // seen".   Then the server can throw away messages up to and including the
 // highest consecutive sqn.
-func testLoopClientAckTrim(t *testing.T) {
+func testLoopClientAckTrim(t *testing.T, useTLS bool) {
 	var (
 		agentCount = 15
 		sendCount  = 250
@@ -88,7 +105,7 @@ func testLoopClientAckTrim(t *testing.T) {
 	myJrpcfs := rpctest.NewServer()
 
 	whenTTL := 10 * time.Millisecond
-	rrSvr := getNewServer(whenTTL, true)
+	rrSvr := getNewServer(whenTTL, true, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -104,7 +121,7 @@ func testLoopClientAckTrim(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, agentCount, "RpcPing", sendCount)
+	parallelAgentSenders(t, rrSvr, agentCount, "RpcPing", sendCount, useTLS)
 
 	// Now for both trimmers to run
 	tm := time.Now()
@@ -136,7 +153,7 @@ func testLoopClientAckTrim(t *testing.T) {
 	rrSvr.Close()
 }
 
-func testLoopTTLTrim(t *testing.T) {
+func testLoopTTLTrim(t *testing.T, useTLS bool) {
 	var (
 		agentCount = 15
 		sendCount  = 250
@@ -150,7 +167,7 @@ func testLoopTTLTrim(t *testing.T) {
 	myJrpcfs := rpctest.NewServer()
 
 	whenTTL := 10 * time.Millisecond
-	rrSvr := getNewServer(whenTTL, true)
+	rrSvr := getNewServer(whenTTL, true, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -166,7 +183,7 @@ func testLoopTTLTrim(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, agentCount, "RpcPing", sendCount)
+	parallelAgentSenders(t, rrSvr, agentCount, "RpcPing", sendCount, useTLS)
 
 	// Use the TTL trimmer to remove all messages after guaranteeing we are
 	// past time when they should be removed
@@ -186,7 +203,7 @@ func testLoopTTLTrim(t *testing.T) {
 	rrSvr.Close()
 }
 
-func testSendLargeRPC(t *testing.T) {
+func testSendLargeRPC(t *testing.T, useTLS bool) {
 	var (
 		agentCount = 15
 		sendCount  = 250
@@ -200,7 +217,7 @@ func testSendLargeRPC(t *testing.T) {
 	myJrpcfs := rpctest.NewServer()
 
 	whenTTL := 10 * time.Millisecond
-	rrSvr := getNewServer(whenTTL, true)
+	rrSvr := getNewServer(whenTTL, true, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -216,7 +233,7 @@ func testSendLargeRPC(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, agentCount, "RpcPingLarge", sendCount)
+	parallelAgentSenders(t, rrSvr, agentCount, "RpcPingLarge", sendCount, useTLS)
 
 	// Now for both trimmers to run
 	tm := time.Now()
@@ -334,18 +351,33 @@ func (cb *stressMyClient) Interrupt(payload []byte) {
 }
 
 // Represents a pfsagent - sepearate client
-func pfsagent(t *testing.T, rrSvr *Server, agentID uint64, method string, agentWg *sync.WaitGroup, sendCnt int) {
+func pfsagent(t *testing.T, rrSvr *Server, agentID uint64, method string, agentWg *sync.WaitGroup, sendCnt int, useTLS bool) {
+	var (
+		clientConfig *ClientConfig
+	)
+
 	defer agentWg.Done()
 
 	cb := &stressMyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
-	clientConfig := &ClientConfig{
-		IPAddr:                   testIPAddr,
-		Port:                     testPort,
-		RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
-		Callbacks:                cb,
-		DeadlineIO:               60 * time.Second,
-		KeepAlivePeriod:          60 * time.Second,
+	if useTLS {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+			Callbacks:                cb,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
+	} else {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: nil,
+			Callbacks:                cb,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
 	}
 	client, err := NewClient(clientConfig)
 	if err != nil {
@@ -409,7 +441,7 @@ func pfsagent(t *testing.T, rrSvr *Server, agentID uint64, method string, agentW
 }
 
 // Start a bunch of "pfsagents" in parallel
-func parallelAgentSenders(t *testing.T, rrSrv *Server, agentCnt int, method string, sendCnt int) {
+func parallelAgentSenders(t *testing.T, rrSrv *Server, agentCnt int, method string, sendCnt int, useTLS bool) {
 
 	var agentWg sync.WaitGroup
 
@@ -423,7 +455,7 @@ func parallelAgentSenders(t *testing.T, rrSrv *Server, agentCnt int, method stri
 		agentID = clientSeed + uint64(i)
 
 		agentWg.Add(1)
-		go pfsagent(t, rrSrv, agentID, method, &agentWg, sendCnt)
+		go pfsagent(t, rrSrv, agentID, method, &agentWg, sendCnt, useTLS)
 	}
 	agentWg.Wait()
 }

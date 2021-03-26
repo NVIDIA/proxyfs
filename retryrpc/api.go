@@ -275,7 +275,7 @@ type connectionTracker struct {
 	state        clientState    //
 	genNum       uint64         // Generation number of tlsConn - avoid racing recoveries
 	useTLS       bool           //
-	netConn      *tls.Conn      // Our TCP connection to the server
+	netConn      net.Conn       // Our TCP connection to the server
 	tlsConn      *tls.Conn      // Our TLS connection to the server
 	tlsConfig    *tls.Config    //
 	x509CertPool *x509.CertPool // If nil, use TCP; if !nil, use TLS
