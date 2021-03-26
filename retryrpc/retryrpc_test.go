@@ -88,24 +88,49 @@ func testTLSCertsAllocate(t *testing.T) {
 //
 // This unit test exists here since it uses jrpcfs which would be a
 // circular dependency if the test was in retryrpc.
-func TestRetryRPC(t *testing.T) {
-	testTLSCertsAllocate(t)
-	testRegister(t)
-	testServer(t)
-	testBtree(t)
+func TestTCPRetryRPC(t *testing.T) {
+	testTLSCerts = nil
+	testRegister(t, false)
+	testServer(t, false)
+	testBtree(t, false)
 	testStatsAndBucketstats(t)
 }
 
-func getNewServer(lt time.Duration, dontStartTrimmers bool) (rrSvr *Server) {
-	config := &ServerConfig{
-		LongTrim:          lt,
-		ShortTrim:         100 * time.Millisecond,
-		IPAddr:            testIPAddr,
-		Port:              testPort,
-		DeadlineIO:        60 * time.Second,
-		KeepAlivePeriod:   60 * time.Second,
-		TLSCertificate:    testTLSCerts.endpointTLSCert,
-		dontStartTrimmers: dontStartTrimmers,
+func TestTLSRetryRPC(t *testing.T) {
+	testTLSCertsAllocate(t)
+	testRegister(t, true)
+	testServer(t, true)
+	testBtree(t, true)
+	testStatsAndBucketstats(t)
+}
+
+func getNewServer(lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr *Server) {
+	var (
+		config *ServerConfig
+	)
+
+	if useTLS {
+		config = &ServerConfig{
+			LongTrim:          lt,
+			ShortTrim:         100 * time.Millisecond,
+			IPAddr:            testIPAddr,
+			Port:              testPort,
+			DeadlineIO:        60 * time.Second,
+			KeepAlivePeriod:   60 * time.Second,
+			TLSCertificate:    testTLSCerts.endpointTLSCert,
+			dontStartTrimmers: dontStartTrimmers,
+		}
+	} else {
+		config = &ServerConfig{
+			LongTrim:          lt,
+			ShortTrim:         100 * time.Millisecond,
+			IPAddr:            testIPAddr,
+			Port:              testPort,
+			DeadlineIO:        60 * time.Second,
+			KeepAlivePeriod:   60 * time.Second,
+			TLSCertificate:    tls.Certificate{},
+			dontStartTrimmers: dontStartTrimmers,
+		}
 	}
 
 	// Create a new RetryRPC Server.  Completed request will live on
@@ -116,7 +141,7 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool) (rrSvr *Server) {
 }
 
 // Test register function finds all expected functions
-func testRegister(t *testing.T) {
+func testRegister(t *testing.T, useTLS bool) {
 	assert := assert.New(t)
 	zero := 0
 	assert.Equal(0, zero)
@@ -125,7 +150,7 @@ func testRegister(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -138,7 +163,11 @@ func testRegister(t *testing.T) {
 }
 
 // Test basic Server creation and deletion
-func testServer(t *testing.T) {
+func testServer(t *testing.T, useTLS bool) {
+	var (
+		clientConfig *ClientConfig
+	)
+
 	assert := assert.New(t)
 	zero := 0
 	assert.Equal(0, zero)
@@ -147,7 +176,7 @@ func testServer(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -163,13 +192,24 @@ func testServer(t *testing.T) {
 	rrSvr.Run()
 
 	// Now - setup a client to send requests to the server
-	clientConfig := &ClientConfig{
-		IPAddr:                   testIPAddr,
-		Port:                     testPort,
-		RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
-		Callbacks:                nil,
-		DeadlineIO:               60 * time.Second,
-		KeepAlivePeriod:          60 * time.Second,
+	if useTLS {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+			Callbacks:                nil,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
+	} else {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: nil,
+			Callbacks:                nil,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
 	}
 	rrClnt, newErr := NewClient(clientConfig)
 	assert.NotNil(rrClnt)
@@ -214,20 +254,35 @@ func testServer(t *testing.T) {
 	rrSvr.Close()
 }
 
-func testBtree(t *testing.T) {
+func testBtree(t *testing.T, useTLS bool) {
+	var (
+		clientConfig *ClientConfig
+	)
+
 	assert := assert.New(t)
 
-	rrSvr := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Setup a client - we only will be targeting the btree
-	clientConfig := &ClientConfig{
-		IPAddr:                   testIPAddr,
-		Port:                     testPort,
-		RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
-		Callbacks:                nil,
-		DeadlineIO:               60 * time.Second,
-		KeepAlivePeriod:          60 * time.Second,
+	if useTLS {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+			Callbacks:                nil,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
+	} else {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: nil,
+			Callbacks:                nil,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
 	}
 	client, newErr := NewClient(clientConfig)
 	assert.NotNil(client)

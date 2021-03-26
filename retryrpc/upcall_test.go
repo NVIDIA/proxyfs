@@ -13,9 +13,14 @@ import (
 )
 
 // Test Upcall() functionality
-func TestUpCall(t *testing.T) {
+func TestTCPUpCall(t *testing.T) {
+	testTLSCerts = nil
+	testUpCall(t, false)
+}
+
+func TestTLSUpCall(t *testing.T) {
 	testTLSCertsAllocate(t)
-	testUpCall(t)
+	testUpCall(t, true)
 }
 
 type MyClient struct {
@@ -33,7 +38,11 @@ func (cb *MyClient) Interrupt(payload []byte) {
 }
 
 // Test getting an upcallbasic Server creation and deletion
-func testUpCall(t *testing.T) {
+func testUpCall(t *testing.T, useTLS bool) {
+	var (
+		clientConfig *ClientConfig
+	)
+
 	assert := assert.New(t)
 	zero := 0
 	assert.Equal(0, zero)
@@ -42,7 +51,7 @@ func testUpCall(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -61,13 +70,24 @@ func testUpCall(t *testing.T) {
 	cb := &MyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
 
-	clientConfig := &ClientConfig{
-		IPAddr:                   testIPAddr,
-		Port:                     testPort,
-		RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
-		Callbacks:                cb,
-		DeadlineIO:               60 * time.Second,
-		KeepAlivePeriod:          60 * time.Second,
+	if useTLS {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+			Callbacks:                cb,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
+	} else {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: nil,
+			Callbacks:                cb,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
 	}
 	rrClnt, newErr := NewClient(clientConfig)
 	assert.NotNil(rrClnt)

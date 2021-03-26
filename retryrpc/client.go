@@ -281,7 +281,7 @@ func (client *Client) readReplies(callingGenNum uint64) {
 	for {
 
 		// Wait reply from server
-		buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, client.connection.tlsConn)
+		buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, client.connection.castToNetConn())
 
 		// This must happen before checking error
 		client.Lock()
@@ -490,16 +490,30 @@ func (client *Client) reDial() (err error) {
 	}
 
 	// Now dial the server
-	d := &net.Dialer{KeepAlive: client.keepAlivePeriod}
-	tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
-	if dialErr != nil {
-		err = fmt.Errorf("tls.Dial() failed: %v", dialErr)
-		return
+
+	if client.connection.useTLS {
+		d := &net.Dialer{KeepAlive: client.keepAlivePeriod}
+		tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
+		if dialErr != nil {
+			err = fmt.Errorf("tls.Dial() failed: %v", dialErr)
+			return
+		}
+
+		client.connection.CloseIfOpen()
+
+		client.connection.tlsConn = tlsConn
+	} else {
+		netConn, dialErr := net.Dial("tcp", client.connection.hostPortStr)
+		if dialErr != nil {
+			err = fmt.Errorf("net.Dial() failed: %v", dialErr)
+			return
+		}
+
+		client.connection.CloseIfOpen()
+
+		client.connection.netConn = netConn
 	}
 
-	client.connection.CloseIfOpen()
-
-	client.connection.tlsConn = tlsConn
 	client.connection.state = CONNECTED
 	client.connection.genNum++
 
@@ -527,7 +541,7 @@ func (client *Client) reDial() (err error) {
 func (client *Client) readClientID(callingGenNum uint64) (myUniqueID uint64, err error) {
 
 	// Wait reply from server
-	buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, client.connection.tlsConn)
+	buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, client.connection.castToNetConn())
 
 	// This must happen before checking error
 	if client.halting {
@@ -574,16 +588,30 @@ func (client *Client) initialDial() (err error) {
 	}
 
 	// Now dial the server
-	d := &net.Dialer{KeepAlive: client.keepAlivePeriod}
-	tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
-	if dialErr != nil {
-		err = fmt.Errorf("tls.Dial() failed: %v", dialErr)
-		return
+
+	if client.connection.useTLS {
+		d := &net.Dialer{KeepAlive: client.keepAlivePeriod}
+		tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
+		if dialErr != nil {
+			err = fmt.Errorf("tls.Dial() failed: %v", dialErr)
+			return
+		}
+
+		client.connection.CloseIfOpen()
+
+		client.connection.tlsConn = tlsConn
+	} else {
+		netConn, dialErr := net.Dial("tcp", client.connection.hostPortStr)
+		if dialErr != nil {
+			err = fmt.Errorf("net.Dial() failed: %v", dialErr)
+			return
+		}
+
+		client.connection.CloseIfOpen()
+
+		client.connection.netConn = netConn
 	}
 
-	client.connection.CloseIfOpen()
-
-	client.connection.tlsConn = tlsConn
 	client.connection.state = CONNECTED
 	client.connection.genNum++
 
@@ -717,6 +745,16 @@ func (cT *connectionTracker) Write(b []byte) (n int, err error) {
 		n, err = cT.tlsConn.Write(b)
 	} else {
 		n, err = cT.netConn.Write(b)
+	}
+
+	return
+}
+
+func (cT *connectionTracker) castToNetConn() (nC net.Conn) {
+	if cT.useTLS {
+		nC = cT.tlsConn
+	} else {
+		nC = cT.netConn
 	}
 
 	return
