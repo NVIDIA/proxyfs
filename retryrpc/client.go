@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"time"
@@ -168,8 +169,8 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 	}
 
 	// Send header
-	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
-	err := binary.Write(client.connection.tlsConn, binary.BigEndian, ctx.ioreq.Hdr)
+	client.connection.SetDeadline(time.Now().Add(client.deadlineIO))
+	err := binary.Write(client.connection.ioWriter(), binary.BigEndian, ctx.ioreq.Hdr)
 	if err != nil {
 		genNum := ctx.genNum
 		client.Unlock()
@@ -181,8 +182,8 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 	}
 
 	// Send JSON request
-	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
-	bytesWritten, writeErr := client.connection.tlsConn.Write(ctx.ioreq.JReq)
+	client.connection.SetDeadline(time.Now().Add(client.deadlineIO))
+	bytesWritten, writeErr := client.connection.Write(ctx.ioreq.JReq)
 
 	if (bytesWritten != len(ctx.ioreq.JReq)) || (writeErr != nil) {
 		/* TODO - log message?
@@ -273,14 +274,14 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 //
 // As soon as it reads a complete response, it launches a goroutine to process
 // the response and notify the blocked Send().
-func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
+func (client *Client) readReplies(callingGenNum uint64) {
 	defer client.goroutineWG.Done()
 	var localCnt int
 
 	for {
 
 		// Wait reply from server
-		buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, tlsConn)
+		buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, client.connection.tlsConn)
 
 		// This must happen before checking error
 		client.Lock()
@@ -361,7 +362,7 @@ func (client *Client) retransmit(genNum uint64) {
 
 	// We are the first goroutine to notice the error on the
 	// socket - close the connection and start trying to reconnect.
-	_ = client.connection.tlsConn.Close()
+	_ = client.connection.Close()
 	client.connection.state = RETRANSMITTING
 	client.stats.RetransmitsStarted.Add(1)
 
@@ -404,7 +405,7 @@ func (client *Client) retransmit(genNum uint64) {
 // creating this connection and wants a unique ID from the server.
 //
 // NOTE: Client lock is already held during this call.
-func (client *Client) getMyUniqueID(tlsConn *tls.Conn) (err error) {
+func (client *Client) getMyUniqueID() (err error) {
 
 	// Setup ioreq to write structure on socket to server
 	iinreq, err := buildINeedIDRequest()
@@ -415,15 +416,15 @@ func (client *Client) getMyUniqueID(tlsConn *tls.Conn) (err error) {
 	}
 
 	// We only have the header to send
-	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
-	err = binary.Write(tlsConn, binary.BigEndian, iinreq.Hdr)
+	client.connection.SetDeadline(time.Now().Add(client.deadlineIO))
+	err = binary.Write(client.connection.ioWriter(), binary.BigEndian, iinreq.Hdr)
 	if err != nil {
 		return
 	}
 
 	// Ask the server for the unique ID.
 	// If we error, just return it and let caller close the connection.
-	client.myUniqueID, err = client.readClientID(client.connection.genNum, tlsConn)
+	client.myUniqueID, err = client.readClientID(client.connection.genNum)
 	if err != nil {
 		return
 	}
@@ -435,7 +436,7 @@ func (client *Client) getMyUniqueID(tlsConn *tls.Conn) (err error) {
 // knows myUniqueID
 //
 // NOTE: Client lock is already held during this call.
-func (client *Client) sendMyInfo(tlsConn *tls.Conn) (err error) {
+func (client *Client) sendMyInfo() (err error) {
 
 	// Setup ioreq to write structure on socket to server
 	isreq, err := buildSetIDRequest(client.myUniqueID)
@@ -446,15 +447,15 @@ func (client *Client) sendMyInfo(tlsConn *tls.Conn) (err error) {
 	}
 
 	// Send header
-	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
-	err = binary.Write(tlsConn, binary.BigEndian, isreq.Hdr)
+	client.connection.SetDeadline(time.Now().Add(client.deadlineIO))
+	err = binary.Write(client.connection.ioWriter(), binary.BigEndian, isreq.Hdr)
 	if err != nil {
 		return
 	}
 
 	// We are an existing client - send "MyUniqueID"
-	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
-	bytesWritten, writeErr := tlsConn.Write(isreq.MyUniqueID)
+	client.connection.SetDeadline(time.Now().Add(client.deadlineIO))
+	bytesWritten, writeErr := client.connection.Write(isreq.MyUniqueID)
 
 	if uint32(bytesWritten) != isreq.Hdr.Len {
 		e := fmt.Errorf("sendMyInfo length incorrect")
@@ -496,10 +497,7 @@ func (client *Client) reDial() (err error) {
 		return
 	}
 
-	if client.connection.tlsConn != nil {
-		client.connection.tlsConn.Close()
-		client.connection.tlsConn = nil
-	}
+	client.connection.CloseIfOpen()
 
 	client.connection.tlsConn = tlsConn
 	client.connection.state = CONNECTED
@@ -507,17 +505,16 @@ func (client *Client) reDial() (err error) {
 
 	// Send myUniqueID to server.   If this fails the dial will
 	// be retried.
-	err = client.sendMyInfo(tlsConn)
+	err = client.sendMyInfo()
 	if err != nil {
-		_ = client.connection.tlsConn.Close()
-		client.connection.tlsConn = nil
+		_ = client.connection.Close()
 		client.connection.state = entryState
 		return
 	}
 
 	// Start readResponse goroutine to read responses from server
 	client.goroutineWG.Add(1)
-	go client.readReplies(client.connection.genNum, tlsConn)
+	go client.readReplies(client.connection.genNum)
 
 	return
 }
@@ -527,10 +524,10 @@ func (client *Client) reDial() (err error) {
 // Client lock is held
 //
 // NOTE: Client lock is held
-func (client *Client) readClientID(callingGenNum uint64, tlsConn *tls.Conn) (myUniqueID uint64, err error) {
+func (client *Client) readClientID(callingGenNum uint64) (myUniqueID uint64, err error) {
 
 	// Wait reply from server
-	buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, tlsConn)
+	buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, client.connection.tlsConn)
 
 	// This must happen before checking error
 	if client.halting {
@@ -584,10 +581,7 @@ func (client *Client) initialDial() (err error) {
 		return
 	}
 
-	if client.connection.tlsConn != nil {
-		client.connection.tlsConn.Close()
-		client.connection.tlsConn = nil
-	}
+	client.connection.CloseIfOpen()
 
 	client.connection.tlsConn = tlsConn
 	client.connection.state = CONNECTED
@@ -596,17 +590,16 @@ func (client *Client) initialDial() (err error) {
 	// Ask server for my unique ID
 	//
 	// If this fails the dial will be retried.
-	err = client.getMyUniqueID(tlsConn)
+	err = client.getMyUniqueID()
 	if err != nil {
-		_ = client.connection.tlsConn.Close()
-		client.connection.tlsConn = nil
+		_ = client.connection.Close()
 		client.connection.state = entryState
 		return
 	}
 
 	// Start readResponse goroutine to read responses from server
 	client.goroutineWG.Add(1)
-	go client.readReplies(client.connection.genNum, tlsConn)
+	go client.readReplies(client.connection.genNum)
 
 	return
 }
@@ -675,4 +668,66 @@ func (client *Client) updateHighestConsecutiveNum(crID requestID) {
 	client.bt.ReplaceOrInsert(crID)
 	client.setHighestConsecutive()
 	client.Unlock()
+}
+
+// Below are wrapper func's on connectionTracker structs that perform
+// the underlying/requested operation on the netConn or tlsConn based
+// on the value of useTLS.
+
+func (cT *connectionTracker) Close() (err error) {
+	if cT.useTLS {
+		err = cT.tlsConn.Close()
+		cT.tlsConn = nil
+	} else {
+		err = cT.netConn.Close()
+		cT.netConn = nil
+	}
+
+	return
+}
+
+func (cT *connectionTracker) CloseIfOpen() (err error) {
+	if cT.useTLS {
+		if nil != cT.tlsConn {
+			err = cT.tlsConn.Close()
+			cT.tlsConn = nil
+		}
+	} else {
+		if nil != cT.netConn {
+			err = cT.netConn.Close()
+			cT.netConn = nil
+		}
+	}
+
+	return
+}
+
+func (cT *connectionTracker) SetDeadline(t time.Time) (err error) {
+	if cT.useTLS {
+		err = cT.tlsConn.SetDeadline(t)
+	} else {
+		err = cT.netConn.SetDeadline(t)
+	}
+
+	return
+}
+
+func (cT *connectionTracker) Write(b []byte) (n int, err error) {
+	if cT.useTLS {
+		n, err = cT.tlsConn.Write(b)
+	} else {
+		n, err = cT.netConn.Write(b)
+	}
+
+	return
+}
+
+func (cT *connectionTracker) ioWriter() (w io.Writer) {
+	if cT.useTLS {
+		w = cT.tlsConn
+	} else {
+		w = cT.netConn
+	}
+
+	return
 }
