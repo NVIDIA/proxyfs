@@ -272,12 +272,14 @@ const (
 )
 
 type connectionTracker struct {
-	state        clientState
-	genNum       uint64 // Generation number of tlsConn - avoid racing recoveries
-	tlsConfig    *tls.Config
-	tlsConn      *tls.Conn      // Our connection to the server
+	state        clientState    //
+	genNum       uint64         // Generation number of tlsConn - avoid racing recoveries
+	useTLS       bool           //
+	netConn      *tls.Conn      // Our TCP connection to the server
+	tlsConn      *tls.Conn      // Our TLS connection to the server
+	tlsConfig    *tls.Config    //
 	x509CertPool *x509.CertPool // If nil, use TCP; if !nil, use TLS
-	hostPortStr  string
+	hostPortStr  string         //
 }
 
 // Client tracking structure
@@ -287,7 +289,7 @@ type Client struct {
 	currentRequestID requestID // Last request ID - start from clock
 	// tick at mount and increment from there?
 	// Handle reset of time?
-	connection         connectionTracker
+	connection         *connectionTracker
 	myUniqueID         uint64      // Unique ID across all clients
 	cb                 interface{} // Callbacks to client
 	deadlineIO         time.Duration
@@ -332,17 +334,26 @@ type ClientConfig struct {
 // starting point for requestID.
 func NewClient(config *ClientConfig) (client *Client, err error) {
 
-	client = &Client{cb: config.Callbacks, keepAlivePeriod: config.KeepAlivePeriod,
-		deadlineIO: config.DeadlineIO}
+	client = &Client{
+		connection: &connectionTracker{
+			state:       INITIAL,
+			hostPortStr: net.JoinHostPort(config.IPAddr, fmt.Sprintf("%d", config.Port)),
+		},
+		cb:              config.Callbacks,
+		keepAlivePeriod: config.KeepAlivePeriod,
+		deadlineIO:      config.DeadlineIO,
+	}
 
-	client.connection.state = INITIAL
-	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, fmt.Sprintf("%d", config.Port))
 	client.outstandingRequest = make(map[requestID]*reqCtx)
 	client.bt = btree.New(2)
 
 	if nil == config.RootCAx509CertificatePEM {
+		client.connection.useTLS = false
+		client.connection.tlsConn = nil
 		client.connection.x509CertPool = nil
 	} else {
+		client.connection.useTLS = true
+		client.connection.netConn = nil
 		// Add cert for root CA to our pool
 		client.connection.x509CertPool = x509.NewCertPool()
 		ok := client.connection.x509CertPool.AppendCertsFromPEM(config.RootCAx509CertificatePEM)
@@ -380,7 +391,7 @@ func (client *Client) Close() {
 	client.halting = true
 	if client.connection.state == CONNECTED {
 		client.connection.state = INITIAL
-		client.connection.tlsConn.Close()
+		client.connection.Close()
 	}
 	client.Unlock()
 
