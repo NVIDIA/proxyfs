@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/proxyfs/retryrpc/rpctest"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,9 +46,8 @@ func testUpCall(t *testing.T, useTLS bool) {
 	zero := 0
 	assert.Equal(0, zero)
 
-	// Create new rpctest server - needed for calling
-	// RPCs
-	myJrpcfs := rpctest.NewServer()
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &TestPingServer{}
 
 	rrSvr := getNewServer(10*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
@@ -94,9 +92,9 @@ func testUpCall(t *testing.T, useTLS bool) {
 	assert.Nil(newErr)
 
 	// Send an RPC which should return success
-	pingRequest := &rpctest.PingReq{Message: "Ping Me!"}
-	pingReply := &rpctest.PingReply{}
-	sendErr := rrClnt.Send("RpcPing", pingRequest, pingReply)
+	pingRequest := &TestPingReq{Message: "Ping Me!"}
+	pingReply := &TestPingReply{}
+	sendErr := rrClnt.Send("RpcTestPing", pingRequest, pingReply)
 	assert.Nil(sendErr)
 	assert.Equal("pong 8 bytes", pingReply.Message)
 	assert.Equal(1, rrSvr.CompletedCnt())

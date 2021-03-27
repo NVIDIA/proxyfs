@@ -14,7 +14,6 @@ import (
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/icert/icertpkg"
-	"github.com/NVIDIA/proxyfs/retryrpc/rpctest"
 )
 
 const (
@@ -146,9 +145,8 @@ func testRegister(t *testing.T, useTLS bool) {
 	zero := 0
 	assert.Equal(0, zero)
 
-	// Create new rpctest server - needed for calling
-	// RPCs
-	myJrpcfs := rpctest.NewServer()
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &TestPingServer{}
 
 	rrSvr := getNewServer(10*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
@@ -172,9 +170,8 @@ func testServer(t *testing.T, useTLS bool) {
 	zero := 0
 	assert.Equal(0, zero)
 
-	// Create new rpctest server - needed for calling
-	// RPCs
-	myJrpcfs := rpctest.NewServer()
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &TestPingServer{}
 
 	rrSvr := getNewServer(10*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
@@ -216,33 +213,33 @@ func testServer(t *testing.T, useTLS bool) {
 	assert.Nil(newErr)
 
 	// Send an RPC which should return success
-	pingRequest := &rpctest.PingReq{Message: "Ping Me!"}
-	pingReply := &rpctest.PingReply{}
-	sendErr := rrClnt.Send("RpcPing", pingRequest, pingReply)
+	pingRequest := &TestPingReq{Message: "Ping Me!"}
+	pingReply := &TestPingReply{}
+	sendErr := rrClnt.Send("RpcTestPing", pingRequest, pingReply)
 	assert.Nil(sendErr)
 	assert.Equal("pong 8 bytes", pingReply.Message)
 	assert.Equal(1, rrSvr.CompletedCnt())
 
 	// Send an RPC which expects the client ID and which should return success
-	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
-	pingReply = &rpctest.PingReply{}
-	sendErr = rrClnt.Send("RpcPingWithClientID", pingRequest, pingReply)
+	pingRequest = &TestPingReq{Message: "Ping Me!"}
+	pingReply = &TestPingReply{}
+	sendErr = rrClnt.Send("RpcTestPingWithClientID", pingRequest, pingReply)
 	assert.Nil(sendErr)
 	assert.Equal("Client ID: 1 pong 8 bytes", pingReply.Message)
 	assert.Equal(2, rrSvr.CompletedCnt())
 
 	// Send an RPC which should return an error
-	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
-	pingReply = &rpctest.PingReply{}
-	sendErr = rrClnt.Send("RpcPingWithError", pingRequest, pingReply)
+	pingRequest = &TestPingReq{Message: "Ping Me!"}
+	pingReply = &TestPingReply{}
+	sendErr = rrClnt.Send("RpcTestPingWithError", pingRequest, pingReply)
 	assert.NotNil(sendErr)
 
 	assert.Equal(3, rrSvr.CompletedCnt())
 
 	// Send an RPC which should return an error
-	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
-	pingReply = &rpctest.PingReply{}
-	sendErr = rrClnt.Send("RpcInvalidMethod", pingRequest, pingReply)
+	pingRequest = &TestPingReq{Message: "Ping Me!"}
+	pingReply = &TestPingReply{}
+	sendErr = rrClnt.Send("RpcTestInvalidMethod", pingRequest, pingReply)
 	assert.NotNil(sendErr)
 
 	assert.Equal(4, rrSvr.CompletedCnt())

@@ -56,6 +56,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 		connectionRetryDelay time.Duration
 		crID                 requestID
 	)
+
 	client.stats.SendCalled.Add(1)
 
 	client.Lock()

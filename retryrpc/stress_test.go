@@ -14,7 +14,6 @@ import (
 	_ "net/http/pprof"
 	*/
 
-	"github.com/NVIDIA/proxyfs/retryrpc/rpctest"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -61,9 +60,8 @@ func testLoop(t *testing.T, useTLS bool) {
 	zero := 0
 	assert.Equal(0, zero)
 
-	// Create new rpctest server - needed for calling
-	// RPCs
-	myJrpcfs := rpctest.NewServer()
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &TestPingServer{}
 
 	rrSvr := getNewServer(65*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
@@ -100,9 +98,8 @@ func testLoopClientAckTrim(t *testing.T, useTLS bool) {
 	zero := 0
 	assert.Equal(0, zero)
 
-	// Create new rpctest server - needed for calling
-	// RPCs
-	myJrpcfs := rpctest.NewServer()
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &TestPingServer{}
 
 	whenTTL := 10 * time.Millisecond
 	rrSvr := getNewServer(whenTTL, true, useTLS)
@@ -162,9 +159,8 @@ func testLoopTTLTrim(t *testing.T, useTLS bool) {
 	zero := 0
 	assert.Equal(0, zero)
 
-	// Create new rpctest server - needed for calling
-	// RPCs
-	myJrpcfs := rpctest.NewServer()
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &TestPingServer{}
 
 	whenTTL := 10 * time.Millisecond
 	rrSvr := getNewServer(whenTTL, true, useTLS)
@@ -212,9 +208,8 @@ func testSendLargeRPC(t *testing.T, useTLS bool) {
 	zero := 0
 	assert.Equal(0, zero)
 
-	// Create new rpctest server - needed for calling
-	// RPCs
-	myJrpcfs := rpctest.NewServer()
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &TestPingServer{}
 
 	whenTTL := 10 * time.Millisecond
 	rrSvr := getNewServer(whenTTL, true, useTLS)
@@ -288,10 +283,10 @@ func cntNotTrimmed(server *Server) (numItems int) {
 func ping(t *testing.T, client *Client, i int, agentID uint64, assert *assert.Assertions) {
 	// Send a ping RPC and print the results
 	msg := fmt.Sprintf("Ping Me - %v", i)
-	pingRequest := &rpctest.PingReq{Message: msg}
-	pingReply := &rpctest.PingReply{}
+	pingRequest := &TestPingReq{Message: msg}
+	pingReply := &TestPingReply{}
 	expectedReply := fmt.Sprintf("pong %d bytes", len(msg))
-	err := client.Send("RpcPing", pingRequest, pingReply)
+	err := client.Send("RpcTestPing", pingRequest, pingReply)
 	assert.Nil(err, "client.Send() returned an error")
 	if expectedReply != pingReply.Message {
 		fmt.Printf("		 client - AGENTID: %v\n", agentID)
@@ -307,9 +302,9 @@ func ping(t *testing.T, client *Client, i int, agentID uint64, assert *assert.As
 func pingLarge(t *testing.T, client *Client, i int, agentID uint64, assert *assert.Assertions) {
 	// Send a ping RPC and print the results
 	msg := fmt.Sprintf("Ping Me - %v", i)
-	pingRequest := &rpctest.PingReq{Message: msg}
-	pingReply := &rpctest.PingReply{}
-	err := client.Send("RpcPingLarge", pingRequest, pingReply)
+	pingRequest := &TestPingReq{Message: msg}
+	pingReply := &TestPingReply{}
+	err := client.Send("RpcTestPingLarge", pingRequest, pingReply)
 	assert.Nil(err, "client.Send() returned an error")
 }
 
