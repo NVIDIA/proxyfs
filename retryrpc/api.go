@@ -85,7 +85,6 @@ func NewServer(config *ServerConfig) *Server {
 
 // Register creates the map of server methods
 func (server *Server) Register(retrySvr interface{}) (err error) {
-
 	// Find all the methods associated with retrySvr and put into serviceMap
 	server.receiver = reflect.ValueOf(retrySvr)
 	return server.register(retrySvr)

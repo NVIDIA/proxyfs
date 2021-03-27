@@ -107,7 +107,6 @@ func isMethodExported(name string) bool {
 // Figure out what methods we can have as RPCs and build the
 // service map
 func (server *Server) register(retrySvr interface{}) (err error) {
-
 	// Find all the methods associated with retrySvr and put into serviceMap
 	typ := reflect.TypeOf(retrySvr)
 	rcvr := reflect.ValueOf(retrySvr)
