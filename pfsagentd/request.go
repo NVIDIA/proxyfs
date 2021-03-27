@@ -97,7 +97,7 @@ func doUnmountProxyFS() {
 
 	unmountReply = &jrpcfs.Reply{}
 
-	err = doJRPCRequest("Server.RpcUnmount", unmountRequest, unmountReply)
+	err = globals.retryRPCClient.Send("RpcUnmount", unmountRequest, unmountReply)
 	if nil != err {
 		logFatalf("unable to unmount Volume %s: %v", globals.config.FUSEVolumeName, err)
 	}
