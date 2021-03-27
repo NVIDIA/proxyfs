@@ -86,10 +86,8 @@ func BenchmarkRpcLease(b *testing.B) {
 	}
 
 	mountByAccountNameRequest = &MountByAccountNameRequest{
-		AccountName:  testAccountName,
-		MountOptions: 0,
-		AuthUserID:   0,
-		AuthGroupID:  0,
+		AccountName: testAccountName,
+		AuthToken:   "",
 	}
 	mountByAccountNameReply = &MountByAccountNameReply{}
 
@@ -490,10 +488,8 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) instanceGoroutine() {
 	}
 
 	mountByAccountNameRequest = &MountByAccountNameRequest{
-		AccountName:  testAccountName,
-		MountOptions: 0,
-		AuthUserID:   0,
-		AuthGroupID:  0,
+		AccountName: testAccountName,
+		AuthToken:   "",
 	}
 	mountByAccountNameReply = &MountByAccountNameReply{}
 

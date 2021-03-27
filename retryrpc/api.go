@@ -313,7 +313,7 @@ type ClientCallbacks interface {
 type ClientConfig struct {
 	IPAddr                   string        // IP Address of Server
 	Port                     int           // Port of Server
-	RootCAx509CertificatePEM []byte        // Root certificate
+	RootCAx509CertificatePEM []byte        // If TLS...Root certificate; If TCP... nil
 	Callbacks                interface{}   // Structure implementing ClientCallbacks
 	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod          time.Duration // How frequently a KEEPALIVE is sent

@@ -72,6 +72,8 @@ type configStruct struct {
 	FUSEMaxBackground            uint16
 	FUSECongestionThreshhold     uint16
 	FUSEMaxWrite                 uint32
+	RetryRPCPublicIPAddr         string
+	RetryRPCPort                 uint16
 	RetryRPCDeadlineIO           time.Duration
 	RetryRPCKeepAlivePeriod      time.Duration
 	RetryRPCCACertFilePath       string
@@ -334,10 +336,7 @@ type globalsStruct struct {
 	config                          configStruct
 	logFile                         *os.File // == nil if configStruct.LogFilePath == ""
 	retryRPCCACertPEM               []byte
-	retryRPCPublicIPAddr            string
-	retryRPCPort                    uint16
 	retryRPCClient                  *retryrpc.Client
-	rootCAx509CertificatePEM        []byte
 	entryValidSec                   uint64
 	entryValidNSec                  uint32
 	attrValidSec                    uint64
@@ -351,7 +350,6 @@ type globalsStruct struct {
 	swiftAuthToken                  string          // Protected by swiftAuthWaitGroup
 	swiftStorageURL                 string          // Protected by swiftAuthWaitGroup
 	mountID                         jrpcfs.MountIDAsString
-	rootDirInodeNumber              uint64
 	fissionErrChan                  chan error
 	fissionVolume                   fission.Volume
 	fuseConn                        *fuse.Conn
@@ -760,10 +758,7 @@ func uninitializeGlobals() {
 
 	globals.logFile = nil
 	globals.retryRPCCACertPEM = nil
-	globals.retryRPCPublicIPAddr = ""
-	globals.retryRPCPort = 0
 	globals.retryRPCClient = nil
-	globals.rootCAx509CertificatePEM = []byte{}
 	globals.entryValidSec = 0
 	globals.entryValidNSec = 0
 	globals.attrValidSec = 0

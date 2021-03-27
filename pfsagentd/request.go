@@ -41,6 +41,20 @@ func doMountProxyFS() {
 		swiftStorageURLSplit []string
 	)
 
+	retryrpcConfig := &retryrpc.ClientConfig{
+		IPAddr:                   globals.config.RetryRPCPublicIPAddr,
+		Port:                     int(globals.config.RetryRPCPort),
+		RootCAx509CertificatePEM: globals.retryRPCCACertPEM,
+		Callbacks:                &globals,
+		DeadlineIO:               globals.config.RetryRPCDeadlineIO,
+		KeepAlivePeriod:          globals.config.RetryRPCKeepAlivePeriod,
+	}
+
+	globals.retryRPCClient, err = retryrpc.NewClient(retryrpcConfig)
+	if nil != err {
+		logFatalf("unable to retryRPCClient.NewClient(%v,%v): Volume: %s err: %v", globals.config.RetryRPCPublicIPAddr, globals.config.RetryRPCPort, globals.config.FUSEVolumeName, accountName, err)
+	}
+
 	swiftStorageURL = fetchStorageURL()
 	if "" == swiftStorageURL {
 		logFatalf("unable to fetchStorageURL()")
@@ -51,37 +65,19 @@ func doMountProxyFS() {
 	accountName = swiftStorageURLSplit[4]
 
 	mountRequest = &jrpcfs.MountByAccountNameRequest{
-		AccountName:  accountName,
-		MountOptions: 0,
-		AuthUserID:   0,
-		AuthGroupID:  0,
+		AccountName: accountName,
+		AuthToken:   fetchAuthToken(),
 	}
 
 	mountReply = &jrpcfs.MountByAccountNameReply{}
 
-	err = doJRPCRequest("Server.RpcMountByAccountName", mountRequest, mountReply)
+	err = globals.retryRPCClient.Send("RpcMountByAccountName", mountRequest, mountReply)
 	if nil != err {
 		logFatalf("unable to mount Volume %s (Account: %s): %v", globals.config.FUSEVolumeName, accountName, err)
 	}
 
 	globals.mountID = mountReply.MountID
-	globals.rootDirInodeNumber = uint64(mountReply.RootDirInodeNumber)
-	globals.retryRPCPublicIPAddr = mountReply.RetryRPCPublicIPAddr
-	globals.retryRPCPort = mountReply.RetryRPCPort
-	globals.rootCAx509CertificatePEM = mountReply.RootCAx509CertificatePEM
 
-	retryrpcConfig := &retryrpc.ClientConfig{
-		IPAddr:                   globals.retryRPCPublicIPAddr,
-		Port:                     int(globals.retryRPCPort),
-		RootCAx509CertificatePEM: globals.rootCAx509CertificatePEM,
-		Callbacks:                &globals,
-		DeadlineIO:               globals.config.RetryRPCDeadlineIO,
-		KeepAlivePeriod:          globals.config.RetryRPCKeepAlivePeriod,
-	}
-	globals.retryRPCClient, err = retryrpc.NewClient(retryrpcConfig)
-	if nil != err {
-		logFatalf("unable to retryRPCClient.NewClient(%v,%v): Volume: %s (Account: %s) err: %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.FUSEVolumeName, accountName, err)
-	}
 }
 
 func doUnmountProxyFS() {

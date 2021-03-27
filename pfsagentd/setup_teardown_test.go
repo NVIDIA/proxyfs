@@ -29,6 +29,7 @@ const (
 	testSwiftNoAuthIPAddr       = "127.0.0.1"
 	testSwiftNoAuthPort         = "38090"
 	testSwiftProxyAddr          = "localhost:38080"
+	testRetryRPCPort            = "54328"
 )
 
 type testDaemonGlobalsStruct struct {
@@ -124,6 +125,8 @@ func testSetup(t *testing.T) {
 		"Agent.FUSEMaxBackground=100",
 		"Agent.FUSECongestionThreshhold=0",
 		"Agent.FUSEMaxWrite=131072", // Linux max... 128KiB is good enough for testing
+		"Agent.RetryRPCPublicIPAddr=" + testProxyFSDaemonIPAddr,
+		"Agent.RetryRPCPort=" + testRetryRPCPort,
 		"Agent.RetryRPCDeadlineIO=60s",
 		"Agent.RetryRPCKeepAlivePeriod=60s",
 		"Agent.RetryRPCCACertFilePath=",
@@ -238,7 +241,7 @@ func testSetup(t *testing.T) {
 
 		"JSONRPCServer.TCPPort=54326",
 		"JSONRPCServer.FastTCPPort=54327",
-		"JSONRPCServer.RetryRPCPort=54328",
+		"JSONRPCServer.RetryRPCPort=" + testRetryRPCPort,
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.RetryRPCAckTrim=10ms",
 		"JSONRPCServer.RetryRPCCertFilePath=",
