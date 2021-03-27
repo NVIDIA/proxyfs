@@ -644,6 +644,16 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
+	globals.config.RetryRPCPublicIPAddr, err = confMap.FetchOptionValueString("Agent", "RetryRPCPublicIPAddr")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.RetryRPCPort, err = confMap.FetchOptionValueUint16("Agent", "RetryRPCPort")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.RetryRPCDeadlineIO, err = confMap.FetchOptionValueDuration("Agent", "RetryRPCDeadlineIO")
 	if nil != err {
 		logFatal(err)
