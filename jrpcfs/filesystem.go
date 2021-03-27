@@ -1335,7 +1335,7 @@ func (s *Server) RpcMkdirPath(in *MkdirPathRequest, reply *Reply) (err error) {
 	return
 }
 
-func performMount(volumeHandle fs.VolumeHandle, clientID uint64) (mountIDAsByteArray MountIDAsByteArray, mountIDAsString MountIDAsString, err error) {
+func performMount(volumeHandle fs.VolumeHandle, authToken string, clientID uint64) (mountIDAsByteArray MountIDAsByteArray, mountIDAsString MountIDAsString, err error) {
 	var (
 		i             int
 		keepTrying    bool
@@ -1383,6 +1383,7 @@ func performMount(volumeHandle fs.VolumeHandle, clientID uint64) (mountIDAsByteA
 		volume:                 volume,
 		mountIDAsByteArray:     mountIDAsByteArray,
 		mountIDAsString:        mountIDAsString,
+		authToken:              authToken,
 		retryRpcUniqueID:       clientID,
 		acceptingLeaseRequests: true,
 		leaseRequestMap:        make(map[inode.InodeNumber]*leaseRequestStruct),
@@ -1409,12 +1410,7 @@ func (s *Server) RpcMountByAccountName(clientID uint64, in *MountByAccountNameRe
 
 	volumeHandle, err := fs.FetchVolumeHandleByAccountName(in.AccountName)
 	if nil == err {
-		_, reply.MountID, err = performMount(volumeHandle, clientID)
-		if nil == err {
-			reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
-			reply.RetryRPCPublicIPAddr = globals.publicIPAddr
-			reply.RetryRPCPort = globals.retryRPCPort
-		}
+		_, reply.MountID, err = performMount(volumeHandle, in.AuthToken, clientID)
 	}
 
 	return
@@ -1430,12 +1426,7 @@ func (s *Server) RpcMountByVolumeName(clientID uint64, in *MountByVolumeNameRequ
 
 	volumeHandle, err := fs.FetchVolumeHandleByVolumeName(in.VolumeName)
 	if nil == err {
-		_, reply.MountID, err = performMount(volumeHandle, clientID)
-		if nil == err {
-			reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
-			reply.RetryRPCPublicIPAddr = globals.publicIPAddr
-			reply.RetryRPCPort = globals.retryRPCPort
-		}
+		_, reply.MountID, err = performMount(volumeHandle, in.AuthToken, clientID)
 	}
 
 	return

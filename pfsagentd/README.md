@@ -75,6 +75,8 @@ ReaddirMaxEntries:                                         1024
 FUSEMaxBackground:                                          100
 FUSECongestionThreshhold:                                     0
 FUSEMaxWrite:                                            131072
+RetryRPCPublicIPAddr:                                 127.0.0.1
+RetryRPCPort:                                             32356
 RetryRPCDeadlineIO:                                         60s
 RetryRPCKeepAlivePeriod:                                    60s
 RetryRPCCACertFilePath:                                         # Defaults to /dev/null
