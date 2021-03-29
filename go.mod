@@ -16,13 +16,15 @@ require (
 	github.com/gogo/protobuf v1.2.2-0.20190611061853-dadb62585089 // indirect
 	github.com/google/btree v1.0.0
 	github.com/google/uuid v1.1.2-0.20190416172445-c2e93f3ae59f // indirect
+	github.com/mattn/goveralls v0.0.8 // indirect
+	github.com/ory/go-acc v0.2.6 // indirect
 	github.com/sirupsen/logrus v1.2.0
-	github.com/stretchr/testify v1.3.0
+	github.com/stretchr/testify v1.5.1
 	go.etcd.io/etcd v0.5.0-alpha.5.0.20200401174654-e694b7bb0875
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.10.1-0.20190619185213-853ac185800f // indirect
-	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7
-	golang.org/x/sys v0.0.0-20190826190057-c7b8b68b1456
+	golang.org/x/net v0.0.0-20200226121028-0de0cce0169b
+	golang.org/x/sys v0.0.0-20200602225109-6fdc65e7d980
 	golang.org/x/text v0.3.2 // indirect
 	google.golang.org/genproto v0.0.0-20190620144150-6af8c5fc6601 // indirect
 )
