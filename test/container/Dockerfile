@@ -32,13 +32,13 @@ FROM centos:7.4.1708
 # - automake
 # - libtool
 
-RUN yum-config-manager --disable CentOS-Base
-RUN yum-config-manager --disable CentOS-CR
-RUN yum-config-manager --disable CentOS-Debuginfo
-RUN yum-config-manager --disable CentOS-fasttrack
-RUN yum-config-manager --disable CentOS-Media
-RUN yum-config-manager --disable CentOS-Sources
-RUN yum-config-manager --disable CentOS-Vault
+RUN yum-config-manager --disable CentOS-Base \
+    yum-config-manager --disable CentOS-CR \
+    yum-config-manager --disable CentOS-Debuginfo \
+    yum-config-manager --disable CentOS-fasttrack \
+    yum-config-manager --disable CentOS-Media \
+    yum-config-manager --disable CentOS-Sources \
+    yum-config-manager --disable CentOS-Vault
 
 RUN rm -rf \
     /etc/yum.repos.d/CentOS-Base.repo \
@@ -49,14 +49,14 @@ RUN rm -rf \
     /etc/yum.repos.d/CentOS-Sources.repo \
     /etc/yum.repos.d/CentOS-Vault.repo
 
-RUN yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/os/x86_64/
-RUN yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/updates/x86_64/
-RUN yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/extras/x86_64/
-RUN yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/centosplus/x86_64/
-RUN yum-config-manager --enable vault.centos.org_centos_7.4.1708_os_x86_64_
-RUN yum-config-manager --enable vault.centos.org_centos_7.4.1708_updates_x86_64_
-RUN yum-config-manager --enable vault.centos.org_centos_7.4.1708_extras_x86_64_
-RUN yum-config-manager --enable vault.centos.org_centos_7.4.1708_centosplus_x86_64_
+RUN yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/os/x86_64/ \
+    yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/updates/x86_64/ \
+    yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/extras/x86_64/ \
+    yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/centosplus/x86_64/ \
+    yum-config-manager --enable vault.centos.org_centos_7.4.1708_os_x86_64_ \
+    yum-config-manager --enable vault.centos.org_centos_7.4.1708_updates_x86_64_ \
+    yum-config-manager --enable vault.centos.org_centos_7.4.1708_extras_x86_64_ \
+    yum-config-manager --enable vault.centos.org_centos_7.4.1708_centosplus_x86_64_ \
 
 RUN yum clean all
 RUN rm -rf /var/cache/yum
@@ -81,9 +81,6 @@ RUN yum -y install \
     gnutls-devel-3.3.26-9.el7 \
     libacl-devel-2.2.51-12.el7 \
     openldap-devel-2.4.44-5.el7 \
-    samba-4.6.2-12.el7_4 \
-    samba-client-4.6.2-12.el7_4 \
-    cifs-utils-6.2-10.el7 \
     gcc-4.8.5-16.el7_4.2 \
     make-3.82-23.el7 \
     autoconf-2.69-11.el7 \
@@ -98,20 +95,14 @@ RUN yum -y install rh-python36 && \
     ln -s /bin/python3.6 /bin/python3 && \
     ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
 
-# Pip install. Trying to do as much as possible at once.
-# Here's an explanation of why we need to install each package:
-## Setup ProxyFS build environment
-# - requests
-## Install Python tox
-# - tox
 RUN pip install --upgrade 'pip<21.0'
 RUN pip install requests tox==3.5.3
 
 # Install Golang
 ENV GOLANG_TARFILE_NAME=go1.15.5.linux-amd64.tar.gz
-RUN cd /tmp && wget -q https://dl.google.com/go/${GOLANG_TARFILE_NAME}
-RUN tar -C /usr/local -xf /tmp/${GOLANG_TARFILE_NAME}
-RUN rm -rf /tmp/${GOLANG_TARFILE_NAME}
+RUN cd /tmp && wget -q https://dl.google.com/go/${GOLANG_TARFILE_NAME} && \
+    tar -C /usr/local -xf /tmp/${GOLANG_TARFILE_NAME} && \
+    rm -rf /tmp/${GOLANG_TARFILE_NAME}
 ENV PATH=$PATH:/usr/local/go/bin
 
 # Setup ProxyFS build environment
@@ -119,12 +110,22 @@ ENV GOPATH=/gopathroot
 ENV PATH=$PATH:$GOPATH/bin
 RUN echo "user_allow_other" >> /etc/fuse.conf
 
-RUN git clone https://github.com/openstack/liberasurecode.git
-RUN cd /liberasurecode && ./autogen.sh && ./configure && make && sudo make install && sed -i '1s/^/\/usr\/local\/lib\n/' /etc/ld.so.conf && ldconfig
+# Install liberasurecode
+RUN git clone https://github.com/openstack/liberasurecode.git && \
+    cd /liberasurecode && \
+    ./autogen.sh && \
+    ./configure && \
+    make && \
+    sudo make install && \
+    sed -i '1s/^/\/usr\/local\/lib\n/' /etc/ld.so.conf && \
+    ldconfig
 
-RUN git clone https://github.com/openstack/pyeclib.git
-RUN cd /pyeclib && pip install -e . && pip install -r test-requirements.txt
+# Install pyeclib
+RUN git clone https://github.com/openstack/pyeclib.git && \
+    cd /pyeclib && \
+    pip install -e . && \
+    pip install -r test-requirements.txt
 
-RUN go get github.com/ory/go-acc github.com/mattn/goveralls
+RUN go get github.com/mattn/goveralls
 
 CMD ["/bin/bash", "/gopathroot/src/github.com/NVIDIA/proxyfs/test/container/launch.sh"]
