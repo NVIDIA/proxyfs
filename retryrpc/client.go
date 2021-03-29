@@ -280,9 +280,20 @@ func (client *Client) readReplies(callingGenNum uint64) {
 	var localCnt int
 
 	for {
+		// Capture copy of net.Conn safely - we might be closing/halting
+		client.Lock()
+		if client.halting {
+			client.Unlock()
+			return
+		}
+		nC := client.connection.castToNetConn()
+		client.Unlock()
+		if nil == nC {
+			return
+		}
 
 		// Wait reply from server
-		buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, client.connection.castToNetConn())
+		buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, nC)
 
 		// This must happen before checking error
 		client.Lock()
@@ -486,13 +497,13 @@ func (client *Client) sendMyInfo() (err error) {
 func (client *Client) reDial() (err error) {
 	var entryState = client.connection.state
 
-	client.connection.tlsConfig = &tls.Config{
-		RootCAs: client.connection.x509CertPool,
-	}
-
 	// Now dial the server
 
 	if client.connection.useTLS {
+		client.connection.tlsConfig = &tls.Config{
+			RootCAs: client.connection.x509CertPool,
+		}
+
 		d := &net.Dialer{KeepAlive: client.keepAlivePeriod}
 		tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
 		if dialErr != nil {
@@ -584,13 +595,13 @@ func (client *Client) readClientID(callingGenNum uint64) (myUniqueID uint64, err
 func (client *Client) initialDial() (err error) {
 	var entryState = client.connection.state
 
-	client.connection.tlsConfig = &tls.Config{
-		RootCAs: client.connection.x509CertPool,
-	}
-
 	// Now dial the server
 
 	if client.connection.useTLS {
+		client.connection.tlsConfig = &tls.Config{
+			RootCAs: client.connection.x509CertPool,
+		}
+
 		d := &net.Dialer{KeepAlive: client.keepAlivePeriod}
 		tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
 		if dialErr != nil {

@@ -263,7 +263,11 @@ func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, 
 	// Read in the header of the request first
 	var hdr ioHeader
 
-	conn.SetDeadline(time.Now().Add(deadlineIO))
+	err = conn.SetDeadline(time.Now().Add(deadlineIO))
+	if err != nil {
+		return
+	}
+
 	err = binary.Read(conn, binary.BigEndian, &hdr)
 	if err != nil {
 		return
