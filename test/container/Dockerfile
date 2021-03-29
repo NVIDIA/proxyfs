@@ -126,4 +126,6 @@ RUN git clone https://github.com/openstack/pyeclib.git && \
     pip install -e . && \
     pip install -r test-requirements.txt
 
+RUN go get github.com/mattn/goveralls
+
 CMD ["/bin/bash", "/gopathroot/src/github.com/NVIDIA/proxyfs/test/container/launch.sh"]
