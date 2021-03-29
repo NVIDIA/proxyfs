@@ -12,19 +12,26 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20190620071333-e64a0ec8b42a // indirect
 	github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f // indirect
 	github.com/creachadair/cityhash v0.1.0
+	github.com/dgraph-io/ristretto v0.0.3 // indirect
 	github.com/go-errors/errors v1.0.0 // indirect
 	github.com/gogo/protobuf v1.2.2-0.20190611061853-dadb62585089 // indirect
 	github.com/google/btree v1.0.0
-	github.com/google/uuid v1.1.2-0.20190416172445-c2e93f3ae59f // indirect
+	github.com/google/uuid v1.2.0 // indirect
+	github.com/magiconair/properties v1.8.5 // indirect
 	github.com/mattn/goveralls v0.0.8 // indirect
+	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/ory/go-acc v0.2.6 // indirect
+	github.com/pborman/uuid v1.2.1 // indirect
+	github.com/pelletier/go-toml v1.8.1 // indirect
 	github.com/sirupsen/logrus v1.2.0
+	github.com/spf13/afero v1.6.0 // indirect
+	github.com/spf13/cobra v1.1.3 // indirect
 	github.com/stretchr/testify v1.5.1
 	go.etcd.io/etcd v0.5.0-alpha.5.0.20200401174654-e694b7bb0875
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.10.1-0.20190619185213-853ac185800f // indirect
 	golang.org/x/net v0.0.0-20200226121028-0de0cce0169b
-	golang.org/x/sys v0.0.0-20200602225109-6fdc65e7d980
-	golang.org/x/text v0.3.2 // indirect
-	google.golang.org/genproto v0.0.0-20190620144150-6af8c5fc6601 // indirect
+	golang.org/x/sys v0.0.0-20210326220804-49726bf1d181
+	golang.org/x/text v0.3.5 // indirect
+	gopkg.in/ini.v1 v1.62.0 // indirect
 )
