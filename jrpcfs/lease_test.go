@@ -17,15 +17,16 @@ import (
 )
 
 const (
-	testRpcLeaseDelayAfterSendingRequest        = 10 * time.Millisecond
-	testRpcLeaseDelayBeforeSendingRequest       = 10 * time.Millisecond
-	testRpcLeaseRetryRPCDeadlineIO              = "60s"
-	testRpcLeaseRetryRPCKeepAlivePeriod         = "60s"
-	testRpcLeaseMultiFirstInodeNumber     int64 = 1
-	testRpcLeaseMultiNumInstances         int   = 5
-	testRpcLeaseSingleInodeNumber         int64 = 1
-	testRpcLeaseSingleNumInstances        int   = 101 // Must be >= 4
-	testRpcLeaseTimeFormat                      = "15:04:05.000"
+	testRpcLeaseDelayAfterSendingRequest         = 10 * time.Millisecond
+	testRpcLeaseDelayBeforeSendingRequest        = 10 * time.Millisecond
+	testRpcLeaseRetryRPCDeadlineIO               = "60s"
+	testRpcLeaseRetryRPCKeepAlivePeriod          = "60s"
+	testRpcLeaseMultiFirstInodeNumber     int64  = 1
+	testRpcLeaseMultiNumInstances         int    = 5
+	testRpcLeaseSingleInodeNumber         int64  = 1
+	testRpcLeaseSingleNumInstances        int    = 101 // Must be >= 4
+	testRpcLeaseTimeFormat                       = "15:04:05.000"
+	testRpcLeaseLocalClientID             uint64 = 0
 )
 
 var (
@@ -45,7 +46,86 @@ type testRpcLeaseClientStruct struct {
 	t                *testing.T
 }
 
-func BenchmarkRpcLease(b *testing.B) {
+func BenchmarkRpcLeaseLocal(b *testing.B) {
+	var (
+		benchmarkIteration        int
+		err                       error
+		jserver                   *Server
+		leaseReply                *LeaseReply
+		leaseRequest              *LeaseRequest
+		mountByAccountNameRequest *MountByAccountNameRequest
+		mountByAccountNameReply   *MountByAccountNameReply
+		unmountReply              *Reply
+		unmountRequest            *UnmountRequest
+	)
+
+	jserver = NewServer()
+
+	mountByAccountNameRequest = &MountByAccountNameRequest{
+		AccountName: testAccountName,
+		AuthToken:   "",
+	}
+	mountByAccountNameReply = &MountByAccountNameReply{}
+
+	err = jserver.RpcMountByAccountName(testRpcLeaseLocalClientID, mountByAccountNameRequest, mountByAccountNameReply)
+	if nil != err {
+		b.Fatalf("jserver.RpcMountByAccountName(testRpcLeaseLocalClientID, mountByAccountNameRequest, mountByAccountNameReply) failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	for benchmarkIteration = 0; benchmarkIteration < b.N; benchmarkIteration++ {
+		leaseRequest = &LeaseRequest{
+			InodeHandle: InodeHandle{
+				MountID:     mountByAccountNameReply.MountID,
+				InodeNumber: testRpcLeaseSingleInodeNumber,
+			},
+			LeaseRequestType: LeaseRequestTypeExclusive,
+		}
+		leaseReply = &LeaseReply{}
+
+		err = jserver.RpcLease(leaseRequest, leaseReply)
+		if nil != err {
+			b.Fatalf("jserver.RpcLease(leaseRequest, leaseReply) failed: %v", err)
+		}
+
+		if LeaseReplyTypeExclusive != leaseReply.LeaseReplyType {
+			b.Fatalf("RpcLease() returned LeaseReplyType %v... expected LeaseRequestTypeExclusive", leaseReply.LeaseReplyType)
+		}
+
+		leaseRequest = &LeaseRequest{
+			InodeHandle: InodeHandle{
+				MountID:     mountByAccountNameReply.MountID,
+				InodeNumber: testRpcLeaseSingleInodeNumber,
+			},
+			LeaseRequestType: LeaseRequestTypeRelease,
+		}
+		leaseReply = &LeaseReply{}
+
+		err = jserver.RpcLease(leaseRequest, leaseReply)
+		if nil != err {
+			b.Fatalf("jserver.RpcLease(leaseRequest, leaseReply) failed: %v", err)
+		}
+
+		if LeaseReplyTypeReleased != leaseReply.LeaseReplyType {
+			b.Fatalf("RpcLease() returned LeaseReplyType %v... expected LeaseReplyTypeReleased", leaseReply.LeaseReplyType)
+		}
+	}
+
+	b.StopTimer()
+
+	unmountRequest = &UnmountRequest{
+		MountID: mountByAccountNameReply.MountID,
+	}
+	unmountReply = &Reply{}
+
+	err = jserver.RpcUnmount(unmountRequest, unmountReply)
+	if nil != err {
+		b.Fatalf("jserver.RpcUnmount(unmountRequest, unmountReply) failed: %v", err)
+	}
+}
+
+func BenchmarkRpcLeaseRemote(b *testing.B) {
 	var (
 		benchmarkIteration        int
 		deadlineIO                time.Duration
