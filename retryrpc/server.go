@@ -44,7 +44,7 @@ func (server *Server) run() {
 
 	defer server.goroutineWG.Done()
 	for {
-		if 0 == len(server.tlsCertificate.Certificate) {
+		if len(server.tlsCertificate.Certificate) == 0 {
 			conn, err = server.netListener.Accept()
 		} else {
 			conn, err = server.tlsListener.Accept()

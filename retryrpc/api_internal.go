@@ -80,13 +80,6 @@ type connCtx struct {
 	ci                  *clientInfo // Back pointer to the CI
 }
 
-// pendingCtx tracks an individual request from a client
-type pendingCtx struct {
-	lock sync.Mutex
-	buf  []byte   // Request
-	cCtx *connCtx // Most recent connection to return results
-}
-
 // methodArgs defines the method provided by the RPC server
 // as well as the request type and reply type arguments
 type methodArgs struct {
@@ -225,7 +218,6 @@ func setupHdrReply(ioreply *ioReply, t MsgType) {
 	ioreply.Hdr.Version = currentRetryVersion
 	ioreply.Hdr.Type = t
 	ioreply.Hdr.Magic = headerMagic
-	return
 }
 
 func buildSetIDRequest(myUniqueID uint64) (isreq *internalSetIDRequest, err error) {
