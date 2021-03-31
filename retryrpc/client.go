@@ -84,6 +84,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 				err = fmt.Errorf("In send(), ConnectionRetryLimit (%v) on calling dial() exceeded", ConnectionRetryLimit)
 				logger.PanicfWithError(err, "")
 			}
+			logger.Warnf("initialDial() failed; retrying: %v", err)
 			time.Sleep(connectionRetryDelay)
 			connectionRetryDelay *= ConnectionRetryDelayMultiplier
 			client.Lock()
