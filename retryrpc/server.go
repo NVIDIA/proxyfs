@@ -153,7 +153,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// be unmarshaled again to retrieve the parameters specific to
 		// the RPC.
 		startRPC := time.Now()
-		ior := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq)
+		ior := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq, &ci.stats)
 		ci.stats.RPCLenUsec.Add(uint64(time.Since(startRPC) / time.Microsecond))
 		ci.stats.RPCcompleted.Add(1)
 
@@ -355,8 +355,10 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 	}
 }
 
+// TODO - time start and end of this method!!!! maybe this is bottleneck???
+
 // callRPCAndMarshal calls the RPC and returns results to requestor
-func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *jsonRequest) (ior *ioReply) {
+func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *jsonRequest, si *statsInfo) (ior *ioReply) {
 	var (
 		err          error
 		returnValues []reflect.Value
@@ -372,6 +374,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 	ma := server.svrMap[jReq.Method]
 	if ma != nil {
 
+		startUnmarshalRPC := time.Now()
 		// Another unmarshal of buf to find the parameters specific to
 		// this RPC
 		typOfReq = ma.request.Elem()
@@ -390,14 +393,17 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 		// Create the reply structure
 		typOfReply := ma.reply.Elem()
 		myReply := reflect.New(typOfReply)
+		si.CallUnmarshalRPCLenUsec.Add(uint64(time.Since(startUnmarshalRPC) / time.Microsecond))
 
 		// Call the method
 		function := ma.methodPtr.Func
+		startRealRPC := time.Now()
 		if ma.passClientID {
 			returnValues = function.Call([]reflect.Value{server.receiver, cid, req, myReply})
 		} else {
 			returnValues = function.Call([]reflect.Value{server.receiver, req, myReply})
 		}
+		si.OnlyRPCLenUsec.Add(uint64(time.Since(startRealRPC) / time.Microsecond))
 
 		// The return value for the method is an error.
 		errInter := returnValues[0].Interface()
@@ -417,11 +423,13 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 		jReply.ErrStr = fmt.Sprintf("errno: %d", unix.ENOENT)
 	}
 
+	startReturnRPC := time.Now()
 	// Convert response into JSON for return trip
 	reply.JResult, err = json.Marshal(jReply)
 	if err != nil {
 		logger.PanicfWithError(err, "Unable to marshal jReply: %+v", jReply)
 	}
+	si.ReturnRPCLenUsec.Add(uint64(time.Since(startReturnRPC) / time.Microsecond))
 
 	return reply
 }

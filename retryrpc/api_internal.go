@@ -36,17 +36,20 @@ type requestID uint64
 
 // Useful stats for the clientInfo instance
 type statsInfo struct {
-	AddCompleted           bucketstats.Total           // Number added to completed list
-	RmCompleted            bucketstats.Total           // Number removed from completed list
-	RPCLenUsec             bucketstats.BucketLog2Round // Tracks length of RPCs
-	ReplySize              bucketstats.BucketLog2Round // Tracks completed RPC reply size
-	longestRPC             time.Duration               // Time of longest RPC
-	longestRPCMethod       string                      // Method of longest RPC
-	largestReplySize       uint64                      // Tracks largest RPC reply size
-	largestReplySizeMethod string                      // Method of largest RPC reply size completed
-	RPCattempted           bucketstats.Total           // Number of RPCs attempted - may be completed or in process
-	RPCcompleted           bucketstats.Total           // Number of RPCs which completed - incremented after call returns
-	RPCretried             bucketstats.Total           // Number of RPCs which were just pulled from completed list
+	AddCompleted            bucketstats.Total           // Number added to completed list
+	RmCompleted             bucketstats.Total           // Number removed from completed list
+	RPCLenUsec              bucketstats.BucketLog2Round // Tracks length of RPCs
+	OnlyRPCLenUsec          bucketstats.BucketLog2Round // Tracks length of RPCs WITHOUR marshaling
+	CallUnmarshalRPCLenUsec bucketstats.BucketLog2Round // .....
+	ReturnRPCLenUsec        bucketstats.BucketLog2Round // .....
+	ReplySize               bucketstats.BucketLog2Round // Tracks completed RPC reply size
+	longestRPC              time.Duration               // Time of longest RPC
+	longestRPCMethod        string                      // Method of longest RPC
+	largestReplySize        uint64                      // Tracks largest RPC reply size
+	largestReplySizeMethod  string                      // Method of largest RPC reply size completed
+	RPCattempted            bucketstats.Total           // Number of RPCs attempted - may be completed or in process
+	RPCcompleted            bucketstats.Total           // Number of RPCs which completed - incremented after call returns
+	RPCretried              bucketstats.Total           // Number of RPCs which were just pulled from completed list
 }
 
 // Server side data structure storing per client information
@@ -163,7 +166,7 @@ type replyCtx struct {
 
 // reqCtx exists on the client and tracks a request passed to Send()
 type reqCtx struct {
-	ioreq    ioRequest // Wrapped request passed to Send()
+	ioreq    *ioRequest // Wrapped request passed to Send()
 	rpcReply interface{}
 	answer   chan replyCtx
 	genNum   uint64 // Generation number of socket when request sent
@@ -198,9 +201,9 @@ type svrResponse struct {
 	Result interface{} `json:"result"`
 }
 
-func buildIoRequest(jReq jsonRequest) (ioreq *ioRequest, err error) {
+func buildIoRequest(jReq *jsonRequest) (ioreq *ioRequest, err error) {
 	ioreq = &ioRequest{}
-	ioreq.JReq, err = json.Marshal(jReq)
+	ioreq.JReq, err = json.Marshal(*jReq)
 	if err != nil {
 		return nil, err
 	}
