@@ -205,23 +205,35 @@ func benchmarkRpcLeaseCustomMountByAccountNameReplyMarshal(rpcErr error, mountBy
 		err             error
 		mountIDLen      = uint32(len(mountByAccountNameReply.MountID))
 		n               int
-		rpcErrString    = rpcErr.Error()
-		rpcErrStringLen = uint32(len(rpcErrString))
+		rpcErrString    string
+		rpcErrStringLen uint32
 	)
 
-	bytesBuffer = bytes.NewBuffer(make([]byte, 0, 4+rpcErrStringLen+4+mountIDLen))
+	if nil == rpcErr {
+		bytesBuffer = bytes.NewBuffer(make([]byte, 0, 4+4+mountIDLen))
 
-	err = binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen)
-	if nil != err {
-		panic(fmt.Errorf("binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen) failed: %v", err))
-	}
+		err = binary.Write(bytesBuffer, binary.LittleEndian, uint32(0))
+		if nil != err {
+			panic(fmt.Errorf("binary.Write(bytesBuffer, binary.LittleEndian, uint32(0)) failed: %v", err))
+		}
+	} else {
+		rpcErrString = rpcErr.Error()
+		rpcErrStringLen = uint32(len(rpcErrString))
 
-	n, err = bytesBuffer.WriteString(string(rpcErrString))
-	if nil != err {
-		panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) failed: %v", err))
-	}
-	if uint32(n) != rpcErrStringLen {
-		panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) returned n==%v (expected %v)", n, rpcErrStringLen))
+		bytesBuffer = bytes.NewBuffer(make([]byte, 0, 4+rpcErrStringLen+4+mountIDLen))
+
+		err = binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen)
+		if nil != err {
+			panic(fmt.Errorf("binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen) failed: %v", err))
+		}
+
+		n, err = bytesBuffer.WriteString(string(rpcErrString))
+		if nil != err {
+			panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) failed: %v", err))
+		}
+		if uint32(n) != rpcErrStringLen {
+			panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) returned n==%v (expected %v)", n, rpcErrStringLen))
+		}
 	}
 
 	err = binary.Write(bytesBuffer, binary.LittleEndian, mountIDLen)
@@ -383,23 +395,35 @@ func benchmarkRpcLeaseCustomLeaseReplyMarshal(rpcErr error, leaseReply *LeaseRep
 		bytesBuffer     *bytes.Buffer
 		err             error
 		n               int
-		rpcErrString    = rpcErr.Error()
-		rpcErrStringLen = uint32(len(rpcErrString))
+		rpcErrString    string
+		rpcErrStringLen uint32
 	)
 
-	bytesBuffer = bytes.NewBuffer(make([]byte, 0, 4+4))
+	if nil == rpcErr {
+		bytesBuffer = bytes.NewBuffer(make([]byte, 0, 4+4))
 
-	err = binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen)
-	if nil != err {
-		panic(fmt.Errorf("binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen) failed: %v", err))
-	}
+		err = binary.Write(bytesBuffer, binary.LittleEndian, uint32(0))
+		if nil != err {
+			panic(fmt.Errorf("binary.Write(bytesBuffer, binary.LittleEndian, uint32(0)) failed: %v", err))
+		}
+	} else {
+		rpcErrString = rpcErr.Error()
+		rpcErrStringLen = uint32(len(rpcErrString))
 
-	n, err = bytesBuffer.WriteString(string(rpcErrString))
-	if nil != err {
-		panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) failed: %v", err))
-	}
-	if uint32(n) != rpcErrStringLen {
-		panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) returned n==%v (expected %v)", n, rpcErrStringLen))
+		bytesBuffer = bytes.NewBuffer(make([]byte, 0, 4+rpcErrStringLen+4))
+
+		err = binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen)
+		if nil != err {
+			panic(fmt.Errorf("binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen) failed: %v", err))
+		}
+
+		n, err = bytesBuffer.WriteString(string(rpcErrString))
+		if nil != err {
+			panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) failed: %v", err))
+		}
+		if uint32(n) != rpcErrStringLen {
+			panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) returned n==%v (expected %v)", n, rpcErrStringLen))
+		}
 	}
 
 	err = binary.Write(bytesBuffer, binary.LittleEndian, leaseReply.LeaseReplyType)
@@ -518,23 +542,35 @@ func benchmarkRpcLeaseCustomUnmountReplyMarshal(rpcErr error, unmountReply *Repl
 		bytesBuffer     *bytes.Buffer
 		err             error
 		n               int
-		rpcErrString    = rpcErr.Error()
-		rpcErrStringLen = uint32(len(rpcErrString))
+		rpcErrString    string
+		rpcErrStringLen uint32
 	)
 
-	bytesBuffer = bytes.NewBuffer(make([]byte, 0, 4))
+	if nil == rpcErr {
+		bytesBuffer = bytes.NewBuffer(make([]byte, 0, 4))
 
-	err = binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen)
-	if nil != err {
-		panic(fmt.Errorf("binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen) failed: %v", err))
-	}
+		err = binary.Write(bytesBuffer, binary.LittleEndian, uint32(0))
+		if nil != err {
+			panic(fmt.Errorf("binary.Write(bytesBuffer, binary.LittleEndian, uint32(0)) failed: %v", err))
+		}
+	} else {
+		rpcErrString = rpcErr.Error()
+		rpcErrStringLen = uint32(len(rpcErrString))
 
-	n, err = bytesBuffer.WriteString(string(rpcErrString))
-	if nil != err {
-		panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) failed: %v", err))
-	}
-	if uint32(n) != rpcErrStringLen {
-		panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) returned n==%v (expected %v)", n, rpcErrStringLen))
+		bytesBuffer = bytes.NewBuffer(make([]byte, 0, 4+rpcErrStringLen))
+
+		err = binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen)
+		if nil != err {
+			panic(fmt.Errorf("binary.Write(bytesBuffer, binary.LittleEndian, rpcErrStringLen) failed: %v", err))
+		}
+
+		n, err = bytesBuffer.WriteString(string(rpcErrString))
+		if nil != err {
+			panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) failed: %v", err))
+		}
+		if uint32(n) != rpcErrStringLen {
+			panic(fmt.Errorf("bytesBuffer.WriteString(rpcErrString) returned n==%v (expected %v)", n, rpcErrStringLen))
+		}
 	}
 
 	unmountReplyBuf = bytesBuffer.Bytes()
@@ -587,7 +623,367 @@ func BenchmarkRpcLeaseCustomTLS(b *testing.B) {
 }
 
 func benchmarkRpcLeaseCustom(b *testing.B, useTLS bool) {
-	// TODO
+	var (
+		benchmarkIteration           int
+		doneWG                       sync.WaitGroup
+		err                          error
+		leaseReply                   *LeaseReply
+		leaseReplyBuf                []byte
+		leaseRequest                 *LeaseRequest
+		leaseRequestBuf              []byte
+		mountByAccountNameReply      *MountByAccountNameReply
+		mountByAccountNameReplyBuf   []byte
+		mountByAccountNameRequest    *MountByAccountNameRequest
+		mountByAccountNameRequestBuf []byte
+		netConn                      net.Conn
+		netConnRetries               int
+		netConnRetryDelay            time.Duration
+		ok                           bool
+		rootCACertPool               *x509.CertPool
+		rpcErr                       error
+		tlsConfig                    *tls.Config
+		tlsConn                      *tls.Conn
+		unmarshalErr                 error
+		unmountReplyBuf              []byte
+		unmountRequest               *UnmountRequest
+		unmountRequestBuf            []byte
+	)
+
+	doneWG.Add(1)
+	go benchmarkRpcLeaseCustomServer(useTLS, &doneWG)
+
+	netConnRetries = 0
+
+	netConnRetryDelay, err = time.ParseDuration(testRpcLeaseShortcutClientConnRetryDelay)
+	if nil != err {
+		b.Fatalf("time.ParseDuration(testRpcLeaseShortcutClientConnRetryDelay=\"%s\") failed: %v", testRpcLeaseShortcutClientConnRetryDelay, err)
+	}
+
+	if useTLS {
+		rootCACertPool = x509.NewCertPool()
+		ok = rootCACertPool.AppendCertsFromPEM(testTLSCerts.caCertPEMBlock)
+		if !ok {
+			b.Fatalf("rootCACertPool.AppendCertsFromPEM(testTLSCerts.caCertPEMBlock) returned !ok")
+		}
+		tlsConfig = &tls.Config{
+			RootCAs: rootCACertPool,
+		}
+	}
+
+	for {
+		if useTLS {
+			tlsConn, err = tls.Dial("tcp", testRpcLeaseShortcutIPAddrPort, tlsConfig)
+			if nil == err {
+				netConn = tlsConn
+				break
+			}
+		} else {
+			netConn, err = net.Dial("tcp", testRpcLeaseShortcutIPAddrPort)
+			if nil == err {
+				break
+			}
+		}
+
+		netConnRetries++
+
+		if netConnRetries > testRpcLeaseShortcutClientConnMaxRetries {
+			b.Fatalf("netConnRetries exceeded testRpcLeaseShortcutClientConnMaxRetries (%v)", testRpcLeaseShortcutClientConnMaxRetries)
+		}
+
+		time.Sleep(netConnRetryDelay)
+	}
+
+	mountByAccountNameRequest = &MountByAccountNameRequest{
+		AccountName: testAccountName,
+		AuthToken:   "",
+	}
+
+	mountByAccountNameRequestBuf = benchmarkRpcLeaseCustomMountByAccountNameRequestMarshal(mountByAccountNameRequest)
+
+	mountByAccountNameReplyBuf = benchmarkRpcLeaseCustomDoRequest(b, netConn, benchmarkRpcLeaseCustomRequestTypeMountByAccountName, mountByAccountNameRequestBuf)
+
+	rpcErr, mountByAccountNameReply, unmarshalErr = benchmarkRpcLeaseCustomMountByAccountNameReplyUnmarshal(mountByAccountNameReplyBuf)
+	if nil != unmarshalErr {
+		b.Fatalf("benchmarkRpcLeaseCustomMountByAccountNameReplyUnmarshal(mountByAccountNameReplyBuf) returned unmarshalErr: %v", unmarshalErr)
+	}
+	if nil != rpcErr {
+		b.Fatalf("benchmarkRpcLeaseCustomMountByAccountNameReplyUnmarshal(mountByAccountNameReplyBuf) returned rpcErr: %v", rpcErr)
+	}
+
+	b.ResetTimer()
+
+	for benchmarkIteration = 0; benchmarkIteration < b.N; benchmarkIteration++ {
+		leaseRequest = &LeaseRequest{
+			InodeHandle: InodeHandle{
+				MountID:     mountByAccountNameReply.MountID,
+				InodeNumber: testRpcLeaseSingleInodeNumber,
+			},
+			LeaseRequestType: LeaseRequestTypeExclusive,
+		}
+
+		leaseRequestBuf = benchmarkRpcLeaseCustomLeaseRequestMarshal(leaseRequest)
+
+		leaseReplyBuf = benchmarkRpcLeaseCustomDoRequest(b, netConn, benchmarkRpcLeaseCustomRequestTypeLease, leaseRequestBuf)
+
+		rpcErr, leaseReply, unmarshalErr = benchmarkRpcLeaseCustomLeaseReplyUnmarshal(leaseReplyBuf)
+		if nil != unmarshalErr {
+			b.Fatalf("benchmarkRpcLeaseCustomLeaseReplyUnmarshal(leaseReplyBuf) returned unmarshalErr: %v", unmarshalErr)
+		}
+		if nil != rpcErr {
+			b.Fatalf("benchmarkRpcLeaseCustomLeaseReplyUnmarshal(leaseReplyBuf) returned rpcErr: %v", rpcErr)
+		}
+
+		if LeaseReplyTypeExclusive != leaseReply.LeaseReplyType {
+			b.Fatalf("RpcLease() returned LeaseReplyType %v... expected LeaseRequestTypeExclusive", leaseReply.LeaseReplyType)
+		}
+
+		leaseRequest = &LeaseRequest{
+			InodeHandle: InodeHandle{
+				MountID:     mountByAccountNameReply.MountID,
+				InodeNumber: testRpcLeaseSingleInodeNumber,
+			},
+			LeaseRequestType: LeaseRequestTypeRelease,
+		}
+
+		leaseRequestBuf = benchmarkRpcLeaseCustomLeaseRequestMarshal(leaseRequest)
+
+		leaseReplyBuf = benchmarkRpcLeaseCustomDoRequest(b, netConn, benchmarkRpcLeaseCustomRequestTypeLease, leaseRequestBuf)
+
+		rpcErr, leaseReply, unmarshalErr = benchmarkRpcLeaseCustomLeaseReplyUnmarshal(leaseReplyBuf)
+		if nil != unmarshalErr {
+			b.Fatalf("benchmarkRpcLeaseCustomLeaseReplyUnmarshal(leaseReplyBuf) returned unmarshalErr: %v", unmarshalErr)
+		}
+		if nil != rpcErr {
+			b.Fatalf("benchmarkRpcLeaseCustomLeaseReplyUnmarshal(leaseReplyBuf) returned rpcErr: %v", rpcErr)
+		}
+
+		if LeaseReplyTypeReleased != leaseReply.LeaseReplyType {
+			b.Fatalf("RpcLease() returned LeaseReplyType %v... expected LeaseReplyTypeReleased", leaseReply.LeaseReplyType)
+		}
+	}
+
+	b.StopTimer()
+
+	unmountRequest = &UnmountRequest{
+		MountID: mountByAccountNameReply.MountID,
+	}
+
+	unmountRequestBuf = benchmarkRpcLeaseCustomUnmountRequestMarshal(unmountRequest)
+
+	unmountReplyBuf = benchmarkRpcLeaseCustomDoRequest(b, netConn, benchmarkRpcLeaseCustomRequestTypeUnmount, unmountRequestBuf)
+
+	rpcErr, _, unmarshalErr = benchmarkRpcLeaseCustomUnmountReplyUnmarshal(unmountReplyBuf)
+	if nil != unmarshalErr {
+		b.Fatalf("benchmarkRpcLeaseCustomUnmountReplyUnmarshal(unmountReplyBuf) returned unmarshalErr: %v", unmarshalErr)
+	}
+	if nil != rpcErr {
+		b.Fatalf("benchmarkRpcLeaseCustomUnmountReplyUnmarshal(unmountReplyBuf) returned rpcErr: %v", rpcErr)
+	}
+
+	err = netConn.Close()
+	if nil != err {
+		b.Fatalf("netConn.Close() failed: %v", err)
+	}
+
+	doneWG.Wait()
+}
+
+func benchmarkRpcLeaseCustomServer(useTLS bool, doneWG *sync.WaitGroup) {
+	var (
+		err                         error
+		jserver                     *Server
+		leaseReply                  *LeaseReply
+		leaseRequest                *LeaseRequest
+		mountByAccountNameReply     *MountByAccountNameReply
+		mountByAccountNameRequest   *MountByAccountNameRequest
+		n                           int
+		netConn                     net.Conn
+		netListener                 net.Listener
+		replyBuf                    []byte
+		replyLen                    uint32
+		replyLenBuf                 []byte
+		requestBuf                  []byte
+		requestLen                  uint32
+		requestLenAndRequestTypeBuf []byte
+		requestType                 uint32
+		tlsConfig                   *tls.Config
+		unmountReply                *Reply
+		unmountRequest              *UnmountRequest
+	)
+
+	jserver = NewServer()
+
+	netListener, err = net.Listen("tcp", testRpcLeaseShortcutIPAddrPort)
+	if nil != err {
+		panic(fmt.Errorf("net.Listen(\"tcp\", testRpcLeaseShortcutIPAddrPort) failed: %v", err))
+	}
+
+	if useTLS {
+		tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{testTLSCerts.endpointTLSCert},
+		}
+
+		netListener = tls.NewListener(netListener, tlsConfig)
+	}
+
+	netConn, err = netListener.Accept()
+	if nil != err {
+		panic(fmt.Errorf("netListener.Accept() failed: %v", err))
+	}
+
+	for {
+		requestLenAndRequestTypeBuf = make([]byte, 8)
+
+		n, err = netConn.Read(requestLenAndRequestTypeBuf)
+		if nil != err {
+			if io.EOF != err {
+				panic(fmt.Errorf("netConn.Read(requestLenAndRequestTypeBuf) failed: %v", err))
+			}
+
+			err = netConn.Close()
+			if nil != err {
+				panic(fmt.Errorf("netConn.Close() failed: %v", err))
+			}
+
+			err = netListener.Close()
+			if nil != err {
+				panic(fmt.Errorf("netListener.Close() failed: %v", err))
+			}
+
+			doneWG.Done()
+
+			return
+		}
+		if n != 8 {
+			panic(fmt.Errorf("netConn.Read(requestLenAndRequestTypeBuf) returned n == %v (expected 8)", n))
+		}
+
+		requestLen = binary.LittleEndian.Uint32(requestLenAndRequestTypeBuf[:4])
+		requestType = binary.LittleEndian.Uint32(requestLenAndRequestTypeBuf[4:])
+
+		requestBuf = make([]byte, requestLen)
+
+		n, err = netConn.Read(requestBuf)
+		if nil != err {
+			panic(fmt.Errorf("netConn.Read(requestBuf) failed: %v", err))
+		}
+		if n != int(requestLen) {
+			panic(fmt.Errorf("netConn.Read(requestBuf) returned n == %v (expected %v)", n, requestLen))
+		}
+
+		switch requestType {
+		case benchmarkRpcLeaseCustomRequestTypeMountByAccountName:
+			mountByAccountNameRequest, err = benchmarkRpcLeaseCustomMountByAccountNameRequestUnmarshal(requestBuf)
+			if nil != err {
+				panic(fmt.Errorf("benchmarkRpcLeaseCustomMountByAccountNameRequestUnmarshal(requestBuf) failed: %v", err))
+			}
+
+			mountByAccountNameReply = &MountByAccountNameReply{}
+
+			err = jserver.RpcMountByAccountName(testRpcLeaseLocalClientID, mountByAccountNameRequest, mountByAccountNameReply)
+
+			replyBuf = benchmarkRpcLeaseCustomMountByAccountNameReplyMarshal(err, mountByAccountNameReply)
+		case benchmarkRpcLeaseCustomRequestTypeLease:
+			leaseRequest, err = benchmarkRpcLeaseCustomLeaseRequestUnmarshal(requestBuf)
+			if nil != err {
+				panic(fmt.Errorf("benchmarkRpcLeaseCustomLeaseRequestUnmarshal(requestBuf) failed: %v", err))
+			}
+
+			leaseReply = &LeaseReply{}
+
+			err = jserver.RpcLease(leaseRequest, leaseReply)
+
+			replyBuf = benchmarkRpcLeaseCustomLeaseReplyMarshal(err, leaseReply)
+		case benchmarkRpcLeaseCustomRequestTypeUnmount:
+			unmountRequest, err = benchmarkRpcLeaseCustomUnmountRequestUnmarshal(requestBuf)
+			if nil != err {
+				panic(fmt.Errorf("benchmarkRpcLeaseCustomUnmountRequestUnmarshal(requestBuf) failed: %v", err))
+			}
+
+			unmountReply = &Reply{}
+
+			err = jserver.RpcUnmount(unmountRequest, unmountReply)
+
+			replyBuf = benchmarkRpcLeaseCustomUnmountReplyMarshal(err, unmountReply)
+		default:
+			panic(fmt.Errorf("requestType (%v) not recognized", requestType))
+		}
+
+		replyLen = uint32(len(replyBuf))
+		replyLenBuf = make([]byte, 4)
+		binary.LittleEndian.PutUint32(replyLenBuf, replyLen)
+
+		n, err = netConn.Write(replyLenBuf)
+		if nil != err {
+			panic(fmt.Errorf("netConn.Write(replyLenBuf) failed: %v", err))
+		}
+		if n != 4 {
+			panic(fmt.Errorf("netConn.Write(replyLenBuf) returned n == %v (expected 4)", n))
+		}
+
+		n, err = netConn.Write(replyBuf)
+		if nil != err {
+			panic(fmt.Errorf("netConn.Write(replyBuf) failed: %v", err))
+		}
+		if n != int(replyLen) {
+			panic(fmt.Errorf("netConn.Write(replyBuf) returned n == %v (expected %v)", n, replyLen))
+		}
+	}
+}
+
+func benchmarkRpcLeaseCustomDoRequest(b *testing.B, netConn net.Conn, requestType uint32, requestBuf []byte) (replyBuf []byte) {
+	var (
+		err                         error
+		n                           int
+		replyLen                    uint32
+		replyLenBuf                 []byte
+		requestLen                  uint32 = uint32(len(requestBuf))
+		requestLenAndRequestTypeBuf []byte
+	)
+
+	requestLenAndRequestTypeBuf = make([]byte, 8)
+
+	binary.LittleEndian.PutUint32(requestLenAndRequestTypeBuf[:4], requestLen)
+	binary.LittleEndian.PutUint32(requestLenAndRequestTypeBuf[4:], requestType)
+
+	n, err = netConn.Write(requestLenAndRequestTypeBuf)
+	if nil != err {
+		b.Fatalf("netConn.Write(requestLenAndRequestTypeBuf) failed: %v", err)
+	}
+	if n != 8 {
+		b.Fatalf("netConn.Write(requestLenAndRequestTypeBuf) returned n == %v (expected 8)", n)
+	}
+
+	n, err = netConn.Write(requestBuf)
+	if nil != err {
+		b.Fatalf("netConn.Write(requestBuf) failed: %v", err)
+	}
+	if n != int(requestLen) {
+		b.Fatalf("netConn.Write(requestBuf) returned n == %v (expected %v)", n, requestLen)
+	}
+
+	replyLenBuf = make([]byte, 4)
+
+	n, err = netConn.Read(replyLenBuf)
+	if nil != err {
+		b.Fatalf("netConn.Read(replyLenBuf) failed: %v", err)
+	}
+	if n != 4 {
+		b.Fatalf("netConn.Read(replyLenBuf) returned n == %v (expected 4)", n)
+	}
+
+	replyLen = binary.LittleEndian.Uint32(replyLenBuf)
+	replyBuf = make([]byte, replyLen)
+
+	n, err = netConn.Read(replyBuf)
+	if nil != err {
+		b.Fatalf("netConn.Read(replyBuf) failed: %v", err)
+	}
+	if n != int(replyLen) {
+		b.Fatalf("netConn.Read(replyBuf) returned n == %v (expected %v)", n, replyLen)
+	}
+
+	return
 }
 
 func BenchmarkRpcLeaseShortcutTCP(b *testing.B) {
