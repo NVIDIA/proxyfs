@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+//Allocate response/ Copyright (c) 2015-2021, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
 package jrpcfs
@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
@@ -986,14 +987,6 @@ func benchmarkRpcLeaseCustomDoRequest(b *testing.B, netConn net.Conn, requestTyp
 	return
 }
 
-func BenchmarkRpcLeaseShortcutTCP(b *testing.B) {
-	benchmarkRpcLeaseShortcut(b, false)
-}
-
-func BenchmarkRpcLeaseShortcutTLS(b *testing.B) {
-	benchmarkRpcLeaseShortcut(b, true)
-}
-
 func benchmarkRpcLeaseShortcut(b *testing.B, useTLS bool) {
 	var (
 		benchmarkIteration               int
@@ -1398,85 +1391,6 @@ func benchmarkRpcLeaseShortcutDoRequest(b *testing.B, netConn net.Conn, request 
 	}
 }
 
-func BenchmarkRpcLeaseLocal(b *testing.B) {
-	var (
-		benchmarkIteration        int
-		err                       error
-		jserver                   *Server
-		leaseReply                *LeaseReply
-		leaseRequest              *LeaseRequest
-		mountByAccountNameReply   *MountByAccountNameReply
-		mountByAccountNameRequest *MountByAccountNameRequest
-		unmountReply              *Reply
-		unmountRequest            *UnmountRequest
-	)
-
-	jserver = NewServer()
-
-	mountByAccountNameRequest = &MountByAccountNameRequest{
-		AccountName: testAccountName,
-		AuthToken:   "",
-	}
-	mountByAccountNameReply = &MountByAccountNameReply{}
-
-	err = jserver.RpcMountByAccountName(testRpcLeaseLocalClientID, mountByAccountNameRequest, mountByAccountNameReply)
-	if nil != err {
-		b.Fatalf("jserver.RpcMountByAccountName(testRpcLeaseLocalClientID, mountByAccountNameRequest, mountByAccountNameReply) failed: %v", err)
-	}
-
-	b.ResetTimer()
-
-	for benchmarkIteration = 0; benchmarkIteration < b.N; benchmarkIteration++ {
-		leaseRequest = &LeaseRequest{
-			InodeHandle: InodeHandle{
-				MountID:     mountByAccountNameReply.MountID,
-				InodeNumber: testRpcLeaseSingleInodeNumber,
-			},
-			LeaseRequestType: LeaseRequestTypeExclusive,
-		}
-		leaseReply = &LeaseReply{}
-
-		err = jserver.RpcLease(leaseRequest, leaseReply)
-		if nil != err {
-			b.Fatalf("jserver.RpcLease(leaseRequest, leaseReply) failed: %v", err)
-		}
-
-		if LeaseReplyTypeExclusive != leaseReply.LeaseReplyType {
-			b.Fatalf("RpcLease() returned LeaseReplyType %v... expected LeaseRequestTypeExclusive", leaseReply.LeaseReplyType)
-		}
-
-		leaseRequest = &LeaseRequest{
-			InodeHandle: InodeHandle{
-				MountID:     mountByAccountNameReply.MountID,
-				InodeNumber: testRpcLeaseSingleInodeNumber,
-			},
-			LeaseRequestType: LeaseRequestTypeRelease,
-		}
-		leaseReply = &LeaseReply{}
-
-		err = jserver.RpcLease(leaseRequest, leaseReply)
-		if nil != err {
-			b.Fatalf("jserver.RpcLease(leaseRequest, leaseReply) failed: %v", err)
-		}
-
-		if LeaseReplyTypeReleased != leaseReply.LeaseReplyType {
-			b.Fatalf("RpcLease() returned LeaseReplyType %v... expected LeaseReplyTypeReleased", leaseReply.LeaseReplyType)
-		}
-	}
-
-	b.StopTimer()
-
-	unmountRequest = &UnmountRequest{
-		MountID: mountByAccountNameReply.MountID,
-	}
-	unmountReply = &Reply{}
-
-	err = jserver.RpcUnmount(unmountRequest, unmountReply)
-	if nil != err {
-		b.Fatalf("jserver.RpcUnmount(unmountRequest, unmountReply) failed: %v", err)
-	}
-}
-
 func BenchmarkRpcLeaseRemote(b *testing.B) {
 	var (
 		benchmarkIteration        int
@@ -1502,6 +1416,8 @@ func BenchmarkRpcLeaseRemote(b *testing.B) {
 	if nil != err {
 		b.Fatalf("time.ParseDuration(\"%s\") failed: %v", testRpcLeaseRetryRPCKeepAlivePeriod, err)
 	}
+
+	fmt.Printf("====================== BenchmarkRpcLeaseRemote CALLED ======\n")
 
 	retryrpcClientConfig = &retryrpc.ClientConfig{
 		IPAddr:                   globals.publicIPAddr,
@@ -1569,6 +1485,8 @@ func BenchmarkRpcLeaseRemote(b *testing.B) {
 	}
 
 	b.StopTimer()
+
+	fmt.Printf("BUCKETSTATS: %v\n", bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", "*"))
 
 	unmountRequest = &UnmountRequest{
 		MountID: mountByAccountNameReply.MountID,

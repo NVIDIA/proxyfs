@@ -333,6 +333,8 @@ type ClientConfig struct {
 // starting point for requestID.
 func NewClient(config *ClientConfig) (client *Client, err error) {
 
+	fmt.Printf("NEW CLIENT CALLED\n")
+
 	client = &Client{
 		connection: &connectionTracker{
 			state:       INITIAL,
