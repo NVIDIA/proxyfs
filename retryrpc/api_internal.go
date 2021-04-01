@@ -38,10 +38,10 @@ type requestID uint64
 type statsInfo struct {
 	AddCompleted            bucketstats.Total           // Number added to completed list
 	RmCompleted             bucketstats.Total           // Number removed from completed list
-	RPCLenUsec              bucketstats.BucketLog2Round // Tracks length of RPCs
-	OnlyRPCLenUsec          bucketstats.BucketLog2Round // Tracks length of RPCs WITHOUR marshaling
-	CallUnmarshalRPCLenUsec bucketstats.BucketLog2Round // .....
-	ReturnRPCLenUsec        bucketstats.BucketLog2Round // .....
+	TimeOfRPCUsec           bucketstats.BucketLog2Round // Tracks amount of time to call an RPC
+	RPCNoMarshalUsec        bucketstats.BucketLog2Round // Tracks RPC only with no marshaling
+	CallUnmarshalRPCLenUsec bucketstats.BucketLog2Round // Tracks time to unmarshal request before actual RPC
+	ReturnRPCLenUsec        bucketstats.BucketLog2Round // Tracks time between RPC returns and marshal the response
 	ReplySize               bucketstats.BucketLog2Round // Tracks completed RPC reply size
 	longestRPC              time.Duration               // Time of longest RPC
 	longestRPCMethod        string                      // Method of longest RPC

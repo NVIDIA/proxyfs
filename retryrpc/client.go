@@ -71,7 +71,6 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 
 				// Now that we have a connection - we can setup bucketstats
 				if client.connection.state == CONNECTED {
-					fmt.Printf("SEND - CONNECTED: %v\n", client.GetStatsGroupName())
 					bucketstats.Register("proxyfs.retryrpc", client.GetStatsGroupName(), &client.stats)
 				}
 				break
@@ -82,7 +81,6 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 				err = fmt.Errorf("In send(), ConnectionRetryLimit (%v) on calling dial() exceeded", ConnectionRetryLimit)
 				logger.PanicfWithError(err, "")
 			}
-			fmt.Printf("initialDial() failed and looping!")
 			time.Sleep(connectionRetryDelay)
 			connectionRetryDelay *= ConnectionRetryDelayMultiplier
 			client.Lock()
@@ -269,10 +267,8 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 	client.Unlock()
 	ctx.answer <- r
 
-	/*
-		// Fork off a goroutine to update highestConsecutiveNum
-		go client.updateHighestConsecutiveNum(crID)
-	*/
+	// Fork off a goroutine to update highestConsecutiveNum
+	go client.updateHighestConsecutiveNum(crID)
 }
 
 // readReplies is a goroutine dedicated to reading responses from the server.
@@ -358,7 +354,9 @@ func (client *Client) retransmit(genNum uint64) {
 		connectionRetryCount int
 		connectionRetryDelay time.Duration
 	)
-	panic("WHY HERE??")
+	if 1 == 1 {
+		panic("WHY HERE??")
+	}
 
 	client.Lock()
 
@@ -502,7 +500,9 @@ func (client *Client) sendMyInfo() (err error) {
 func (client *Client) reDial() (err error) {
 	var entryState = client.connection.state
 
-	panic("WHY REDIALING?")
+	if 1 == 1 {
+		panic("WHY REDIALING?")
+	}
 
 	// Now dial the server
 

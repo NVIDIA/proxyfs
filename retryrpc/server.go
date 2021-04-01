@@ -154,7 +154,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// the RPC.
 		startRPC := time.Now()
 		ior := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq, &ci.stats)
-		ci.stats.RPCLenUsec.Add(uint64(time.Since(startRPC) / time.Microsecond))
+		ci.stats.CallUnmarshalRPCLenUsec.Add(uint64(time.Since(startRPC).Microseconds()))
 		ci.stats.RPCcompleted.Add(1)
 
 		// We had to drop the lock before calling the RPC since it
@@ -355,8 +355,6 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 	}
 }
 
-// TODO - time start and end of this method!!!! maybe this is bottleneck???
-
 // callRPCAndMarshal calls the RPC and returns results to requestor
 func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *jsonRequest, si *statsInfo) (ior *ioReply) {
 	var (
@@ -393,7 +391,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 		// Create the reply structure
 		typOfReply := ma.reply.Elem()
 		myReply := reflect.New(typOfReply)
-		si.CallUnmarshalRPCLenUsec.Add(uint64(time.Since(startUnmarshalRPC) / time.Microsecond))
+		si.CallUnmarshalRPCLenUsec.Add(uint64(time.Since(startUnmarshalRPC).Microseconds()))
 
 		// Call the method
 		function := ma.methodPtr.Func
@@ -403,7 +401,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 		} else {
 			returnValues = function.Call([]reflect.Value{server.receiver, req, myReply})
 		}
-		si.OnlyRPCLenUsec.Add(uint64(time.Since(startRealRPC) / time.Microsecond))
+		si.RPCNoMarshalUsec.Add(uint64(time.Since(startRealRPC).Microseconds()))
 
 		// The return value for the method is an error.
 		errInter := returnValues[0].Interface()
@@ -429,7 +427,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 	if err != nil {
 		logger.PanicfWithError(err, "Unable to marshal jReply: %+v", jReply)
 	}
-	si.ReturnRPCLenUsec.Add(uint64(time.Since(startReturnRPC) / time.Microsecond))
+	si.ReturnRPCLenUsec.Add(uint64(time.Duration(time.Since(startReturnRPC).Microseconds())))
 
 	return reply
 }
