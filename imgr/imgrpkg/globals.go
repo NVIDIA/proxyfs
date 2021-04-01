@@ -32,6 +32,8 @@ type configStruct struct {
 	RetryRPCCertFilePath string
 	RetryRPCKeyFilePath  string
 
+	FetchNonceRangeTpReturn uint64
+
 	MinLeaseDuration       time.Duration
 	LeaseInterruptInterval time.Duration
 	LeaseInterruptLimit    uint32
@@ -225,6 +227,11 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		}
 	}
 
+	globals.config.FetchNonceRangeTpReturn, err = confMap.FetchOptionValueUint64("IMGR", "FetchNonceRangeTpReturn")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.MinLeaseDuration, err = confMap.FetchOptionValueDuration("IMGR", "MinLeaseDuration")
 	if nil != err {
 		logFatal(err)
@@ -308,6 +315,8 @@ func uninitializeGlobals() (err error) {
 
 	globals.config.RetryRPCCertFilePath = ""
 	globals.config.RetryRPCKeyFilePath = ""
+
+	globals.config.FetchNonceRangeTpReturn = 0
 
 	globals.config.MinLeaseDuration = time.Duration(0)
 	globals.config.LeaseInterruptInterval = time.Duration(0)
