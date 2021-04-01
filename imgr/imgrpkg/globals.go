@@ -5,6 +5,7 @@ package imgrpkg
 
 import (
 	"container/list"
+	"fmt"
 	"net/http"
 	"os"
 	"sync"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 type configStruct struct {
@@ -26,6 +28,9 @@ type configStruct struct {
 	RetryRPCAckTrim         time.Duration
 	RetryRPCDeadlineIO      time.Duration
 	RetryRPCKeepAlivePeriod time.Duration
+
+	RetryRPCCertFilePath string
+	RetryRPCKeyFilePath  string
 
 	MinLeaseDuration       time.Duration
 	LeaseInterruptInterval time.Duration
@@ -124,6 +129,10 @@ type globalsStruct struct {
 var globals globalsStruct
 
 func initializeGlobals(confMap conf.ConfMap) (err error) {
+	var (
+		configJSONified string
+	)
+
 	// Default logging related globals
 
 	globals.config.LogFilePath = ""
@@ -168,6 +177,52 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 	globals.config.RetryRPCKeepAlivePeriod, err = confMap.FetchOptionValueDuration("IMGR", "RetryRPCKeepAlivePeriod")
 	if nil != err {
 		logFatal(err)
+	}
+
+	err = confMap.VerifyOptionIsMissing("IMGR", "RetryRPCCertFilePath")
+	if nil == err {
+		err = confMap.VerifyOptionIsMissing("IMGR", "RetryRPCKeyFilePath")
+		if nil == err {
+			globals.config.RetryRPCCertFilePath = ""
+			globals.config.RetryRPCKeyFilePath = ""
+		} else {
+			err = confMap.VerifyOptionValueIsEmpty("IMGR", "RetryRPCKeyFilePath")
+			if nil == err {
+				globals.config.RetryRPCCertFilePath = ""
+				globals.config.RetryRPCKeyFilePath = ""
+			} else {
+				err = fmt.Errorf("[IMGR]RetryRPCCertFilePath is missing but [IMGR]RetryRPCKeyFilePath is present and non-empty")
+				logFatal(err)
+			}
+		}
+	} else {
+		err = confMap.VerifyOptionValueIsEmpty("IMGR", "RetryRPCCertFilePath")
+		if nil == err {
+			err = confMap.VerifyOptionIsMissing("IMGR", "RetryRPCKeyFilePath")
+			if nil == err {
+				globals.config.RetryRPCCertFilePath = ""
+				globals.config.RetryRPCKeyFilePath = ""
+			} else {
+				err = confMap.VerifyOptionValueIsEmpty("IMGR", "RetryRPCKeyFilePath")
+				if nil == err {
+					globals.config.RetryRPCCertFilePath = ""
+					globals.config.RetryRPCKeyFilePath = ""
+				} else {
+					err = fmt.Errorf("[IMGR]RetryRPCCertFilePath is present and empty but [IMGR]RetryRPCKeyFilePath is present and non-empty")
+					logFatal(err)
+				}
+			}
+		} else {
+			globals.config.RetryRPCCertFilePath, err = confMap.FetchOptionValueString("IMGR", "RetryRPCCertFilePath")
+			if nil != err {
+				logFatal(err)
+			} else {
+				globals.config.RetryRPCKeyFilePath, err = confMap.FetchOptionValueString("IMGR", "RetryRPCKeyFilePath")
+				if nil != err {
+					logFatal(err)
+				}
+			}
+		}
 	}
 
 	globals.config.MinLeaseDuration, err = confMap.FetchOptionValueDuration("IMGR", "MinLeaseDuration")
@@ -228,6 +283,10 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 
+	configJSONified = utils.JSONify(globals.config, true)
+
+	logInfof("globals.config:\n%s", configJSONified)
+
 	globals.stats = &statsStruct{}
 
 	bucketstats.Register("IMGR", "", globals.stats)
@@ -246,6 +305,9 @@ func uninitializeGlobals() (err error) {
 	globals.config.RetryRPCAckTrim = time.Duration(0)
 	globals.config.RetryRPCDeadlineIO = time.Duration(0)
 	globals.config.RetryRPCKeepAlivePeriod = time.Duration(0)
+
+	globals.config.RetryRPCCertFilePath = ""
+	globals.config.RetryRPCKeyFilePath = ""
 
 	globals.config.MinLeaseDuration = time.Duration(0)
 	globals.config.LeaseInterruptInterval = time.Duration(0)

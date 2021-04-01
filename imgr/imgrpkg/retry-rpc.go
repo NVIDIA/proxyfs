@@ -3,10 +3,18 @@
 
 package imgrpkg
 
+type retryRPCServerStruct struct{}
+
+var retryRPCServer *retryRPCServerStruct
+
 func startRetryRPCServer() (err error) {
+	retryRPCServer = &retryRPCServerStruct{}
+
 	return nil // TODO
 }
 
 func stopRetryRPCServer() (err error) {
+	retryRPCServer = nil
+
 	return nil // TODO
 }
