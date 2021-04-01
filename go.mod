@@ -8,9 +8,7 @@ require (
 	github.com/NVIDIA/fission v0.0.0-20210206002952-579a9b261fe0
 	github.com/NVIDIA/sortedmap v0.0.0-20210206003014-af46f3efdbec
 	github.com/ansel1/merry v1.0.1
-	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd v0.0.0-20190620071333-e64a0ec8b42a // indirect
-	github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f // indirect
 	github.com/creachadair/cityhash v0.1.0
 	github.com/dgraph-io/ristretto v0.0.3 // indirect
 	github.com/go-errors/errors v1.0.0 // indirect

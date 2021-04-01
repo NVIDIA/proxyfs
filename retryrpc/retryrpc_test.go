@@ -320,7 +320,7 @@ func testBtree(t *testing.T, useTLS bool) {
 type clientStats struct {
 	AddCompleted           bucketstats.Total           // Number added to completed list
 	RmCompleted            bucketstats.Total           // Number removed from completed list
-	RPCLenUsec             bucketstats.BucketLog2Round // Average times of RPCs
+	TimeOfRPCUsec          bucketstats.BucketLog2Round // Average times of RPCs
 	LongestRPCMethod       string                      // Method of longest RPC
 	ReplySize              bucketstats.BucketLog2Round // Largest RPC reply size completed
 	LargestReplySizeMethod string                      // Method of largest RPC reply size completed
@@ -359,7 +359,7 @@ func testStatsAndBucketstats(t *testing.T) {
 	// Track duration of all RPCs in a graph
 	start := time.Now()
 	time.Sleep(10 * time.Millisecond)
-	myClient1.RPCLenUsec.Add(uint64(time.Since(start) / time.Microsecond))
+	myClient1.TimeOfRPCUsec.Add(uint64(time.Since(start).Microseconds()))
 	myClient1.ReplySize.Add(8192)
 
 	// Example of pfsagent #2

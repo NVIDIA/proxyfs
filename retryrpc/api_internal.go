@@ -38,7 +38,7 @@ type requestID uint64
 type statsInfo struct {
 	AddCompleted           bucketstats.Total           // Number added to completed list
 	RmCompleted            bucketstats.Total           // Number removed from completed list
-	RPCLenUsec             bucketstats.BucketLog2Round // Tracks length of RPCs
+	TimeOfRPCUsec          bucketstats.BucketLog2Round // Tracks amount of time to call an RPC
 	ReplySize              bucketstats.BucketLog2Round // Tracks completed RPC reply size
 	longestRPC             time.Duration               // Time of longest RPC
 	longestRPCMethod       string                      // Method of longest RPC
