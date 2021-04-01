@@ -662,6 +662,8 @@ func benchmarkRpcLeaseCustom(b *testing.B, useTLS bool) {
 		b.Fatalf("time.ParseDuration(testRpcLeaseShortcutClientConnRetryDelay=\"%s\") failed: %v", testRpcLeaseShortcutClientConnRetryDelay, err)
 	}
 
+	fmt.Printf("====================== benchmarkRpcLeaseCustom CALLED  useTLS %v  ======  Loops %d\n", useTLS, b.N)
+
 	if useTLS {
 		rootCACertPool = x509.NewCertPool()
 		ok = rootCACertPool.AppendCertsFromPEM(testTLSCerts.caCertPEMBlock)
