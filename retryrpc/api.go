@@ -105,7 +105,7 @@ func (server *Server) Start() (err error) {
 		return
 	}
 
-	if 0 != len(server.tlsCertificate.Certificate) {
+	if len(server.tlsCertificate.Certificate) != 0 {
 		server.tlsListener = tls.NewListener(server.netListener, tlsConfig)
 	}
 
@@ -194,7 +194,7 @@ func (server *Server) Close() {
 	server.halting = true
 	server.Unlock()
 
-	if 0 == len(server.tlsCertificate.Certificate) {
+	if len(server.tlsCertificate.Certificate) == 0 {
 		err := server.netListener.Close()
 		if err != nil {
 			logger.Errorf("server.netListener.Close() returned err: %v", err)

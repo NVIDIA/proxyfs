@@ -148,7 +148,7 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 	// outstandingRequests queue and resend the request.
 	//
 	// Don't queue the request if we are retransmitting....
-	if queue == true {
+	if queue {
 		client.outstandingRequest[crID] = ctx
 	}
 
@@ -191,16 +191,16 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 		fmt.Printf("CLIENT: PARTIAL Write! bytesWritten is: %v len(ctx.ioreq.JReq): %v writeErr: %v\n",
 			bytesWritten, len(ctx.ioreq.JReq), writeErr)
 		*/
+		genNum := ctx.genNum
 		client.Unlock()
 
 		// Just return - the retransmit code will start another
 		// sendToServer() goroutine
-		client.retransmit(ctx.genNum)
+		client.retransmit(genNum)
 		return
 	}
 
 	client.Unlock()
-	return
 }
 
 func (client *Client) notifyReply(buf []byte, genNum uint64) {
@@ -216,7 +216,6 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 		// TODO - make log message
 		e := fmt.Errorf("notifyReply failed to unmarshal buf: %+v err: %v", string(buf), err)
 		fmt.Printf("%v\n", e)
-
 		client.retransmit(genNum)
 		return
 	}
@@ -251,8 +250,9 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 		fmt.Printf("%v\n", e)
 
 		// Assume read garbage on socket - close the socket and reconnect
-		client.retransmit(genNum)
+		// Drop client lock since retransmit() will acquire it.
 		client.Unlock()
+		client.retransmit(genNum)
 		return
 	}
 

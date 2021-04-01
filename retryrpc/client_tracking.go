@@ -7,10 +7,7 @@ package retryrpc
 // keep track of clients.
 
 func (ci *clientInfo) isEmpty() bool {
-	if len(ci.completedRequest) == 0 {
-		return true
-	}
-	return false
+	return len(ci.completedRequest) == 0
 }
 
 func (ci *clientInfo) completedCnt() int {

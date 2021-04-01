@@ -44,7 +44,7 @@ func (server *Server) run() {
 
 	defer server.goroutineWG.Done()
 	for {
-		if 0 == len(server.tlsCertificate.Certificate) {
+		if len(server.tlsCertificate.Certificate) == 0 {
 			conn, err = server.netListener.Accept()
 		} else {
 			conn, err = server.tlsListener.Accept()
@@ -154,7 +154,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// the RPC.
 		startRPC := time.Now()
 		ior := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq)
-		ci.stats.RPCLenUsec.Add(uint64(time.Since(startRPC) / time.Microsecond))
+		ci.stats.TimeOfRPCUsec.Add(uint64(time.Since(startRPC).Microseconds()))
 		ci.stats.RPCcompleted.Add(1)
 
 		// We had to drop the lock before calling the RPC since it

@@ -38,7 +38,7 @@ type requestID uint64
 type statsInfo struct {
 	AddCompleted           bucketstats.Total           // Number added to completed list
 	RmCompleted            bucketstats.Total           // Number removed from completed list
-	RPCLenUsec             bucketstats.BucketLog2Round // Tracks length of RPCs
+	TimeOfRPCUsec          bucketstats.BucketLog2Round // Tracks amount of time to call an RPC
 	ReplySize              bucketstats.BucketLog2Round // Tracks completed RPC reply size
 	longestRPC             time.Duration               // Time of longest RPC
 	longestRPCMethod       string                      // Method of longest RPC
@@ -78,13 +78,6 @@ type connCtx struct {
 	cond                *sync.Cond     // Signal waiting goroutines that serviceClient() has exited
 	serviceClientExited bool
 	ci                  *clientInfo // Back pointer to the CI
-}
-
-// pendingCtx tracks an individual request from a client
-type pendingCtx struct {
-	lock sync.Mutex
-	buf  []byte   // Request
-	cCtx *connCtx // Most recent connection to return results
 }
 
 // methodArgs defines the method provided by the RPC server
@@ -225,7 +218,6 @@ func setupHdrReply(ioreply *ioReply, t MsgType) {
 	ioreply.Hdr.Version = currentRetryVersion
 	ioreply.Hdr.Type = t
 	ioreply.Hdr.Magic = headerMagic
-	return
 }
 
 func buildSetIDRequest(myUniqueID uint64) (isreq *internalSetIDRequest, err error) {
