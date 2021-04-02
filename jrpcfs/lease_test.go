@@ -815,7 +815,7 @@ func benchmarkRpcLeaseCustomServer(useTLS bool, doneWG *sync.WaitGroup) {
 	)
 
 	type clientStats struct {
-		RPCLenUsec bucketstats.BucketLog2Round // Average times of RPCs
+		TimeOfRPCUsec bucketstats.BucketLog2Round // Average times of RPCs
 	}
 
 	var (
@@ -924,7 +924,7 @@ func benchmarkRpcLeaseCustomServer(useTLS bool, doneWG *sync.WaitGroup) {
 		default:
 			panic(fmt.Errorf("requestType (%v) not recognized", requestType))
 		}
-		myClient1.RPCLenUsec.Add(uint64(time.Since(start) / time.Microsecond))
+		myClient1.TimeOfRPCUsec.Add(uint64(time.Since(start).Microseconds()))
 
 		replyLen = uint32(len(replyBuf))
 		replyLenBuf = make([]byte, 4)
@@ -1524,7 +1524,7 @@ func BenchmarkRpcLeaseRemote(b *testing.B) {
 		b.Fatalf("time.ParseDuration(\"%s\") failed: %v", testRpcLeaseRetryRPCKeepAlivePeriod, err)
 	}
 
-	fmt.Printf("====================== BenchmarkRpcLeaseRemote CALLED ======\n")
+	fmt.Printf("====================== BenchmarkRpcLeaseRemote CALLED ====== Number of Loops: %v\n", b.N)
 
 	retryrpcClientConfig = &retryrpc.ClientConfig{
 		IPAddr:                   globals.publicIPAddr,

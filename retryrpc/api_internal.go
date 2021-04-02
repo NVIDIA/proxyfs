@@ -36,20 +36,20 @@ type requestID uint64
 
 // Useful stats for the clientInfo instance
 type statsInfo struct {
-	AddCompleted            bucketstats.Total           // Number added to completed list
-	RmCompleted             bucketstats.Total           // Number removed from completed list
-	TimeOfRPCUsec           bucketstats.BucketLog2Round // Tracks amount of time to call an RPC
-	RPCNoMarshalUsec        bucketstats.BucketLog2Round // Tracks RPC only with no marshaling
-	CallUnmarshalRPCLenUsec bucketstats.BucketLog2Round // Tracks time to unmarshal request before actual RPC
-	ReturnRPCLenUsec        bucketstats.BucketLog2Round // Tracks time between RPC returns and marshal the response
-	ReplySize               bucketstats.BucketLog2Round // Tracks completed RPC reply size
-	longestRPC              time.Duration               // Time of longest RPC
-	longestRPCMethod        string                      // Method of longest RPC
-	largestReplySize        uint64                      // Tracks largest RPC reply size
-	largestReplySizeMethod  string                      // Method of largest RPC reply size completed
-	RPCattempted            bucketstats.Total           // Number of RPCs attempted - may be completed or in process
-	RPCcompleted            bucketstats.Total           // Number of RPCs which completed - incremented after call returns
-	RPCretried              bucketstats.Total           // Number of RPCs which were just pulled from completed list
+	TrimAddCompleted       bucketstats.Total           // Number added to completed list
+	TrimRmCompleted        bucketstats.Total           // Number removed from completed list
+	CallWrapRPCUsec        bucketstats.BucketLog2Round // Tracks time to unmarshal request before actual RPC
+	PreRPCUnmarshalUsec    bucketstats.BucketLog2Round // Tracks time to unmarshal request before actual RPC
+	RPCOnlyUsec            bucketstats.BucketLog2Round // Tracks RPC only with no marshaling
+	PostRPCMarshalUsec     bucketstats.BucketLog2Round // Tracks time between RPC returns and marshal the response
+	ReplySize              bucketstats.BucketLog2Round // Tracks completed RPC reply size
+	longestRPC             time.Duration               // Time of longest RPC
+	longestRPCMethod       string                      // Method of longest RPC
+	largestReplySize       uint64                      // Tracks largest RPC reply size
+	largestReplySizeMethod string                      // Method of largest RPC reply size completed
+	RPCattempted           bucketstats.Total           // Number of RPCs attempted - may be completed or in process
+	RPCcompleted           bucketstats.Total           // Number of RPCs which completed - incremented after call returns
+	RPCretried             bucketstats.Total           // Number of RPCs which were just pulled from completed list
 }
 
 // Server side data structure storing per client information
