@@ -1417,7 +1417,7 @@ func BenchmarkRpcLeaseRemote(b *testing.B) {
 		b.Fatalf("time.ParseDuration(\"%s\") failed: %v", testRpcLeaseRetryRPCKeepAlivePeriod, err)
 	}
 
-	fmt.Printf("====================== BenchmarkRpcLeaseRemote CALLED ======\n")
+	fmt.Printf("====================== BenchmarkRpcLeaseRemote CALLED ====== Number of Loops: %v\n", b.N)
 
 	retryrpcClientConfig = &retryrpc.ClientConfig{
 		IPAddr:                   globals.publicIPAddr,

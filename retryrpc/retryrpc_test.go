@@ -96,7 +96,7 @@ func TestTCPRetryRPC(t *testing.T) {
 }
 
 func TestTLSRetryRPC(t *testing.T) {
-	testTLSCertsAllocate(t)
+	testTLSCertsAllocate(t) // Must be first - initializes certificate
 	testRegister(t, true)
 	testServer(t, true)
 	testBtree(t, true)
