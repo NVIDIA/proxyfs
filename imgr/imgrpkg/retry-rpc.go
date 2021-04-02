@@ -3,12 +3,12 @@
 
 package imgrpkg
 
-type retryRPCServerStruct struct{}
+type RetryRPCServerStruct struct{}
 
-var retryRPCServer *retryRPCServerStruct
+var retryRPCServer *RetryRPCServerStruct
 
 func startRetryRPCServer() (err error) {
-	retryRPCServer = &retryRPCServerStruct{}
+	retryRPCServer = &RetryRPCServerStruct{}
 
 	return nil // TODO
 }
@@ -35,7 +35,7 @@ type MountReplyStruct struct {
 // Mount performs a mount of the specified Volume and returns a MountID to be used
 // in all subsequent RPCs to reference this Volume by this Client
 //
-func (dummy *retryRPCServerStruct) Mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountReply *MountReplyStruct) (err error) {
+func (dummy *RetryRPCServerStruct) Mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountReply *MountReplyStruct) (err error) {
 	return nil // TODO
 }
 
@@ -52,7 +52,7 @@ type RenewMountReplyStruct struct{}
 
 // RenewMount updates the AuthToken for the specified MountID
 //
-func (dummy *retryRPCServerStruct) RenewMount(renewMountRequest *RenewMountRequestStruct, renewMountReply *RenewMountReplyStruct) (err error) {
+func (dummy *RetryRPCServerStruct) RenewMount(renewMountRequest *RenewMountRequestStruct, renewMountReply *RenewMountReplyStruct) (err error) {
 	return nil // TODO
 }
 
@@ -69,7 +69,7 @@ type UnmountReplyStruct struct{}
 // Unmount requests that the given MountID be released (and implicitly releases
 // any Leases held by the MountID)
 //
-func (dummy *retryRPCServerStruct) Unmount(unmountRequest *UnmountRequestStruct, unmountReply *UnmountReplyStruct) (err error) {
+func (dummy *RetryRPCServerStruct) Unmount(unmountRequest *UnmountRequestStruct, unmountReply *UnmountReplyStruct) (err error) {
 	return nil // TODO
 }
 
@@ -89,7 +89,7 @@ type FetchNonceRangeReplyStruct struct {
 // FetchNonceRange requests a range of uint64 nonce values (i.e. values that will
 // never be reused)
 //
-func (dummy *retryRPCServerStruct) FetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeReply *FetchNonceRangeReplyStruct) (err error) {
+func (dummy *RetryRPCServerStruct) FetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeReply *FetchNonceRangeReplyStruct) (err error) {
 	return nil // TODO
 }
 
@@ -109,7 +109,7 @@ type GetInodeTableEntryReplyStruct struct {
 // GetInodeTableEntry requests the Inode information for the specified Inode
 // (which must have an active Shared or Exclusive Lease granted to the MountID)
 //
-func (dummy *retryRPCServerStruct) GetInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryReply *GetInodeTableEntryReplyStruct) (err error) {
+func (dummy *RetryRPCServerStruct) GetInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryReply *GetInodeTableEntryReplyStruct) (err error) {
 	return nil // TODO
 }
 
@@ -127,7 +127,7 @@ type PutInodeTableEntriesReplyStruct struct{}
 // PutInodeTableEntries requests an atomic update of the listed Inodes (which must
 // each have an active Exclusive Lease granted to the MountID)
 //
-func (dummy *retryRPCServerStruct) PutInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesReply *PutInodeTableEntriesReplyStruct) (err error) {
+func (dummy *RetryRPCServerStruct) PutInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesReply *PutInodeTableEntriesReplyStruct) (err error) {
 	return nil // TODO
 }
 
@@ -144,7 +144,7 @@ type FlushReplyStruct struct{}
 
 // Flush that the results of prior PutInodeTableEntries requests be persisted
 //
-func (dummy *retryRPCServerStruct) Flush(flushRequest *FlushRequestStruct, flushReply *FlushReplyStruct) (err error) {
+func (dummy *RetryRPCServerStruct) Flush(flushRequest *FlushRequestStruct, flushReply *FlushReplyStruct) (err error) {
 	return nil // TODO
 }
 
@@ -190,7 +190,7 @@ type LeaseReplyStruct struct {
 }
 
 // Lease is a blocking Lease Request
-func (dummy *retryRPCServerStruct) Lease(leaseRequest *LeaseRequestStruct, leaseReply *LeaseReplyStruct) (err error) {
+func (dummy *RetryRPCServerStruct) Lease(leaseRequest *LeaseRequestStruct, leaseReply *LeaseReplyStruct) (err error) {
 	return nil // TODO
 }
 
