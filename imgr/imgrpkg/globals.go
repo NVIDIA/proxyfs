@@ -99,33 +99,37 @@ type statsStruct struct {
 }
 
 type mountStruct struct {
+	//                              reentrancy covered by volumeStruct's sync.RWMutex
 	volume         *volumeStruct // volume.{R|}Lock() also protects each mountStruct
-	mountID        string
-	authTokenValid bool
-	authToken      string
-	lastAuthTime   time.Time
+	mountID        string        //
+	authTokenValid bool          // if true, mount is "healthy"; if false, mount is "expired"
+	authToken      string        //
+	lastAuthTime   time.Time     // used to periodically check TTL of authToken
+	listElement    *list.Element // LRU element on either volumeStruct.{healthy|expired}MountList
 }
 
 type volumeStruct struct {
-	sync.RWMutex           // must globals.{R|}Lock() before volume.{R|}Lock()
-	name                   string
-	storageURL             string
-	mountMap               map[string]*mountStruct // key == mountStruct.mountID
-	numMountAuthTokenValid uint64
-	deleting               bool
-	inodeTable             sortedmap.BPlusTree
+	sync.RWMutex                             // must globals.{R|}Lock() before volume.{R|}Lock()
+	name             string                  //
+	storageURL       string                  //
+	mountMap         map[string]*mountStruct // key == mountStruct.mountID
+	healthyMountList *list.List              // LRU of mountStruct's with .authTokenValid == true
+	expiredMountList *list.List              // LRU of mountStruct's with .authTokenValid == false
+	// TODO uint64                  //
+	deleting   bool                //
+	inodeTable sortedmap.BPlusTree //
 }
 
 type globalsStruct struct {
-	sync.RWMutex
-	config          configStruct
-	logFile         *os.File // == nil if config.LogFilePath == ""
-	inodeTableCache sortedmap.BPlusTreeCache
-	volumeMap       sortedmap.LLRBTree      // key == volumeStruct.name; value == *volumeStruct
-	mountMap        map[string]*mountStruct // key == mountStruct.mountID
-	httpServer      *http.Server
-	httpServerWG    sync.WaitGroup
-	stats           *statsStruct
+	sync.RWMutex                             //
+	config          configStruct             //
+	logFile         *os.File                 // == nil if config.LogFilePath == ""
+	inodeTableCache sortedmap.BPlusTreeCache //
+	volumeMap       sortedmap.LLRBTree       // key == volumeStruct.name; value == *volumeStruct
+	mountMap        map[string]*mountStruct  // key == mountStruct.mountID
+	httpServer      *http.Server             //
+	httpServerWG    sync.WaitGroup           //
+	stats           *statsStruct             //
 }
 
 var globals globalsStruct
