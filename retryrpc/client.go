@@ -414,8 +414,7 @@ func (client *Client) retransmit(genNum uint64) {
 	for crID, ctx := range client.outstandingRequest {
 		// Note that we are holding the lock so these
 		// goroutines will block until we release it.
-		client.goroutineWG.Add(1)
-		go client.sendToServer(crID, ctx, false)
+		client.sendToServer(crID, ctx, false)
 	}
 	client.Unlock()
 }
