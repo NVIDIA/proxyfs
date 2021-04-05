@@ -4,6 +4,7 @@
 package imgrpkg
 
 import (
+	"container/list"
 	"encoding/json"
 	"fmt"
 
@@ -140,8 +141,8 @@ func getVolumeAsJSON(volumeName string) (volume []byte, err error) {
 	volumeToReturn = &volumeGETStruct{
 		Name:          volumeAsStruct.name,
 		StorageURL:    volumeAsStruct.storageURL,
-		HealthyMounts: volumeAsStruct.numMountAuthTokenValid,
-		ExpiredMounts: uint64(len(volumeAsStruct.mountMap)) - volumeAsStruct.numMountAuthTokenValid,
+		HealthyMounts: uint64(volumeAsStruct.healthyMountList.Len()),
+		ExpiredMounts: uint64(volumeAsStruct.expiredMountList.Len()),
 	}
 
 	globals.RUnlock()
@@ -192,8 +193,8 @@ func getVolumeListAsJSON() (volumeList []byte) {
 		volumeListToReturn[volumeListIndex] = &volumeGETStruct{
 			Name:          volumeAsStruct.name,
 			StorageURL:    volumeAsStruct.storageURL,
-			HealthyMounts: volumeAsStruct.numMountAuthTokenValid,
-			ExpiredMounts: uint64(len(volumeAsStruct.mountMap)) - volumeAsStruct.numMountAuthTokenValid,
+			HealthyMounts: uint64(volumeAsStruct.healthyMountList.Len()),
+			ExpiredMounts: uint64(volumeAsStruct.expiredMountList.Len()),
 		}
 	}
 
@@ -216,12 +217,13 @@ func putVolume(name string, storageURL string) (err error) {
 	globals.Lock()
 
 	volume = &volumeStruct{
-		name:                   name,
-		storageURL:             storageURL,
-		mountMap:               make(map[string]*mountStruct),
-		numMountAuthTokenValid: 0,
-		deleting:               false,
-		inodeTable:             nil,
+		name:             name,
+		storageURL:       storageURL,
+		mountMap:         make(map[string]*mountStruct),
+		healthyMountList: list.New(),
+		expiredMountList: list.New(),
+		deleting:         false,
+		inodeTable:       nil,
 	}
 
 	ok, err = globals.volumeMap.Put(volume.name, volume)
