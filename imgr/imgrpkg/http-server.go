@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
 )
@@ -104,12 +105,19 @@ func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, request *http.R
 	var (
 		err       error
 		pathSplit []string
+		startTime time.Time
 	)
+
+	startTime = time.Now()
 
 	pathSplit = strings.Split(requestPath, "/")
 
 	switch len(pathSplit) {
 	case 3:
+		defer func() {
+			globals.stats.DeleteVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+		}()
+
 		err = deleteVolume(pathSplit[2])
 		if nil == err {
 			responseWriter.WriteHeader(http.StatusNoContent)
@@ -138,7 +146,13 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Requ
 	var (
 		confMapJSON []byte
 		err         error
+		startTime   time.Time
 	)
+
+	startTime = time.Now()
+	defer func() {
+		globals.stats.GetConfigUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
 
 	confMapJSON, err = json.Marshal(globals.config)
 	if nil != err {
@@ -158,8 +172,14 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Requ
 func serveHTTPGetOfStats(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
 		err           error
+		startTime     time.Time
 		statsAsString string
 	)
+
+	startTime = time.Now()
+	defer func() {
+		globals.stats.GetStatsUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
 
 	statsAsString = bucketstats.SprintStats(bucketstats.StatFormatParsable1, "*", "*")
 
@@ -178,12 +198,20 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		err          error
 		jsonToReturn []byte
 		pathSplit    []string
+		startTime    time.Time
 	)
+
+	startTime = time.Now()
 
 	pathSplit = strings.Split(requestPath, "/")
 
 	switch len(pathSplit) {
 	case 2:
+		startTime = time.Now()
+		defer func() {
+			globals.stats.GetVolumeListUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+		}()
+
 		jsonToReturn = getVolumeListAsJSON()
 
 		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(jsonToReturn)))
@@ -195,6 +223,10 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			logWarnf("responseWriter.Write(jsonToReturn) failed: %v", err)
 		}
 	case 3:
+		defer func() {
+			globals.stats.GetVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+		}()
+
 		jsonToReturn, err = getVolumeAsJSON(pathSplit[2])
 		if nil == err {
 			responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(jsonToReturn)))
@@ -226,13 +258,20 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 	var (
 		err        error
 		pathSplit  []string
+		startTime  time.Time
 		storageURL string
 	)
+
+	startTime = time.Now()
 
 	pathSplit = strings.Split(requestPath, "/")
 
 	switch len(pathSplit) {
 	case 3:
+		defer func() {
+			globals.stats.PutVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+		}()
+
 		storageURL = string(requestBody[:])
 
 		err = putVolume(pathSplit[2], storageURL)

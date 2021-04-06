@@ -70,7 +70,23 @@ type chunkedPutContextStruct struct {
 }
 
 type statsStruct struct {
-	MountUsecs bucketstats.BucketLog2Round
+	DeleteVolumeUsecs  bucketstats.BucketLog2Round // DELETE /volume/<volumeName>
+	GetConfigUsecs     bucketstats.BucketLog2Round // GET /config
+	GetStatsUsecs      bucketstats.BucketLog2Round // GET /stats
+	GetVolumeListUsecs bucketstats.BucketLog2Round // GET /volume
+	GetVolumeUsecs     bucketstats.BucketLog2Round // GET /volume/<volumeName>
+	PutVolumeUsecs     bucketstats.BucketLog2Round // PUT /volume/<volumeName>
+
+	AdjustInodeTableEntryOpenCountUsecs bucketstats.BucketLog2Round // (*RetryRPCServerStruct).AdjustInodeTableEntryOpenCount()
+	DeleteInodeTableEntryUsecs          bucketstats.BucketLog2Round // (*RetryRPCServerStruct).DeleteInodeTableEntry()
+	FetchNonceRangeUsecs                bucketstats.BucketLog2Round // (*RetryRPCServerStruct).FetchNonceRange()
+	FlushUsecs                          bucketstats.BucketLog2Round // (*RetryRPCServerStruct).Flush()
+	GetInodeTableEntryUsecs             bucketstats.BucketLog2Round // (*RetryRPCServerStruct).GetInodeTableEntry()
+	LeaseUsecs                          bucketstats.BucketLog2Round // (*RetryRPCServerStruct).Lease()
+	MountUsecs                          bucketstats.BucketLog2Round // (*RetryRPCServerStruct).Mount()
+	PutInodeTableEntriesUsecs           bucketstats.BucketLog2Round // (*RetryRPCServerStruct).PutInodeTableEntries()
+	RenewMountUsecs                     bucketstats.BucketLog2Round // (*RetryRPCServerStruct).RenewMount()
+	UnmountUsecs                        bucketstats.BucketLog2Round // (*RetryRPCServerStruct).Unmount()
 
 	SharedLeaseRequestUsecs    bucketstats.BucketLog2Round
 	PromoteLeaseRequestUsecs   bucketstats.BucketLog2Round
@@ -78,20 +94,9 @@ type statsStruct struct {
 	DemoteLeaseRequestUsecs    bucketstats.BucketLog2Round
 	ReleaseLeaseRequestUsecs   bucketstats.BucketLog2Round
 
-	GetInodeTableEntryUsecs   bucketstats.BucketLog2Round
-	PutInodeTableEntriesUsecs bucketstats.BucketLog2Round
-	FetchNonceRangeUsecs      bucketstats.BucketLog2Round
-	RenewMountUsecs           bucketstats.BucketLog2Round
-	UnmountUsecs              bucketstats.BucketLog2Round
-
 	UnmountInterrupts     bucketstats.Totaler
 	DemoteLeaseInterrupts bucketstats.Totaler
 	RevokeLeaseInterrupts bucketstats.Totaler
-
-	GetVolumeListUsecs bucketstats.BucketLog2Round
-	GetVolumeUsecs     bucketstats.BucketLog2Round
-	PutVolumeUsecs     bucketstats.BucketLog2Round
-	DeleteVolumeUsecs  bucketstats.BucketLog2Round
 
 	VolumeCheckpointUsecs bucketstats.BucketLog2Round
 
