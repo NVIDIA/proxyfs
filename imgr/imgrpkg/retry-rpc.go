@@ -5,7 +5,6 @@ package imgrpkg
 
 import (
 	"crypto/tls"
-	"fmt"
 
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
@@ -28,7 +27,7 @@ func startRetryRPCServer() (err error) {
 	retryrpcServerConfig = &retryrpc.ServerConfig{
 		LongTrim:        globals.config.RetryRPCTTLCompleted,
 		ShortTrim:       globals.config.RetryRPCAckTrim,
-		IPAddr:          globals.config.PrivateIPAddr,
+		IPAddr:          globals.config.PublicIPAddr,
 		Port:            int(globals.config.RetryRPCPort),
 		DeadlineIO:      globals.config.RetryRPCDeadlineIO,
 		KeepAlivePeriod: globals.config.RetryRPCKeepAlivePeriod,
@@ -45,14 +44,18 @@ func startRetryRPCServer() (err error) {
 	}
 
 	err = globals.retryrpcServer.Start()
+	if nil != err {
+		return
+	}
 
-	return nil // err set by globals.retryrpcServer.Start() is sufficient
+	globals.retryrpcServer.Run()
+
+	err = nil
+	return
 }
 
 func stopRetryRPCServer() (err error) {
-	fmt.Println("UNDO: stopRetryRPCServer() about to call globals.retryrpcServer.Close()")
 	globals.retryrpcServer.Close()
-	fmt.Println("UNDO: stopRetryRPCServer() back from call toglobals.retryrpcServer.Close()")
 
 	retryRPCServer = nil
 
