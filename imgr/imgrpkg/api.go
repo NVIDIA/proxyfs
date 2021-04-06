@@ -58,7 +58,7 @@
 // responses to the following.
 //
 //  DELETE /volume/<volumeName>
-//   - deletes the specified <volumeName>
+//   - removes the specified <volumeName> from being served
 //  GET /config
 //   - returns a JSON document of the supplied ConfMap passed to Start()
 //  GET /stats
@@ -112,18 +112,6 @@ func LogInfof(format string, args ...interface{}) {
 type RetryRPCServerStruct struct{}
 
 var retryRPCServer *RetryRPCServerStruct
-
-func startRetryRPCServer() (err error) {
-	retryRPCServer = &RetryRPCServerStruct{}
-
-	return nil // TODO
-}
-
-func stopRetryRPCServer() (err error) {
-	retryRPCServer = nil
-
-	return nil // TODO
-}
 
 // MountRequestStruct is the request object for Mount.
 //

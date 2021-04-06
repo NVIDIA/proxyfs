@@ -15,6 +15,7 @@ import (
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/retryrpc"
 	"github.com/NVIDIA/proxyfs/utils"
 )
 
@@ -115,9 +116,8 @@ type volumeStruct struct {
 	mountMap         map[string]*mountStruct // key == mountStruct.mountID
 	healthyMountList *list.List              // LRU of mountStruct's with .authTokenValid == true
 	expiredMountList *list.List              // LRU of mountStruct's with .authTokenValid == false
-	// TODO uint64                  //
-	deleting   bool                //
-	inodeTable sortedmap.BPlusTree //
+	deleting         bool                    //
+	inodeTable       sortedmap.BPlusTree     //
 }
 
 type globalsStruct struct {
@@ -127,6 +127,7 @@ type globalsStruct struct {
 	inodeTableCache sortedmap.BPlusTreeCache //
 	volumeMap       sortedmap.LLRBTree       // key == volumeStruct.name; value == *volumeStruct
 	mountMap        map[string]*mountStruct  // key == mountStruct.mountID
+	retryrpcServer  *retryrpc.Server         //
 	httpServer      *http.Server             //
 	httpServerWG    sync.WaitGroup           //
 	stats           *statsStruct             //

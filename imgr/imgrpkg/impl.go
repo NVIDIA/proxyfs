@@ -4,6 +4,8 @@
 package imgrpkg
 
 import (
+	"fmt"
+
 	"github.com/NVIDIA/proxyfs/conf"
 )
 
@@ -37,7 +39,9 @@ func stop() (err error) {
 		return
 	}
 
+	fmt.Println("UNDO: about to call stopRetryRPCServer()")
 	err = stopRetryRPCServer()
+	fmt.Println("UNDO: stopRetryRPCServer() returned err:", err)
 	if nil != err {
 		return
 	}
