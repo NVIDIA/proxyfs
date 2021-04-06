@@ -43,7 +43,7 @@ func main() {
 		streetAddressFlag stringSlice
 		postalCodeFlag    stringSlice
 
-		ttlFlag = flag.Duration("ttl", time.Duration(0), "generated Certificate's time to live")
+		ttlDaysFlag = flag.Uint64("ttl", uint64(0), "generated Certificate's time to live in days")
 
 		dnsNamesFlag    stringSlice
 		ipAddressesFlag stringSlice
@@ -58,6 +58,7 @@ func main() {
 		generateKeyAlgorithm string
 		ipAddresses          []net.IP
 		subject              pkix.Name
+		ttl                  time.Duration
 	)
 
 	flag.Var(&organizationFlag, "organization", "generated Certificate's Subject.Organization")
@@ -85,7 +86,7 @@ func main() {
 		fmt.Printf("              streetAddressFlag: %v\n", streetAddressFlag)
 		fmt.Printf("                 postalCodeFlag: %v\n", postalCodeFlag)
 		fmt.Println()
-		fmt.Printf("                        ttlFlag: %v\n", *ttlFlag)
+		fmt.Printf("                    ttlDaysFlag: %v\n", *ttlDaysFlag)
 		fmt.Println()
 		fmt.Printf("                   dnsNamesFlag: %v\n", dnsNamesFlag)
 		fmt.Printf("                ipAddressesFlag: %v\n", ipAddressesFlag)
@@ -111,10 +112,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if time.Duration(0) == *ttlFlag {
+	if uint64(0) == *ttlDaysFlag {
 		fmt.Printf("A non-zero -ttl must be specified\n")
 		os.Exit(1)
 	}
+
+	ttl = time.Duration(time.Duration(*ttlDaysFlag*24) * time.Hour)
 
 	if ("" == *caCertPemFilePathFlag) || ("" == *caKeyPemFilePathFlag) {
 		fmt.Printf("Both -caCert and -caKey must be specified\n")
@@ -151,7 +154,7 @@ func main() {
 	}
 
 	if *caFlag {
-		_, _, err = icertpkg.GenCACert(generateKeyAlgorithm, subject, *ttlFlag, *caCertPemFilePathFlag, *caKeyPemFilePathFlag)
+		_, _, err = icertpkg.GenCACert(generateKeyAlgorithm, subject, ttl, *caCertPemFilePathFlag, *caKeyPemFilePathFlag)
 		if nil != err {
 			fmt.Printf("icertpkg.GenCACert() failed: %v\n", err)
 			os.Exit(1)
@@ -167,7 +170,7 @@ func main() {
 			ipAddresses = append(ipAddresses, net.ParseIP(ipAddress))
 		}
 
-		_, _, err = icertpkg.GenEndpointCert(generateKeyAlgorithm, subject, dnsNamesFlag, ipAddresses, *ttlFlag, *caCertPemFilePathFlag, *caKeyPemFilePathFlag, *endpointCertPemFilePathFlag, *endpointKeyPemFilePathFlag)
+		_, _, err = icertpkg.GenEndpointCert(generateKeyAlgorithm, subject, dnsNamesFlag, ipAddresses, ttl, *caCertPemFilePathFlag, *caKeyPemFilePathFlag, *endpointCertPemFilePathFlag, *endpointKeyPemFilePathFlag)
 		if nil != err {
 			fmt.Printf("icertpkg.GenEndpointCert() failed: %v\n", err)
 			os.Exit(1)
