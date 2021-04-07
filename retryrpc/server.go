@@ -153,8 +153,8 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// be unmarshaled again to retrieve the parameters specific to
 		// the RPC.
 		startRPC := time.Now()
-		ior := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq)
-		ci.stats.TimeOfRPCUsec.Add(uint64(time.Since(startRPC).Microseconds()))
+		ior := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq, &ci.stats)
+		ci.stats.CallWrapRPCUsec.Add(uint64(time.Since(startRPC).Microseconds()))
 		ci.stats.RPCcompleted.Add(1)
 
 		// We had to drop the lock before calling the RPC since it
@@ -169,7 +169,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// Update completed queue
 		ce := &completedEntry{reply: ior}
 		ci.completedRequest[rID] = ce
-		ci.stats.AddCompleted.Add(1)
+		ci.stats.TrimAddCompleted.Add(1)
 		setupHdrReply(ce.reply, RPC)
 		localIOR = *ce.reply
 		sz := uint64(len(ior.JResult))
@@ -356,7 +356,7 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 }
 
 // callRPCAndMarshal calls the RPC and returns results to requestor
-func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *jsonRequest) (ior *ioReply) {
+func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *jsonRequest, si *statsInfo) (ior *ioReply) {
 	var (
 		err          error
 		returnValues []reflect.Value
@@ -372,6 +372,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 	ma := server.svrMap[jReq.Method]
 	if ma != nil {
 
+		startUnmarshalRPC := time.Now()
 		// Another unmarshal of buf to find the parameters specific to
 		// this RPC
 		typOfReq = ma.request.Elem()
@@ -390,14 +391,17 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 		// Create the reply structure
 		typOfReply := ma.reply.Elem()
 		myReply := reflect.New(typOfReply)
+		si.PreRPCUnmarshalUsec.Add(uint64(time.Since(startUnmarshalRPC).Microseconds()))
 
 		// Call the method
 		function := ma.methodPtr.Func
+		startRealRPC := time.Now()
 		if ma.passClientID {
 			returnValues = function.Call([]reflect.Value{server.receiver, cid, req, myReply})
 		} else {
 			returnValues = function.Call([]reflect.Value{server.receiver, req, myReply})
 		}
+		si.RPCOnlyUsec.Add(uint64(time.Since(startRealRPC).Microseconds()))
 
 		// The return value for the method is an error.
 		errInter := returnValues[0].Interface()
@@ -417,11 +421,13 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 		jReply.ErrStr = fmt.Sprintf("errno: %d", unix.ENOENT)
 	}
 
+	startReturnRPC := time.Now()
 	// Convert response into JSON for return trip
 	reply.JResult, err = json.Marshal(jReply)
 	if err != nil {
 		logger.PanicfWithError(err, "Unable to marshal jReply: %+v", jReply)
 	}
+	si.PostRPCMarshalUsec.Add(uint64(time.Duration(time.Since(startReturnRPC).Microseconds())))
 
 	return reply
 }
@@ -530,7 +536,7 @@ func (server *Server) trimAClientBasedACK(uniqueID uint64, ci *clientInfo) (numI
 		if ok {
 			ci.completedRequestLRU.Remove(v.lruElem)
 			delete(ci.completedRequest, h)
-			ci.stats.RmCompleted.Add(1)
+			ci.stats.TrimRmCompleted.Add(1)
 			numItems++
 		}
 	}
@@ -552,7 +558,7 @@ func (server *Server) trimTLLBased(ci *clientInfo, t time.Time) (numItems int) {
 		eTime := e.Value.(completedLRUEntry).timeCompleted.Add(server.completedLongTTL)
 		if eTime.Before(t) {
 			delete(ci.completedRequest, e.Value.(completedLRUEntry).requestID)
-			ci.stats.RmCompleted.Add(1)
+			ci.stats.TrimRmCompleted.Add(1)
 
 			eTmp := e
 			e = e.Next()

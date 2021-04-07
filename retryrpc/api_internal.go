@@ -36,9 +36,12 @@ type requestID uint64
 
 // Useful stats for the clientInfo instance
 type statsInfo struct {
-	AddCompleted           bucketstats.Total           // Number added to completed list
-	RmCompleted            bucketstats.Total           // Number removed from completed list
-	TimeOfRPCUsec          bucketstats.BucketLog2Round // Tracks amount of time to call an RPC
+	TrimAddCompleted       bucketstats.Total           // Number added to completed list
+	TrimRmCompleted        bucketstats.Total           // Number removed from completed list
+	CallWrapRPCUsec        bucketstats.BucketLog2Round // Tracks time to unmarshal request before actual RPC
+	PreRPCUnmarshalUsec    bucketstats.BucketLog2Round // Tracks time to unmarshal request before actual RPC
+	RPCOnlyUsec            bucketstats.BucketLog2Round // Tracks RPC only with no marshaling
+	PostRPCMarshalUsec     bucketstats.BucketLog2Round // Tracks time between RPC returns and marshal the response
 	ReplySize              bucketstats.BucketLog2Round // Tracks completed RPC reply size
 	longestRPC             time.Duration               // Time of longest RPC
 	longestRPCMethod       string                      // Method of longest RPC
@@ -163,7 +166,7 @@ type replyCtx struct {
 
 // reqCtx exists on the client and tracks a request passed to Send()
 type reqCtx struct {
-	ioreq    ioRequest // Wrapped request passed to Send()
+	ioreq    *ioRequest // Wrapped request passed to Send()
 	rpcReply interface{}
 	answer   chan replyCtx
 	genNum   uint64 // Generation number of socket when request sent
@@ -198,9 +201,9 @@ type svrResponse struct {
 	Result interface{} `json:"result"`
 }
 
-func buildIoRequest(jReq jsonRequest) (ioreq *ioRequest, err error) {
+func buildIoRequest(jReq *jsonRequest) (ioreq *ioRequest, err error) {
 	ioreq = &ioRequest{}
-	ioreq.JReq, err = json.Marshal(jReq)
+	ioreq.JReq, err = json.Marshal(*jReq)
 	if err != nil {
 		return nil, err
 	}

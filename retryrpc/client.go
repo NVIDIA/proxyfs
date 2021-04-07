@@ -31,10 +31,11 @@ const (
 
 // Useful stats for the client side
 type clientSideStatsInfo struct {
-	RetransmitsStarted bucketstats.Total // Number of retransmits attempted
-	SendCalled         bucketstats.Total // Number of times Send called
-	ReplyCalled        bucketstats.Total // Number of times receive Reply to RPC
-	UpcallCalled       bucketstats.Total // Number of times received an Upcall
+	RetransmitsStarted bucketstats.Total           // Number of retransmits attempted
+	SendCalled         bucketstats.Total           // Number of times Send called
+	ReplyCalled        bucketstats.Total           // Number of times receive Reply to RPC
+	UpcallCalled       bucketstats.Total           // Number of times received an Upcall
+	TimeSendRPCUsec    bucketstats.BucketLog2Round // Tracks time when Send() called and returned
 }
 
 // TODO - what if RPC was completed on Server1 and before response,
@@ -89,6 +90,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 			}
 		}
 	}
+	timeSent := time.Now()
 
 	// Put request data into structure to be be marshaled into JSON
 	jreq := jsonRequest{Method: method, HighestReplySeen: client.highestConsecutive}
@@ -107,7 +109,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	client.Unlock()
 
 	// Setup ioreq to write structure on socket to server
-	ioreq, err := buildIoRequest(jreq)
+	ioreq, err := buildIoRequest(&jreq)
 	if err != nil {
 		e := fmt.Errorf("Client buildIoRequest returned err: %v", err)
 		logger.PanicfWithError(e, "")
@@ -115,14 +117,19 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	}
 
 	// Create context to wait result and to handle retransmits
-	ctx := &reqCtx{ioreq: *ioreq, rpcReply: rpcReply}
+	ctx := &reqCtx{ioreq: ioreq, rpcReply: &rpcReply}
 	ctx.answer = make(chan replyCtx)
 
+	// Send request to server.
+	//
+	// We use a goroutine to be consistent with the way sendToServer() is called
+	// in the retransmit() case.
 	client.goroutineWG.Add(1)
 	go client.sendToServer(crID, ctx, true)
 
 	// Now wait for response
 	answer := <-ctx.answer
+	client.stats.TimeSendRPCUsec.Add(uint64(time.Duration(time.Since(timeSent).Microseconds())))
 
 	return answer.err
 }
@@ -133,11 +140,10 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 // At this point, the client will retry the request until either it
 // completes OR the client is shutdown.
 func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
-
 	defer client.goroutineWG.Done()
 
 	// Now send the request to the server.
-	// We need to grab the mutex here to serialize writes on socket
+	// We need to GRAB THE MUTEX HERE TO SERIALIZE WRITES on socket
 	client.Lock()
 
 	// Keep track of requests we are sending so we can resend them later
@@ -242,6 +248,9 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 		return
 	}
 
+	// Carefully drop lock while we are unmarshaling...
+	client.Unlock()
+
 	// Unmarshal the buf into the original reply structure
 	m := svrResponse{Result: ctx.rpcReply}
 	unmarshalErr := json.Unmarshal(buf, &m)
@@ -251,12 +260,13 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 
 		// Assume read garbage on socket - close the socket and reconnect
 		// Drop client lock since retransmit() will acquire it.
-		client.Unlock()
 		client.retransmit(genNum)
 		return
 	}
 
+	client.Lock()
 	delete(client.outstandingRequest, crID)
+	client.Unlock()
 
 	// Give reply to blocked send() - most developers test for nil err so
 	// only set it if there is an error
@@ -264,7 +274,6 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 	if jReply.ErrStr != "" {
 		r.err = fmt.Errorf("%v", jReply.ErrStr)
 	}
-	client.Unlock()
 	ctx.answer <- r
 
 	// Fork off a goroutine to update highestConsecutiveNum
@@ -288,14 +297,15 @@ func (client *Client) readReplies(callingGenNum uint64) {
 		}
 		nC := client.connection.castToNetConn()
 		client.Unlock()
-		if nil == nC {
+
+		if nC == nil {
 			return
 		}
 
 		// Wait reply from server
 		buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, nC)
 
-		// This must happen before checking error
+		// Since we reacquired lock - check if now halting
 		client.Lock()
 		if client.halting {
 			client.Unlock()
@@ -498,7 +508,6 @@ func (client *Client) reDial() (err error) {
 	var entryState = client.connection.state
 
 	// Now dial the server
-
 	if client.connection.useTLS {
 		client.connection.tlsConfig = &tls.Config{
 			RootCAs: client.connection.x509CertPool,
