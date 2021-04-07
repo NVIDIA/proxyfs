@@ -24,5 +24,6 @@ solution. The only requirements are that:
 * Credentials to be authorized are provided in a single string (possibly a JSON document)
 * The plug-in returns both a Swift AuthToken and StorageURL (or an error)
 * The StorageURL has been properly modified as necessary to ensure
-    * the proper transport is used (i.e. either "http" or "https")
-    * the version portion of the path has been set to "proxyfs" (rather than "v1")
+    * the proper transport (scheme) is used (i.e. either "http" or "https")
+    * the specified `Account`, if necessary, has been substituted
+    * the specified `Container` has been appended

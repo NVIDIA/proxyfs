@@ -46,7 +46,8 @@ func TestSwiftAuth(t *testing.T) {
 		"    \"AuthURL\" : \"http://127.0.0.1:9997/auth/v1.0\"," +
 		"    \"AuthUser\" : \"test:tester\"," +
 		"    \"AuthKey\" : \"testing\"," +
-		"    \"Account\" : \"AUTH_test\"" +
+		"    \"Account\" : \"AUTH_test\"," +
+		"    \"Container\" : \"con\"" +
 		"}"
 
 	authToken, storageURL, err = PerformAuth(authInJSON)

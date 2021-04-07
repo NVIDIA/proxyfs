@@ -13,10 +13,11 @@ import (
 )
 
 type authInStruct struct {
-	AuthURL  string
-	AuthUser string
-	AuthKey  string
-	Account  string
+	AuthURL   string
+	AuthUser  string
+	AuthKey   string
+	Account   string
+	Container string
 }
 
 // PerformAuth accepts a JSON string, performs the OpenStack Swift Authorization
@@ -76,8 +77,9 @@ func PerformAuth(authInJSON string) (authToken string, storageURL string, err er
 
 	storageURLSplit = strings.Split(storageURL, "/")
 
-	storageURLSplit[3] = "proxyfs"
 	storageURLSplit[4] = authIn.Account
+
+	storageURLSplit = append(storageURLSplit, authIn.Container)
 
 	storageURL = strings.Join(storageURLSplit, "/")
 
