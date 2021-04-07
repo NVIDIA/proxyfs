@@ -120,9 +120,12 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	ctx := &reqCtx{ioreq: ioreq, rpcReply: &rpcReply}
 	ctx.answer = make(chan replyCtx)
 
-	// Send request to server.  A goroutine would just add
-	// unnecessary overhead.
-	client.sendToServer(crID, ctx, true)
+	// Send request to server.
+	//
+	// We use a goroutine to be consistent with the way sendToServer() is called
+	// in the retransmit() case.
+	client.goroutineWG.Add(1)
+	go client.sendToServer(crID, ctx, true)
 
 	// Now wait for response
 	answer := <-ctx.answer
@@ -137,6 +140,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 // At this point, the client will retry the request until either it
 // completes OR the client is shutdown.
 func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
+	defer client.goroutineWG.Done()
 
 	// Now send the request to the server.
 	// We need to GRAB THE MUTEX HERE TO SERIALIZE WRITES on socket
@@ -256,7 +260,6 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 
 		// Assume read garbage on socket - close the socket and reconnect
 		// Drop client lock since retransmit() will acquire it.
-		client.Unlock()
 		client.retransmit(genNum)
 		return
 	}
@@ -414,7 +417,8 @@ func (client *Client) retransmit(genNum uint64) {
 	for crID, ctx := range client.outstandingRequest {
 		// Note that we are holding the lock so these
 		// goroutines will block until we release it.
-		client.sendToServer(crID, ctx, false)
+		client.goroutineWG.Add(1)
+		go client.sendToServer(crID, ctx, false)
 	}
 	client.Unlock()
 }
