@@ -18,6 +18,7 @@ gopkgsubdirs = \
 	headhunter \
 	httpserver \
 	iauth \
+	ilayout \
 	inode \
 	jrpcfs \
 	liveness \
