@@ -3,7 +3,9 @@
 
 package ilayout
 
-import "time"
+import (
+	"time"
+)
 
 // CheckpointHeaderVersionV* specifies the format of the CheckPointHeader.
 // The CheckPointHeaderVersion must always be fetched by scanning the entire
@@ -13,6 +15,13 @@ import "time"
 const (
 	CheckPointHeaderVersionV1 uint64 = 1
 )
+
+// UnmarshalCheckPointHeaderVersion extracts checkPointHeaderVersion from checkpointHeaderString.
+//
+func UnmarshalCheckPointHeaderVersion(checkpointHeaderString string) (checkPointHeaderVersion uint64, err error) {
+	checkPointHeaderVersion, err = unmarshalCheckPointHeaderVersion(checkpointHeaderString)
+	return
+}
 
 // CheckPointHeaderV1Struct specifies the format of the CheckPointHeader
 // as of V1.
@@ -27,6 +36,16 @@ type CheckPointHeaderV1Struct struct {
 	ReservedToNonce        uint64 // Ensures all numbers requiring uniqueness (e.g. Object numbers, Inode numbers) are never reused
 }
 
+func (checkPointHeaderV1 *CheckPointHeaderV1Struct) MarshalCheckPointHeaderV1() (checkPointHeaderString string, err error) {
+	checkPointHeaderString, err = checkPointHeaderV1.marshalCheckPointHeaderV1()
+	return
+}
+
+func UnmarshalCheckPointHeaderV1(checkPointHeaderString string) (checkPointHeaderV1 *CheckPointHeaderV1Struct, err error) {
+	checkPointHeaderV1, err = UnmarshalCheckPointHeaderV1(checkPointHeaderString)
+	return
+}
+
 // SuperBlockVersionV* specifies the format of all preceeding bytes
 // referenced by CheckPointHeaderV1Struct.SuperBlock{ObjectNumber|Length}.
 //
@@ -35,6 +54,13 @@ type CheckPointHeaderV1Struct struct {
 const (
 	SuperBlockVersionV1 uint64 = 1
 )
+
+// UnmarshalSuperBlockVersion extracts superBlockVersion from superBlockBuf.
+//
+func UnmarshalSuperBlockVersion(superBlockBuf []byte) (superBlockVersion uint64, err error) {
+	superBlockVersion, err = unmarshalSuperBlockVersion(superBlockBuf)
+	return
+}
 
 // InodeTableLayoutEntryV1Struct specifies the layout of the InodeTable B+Tree in Objects.
 // Since any modification of the Volume will result in a fresh SuperBlockV1Struct
@@ -73,17 +99,34 @@ type SuperBlockV1Struct struct {
 	InodeTableLayout           []InodeTableLayoutEntryV1Struct // Describes the data and space occupied by the the InodeTable
 }
 
-// InodeTableEntryVersionV* specifies the format of all preceeding bytes
+func (superBlockV1 *SuperBlockV1Struct) MarshalSuperBlockV1() (superBlockV1Buf []byte, err error) {
+	superBlockV1Buf, err = superBlockV1.marshalSuperBlockV1()
+	return
+}
+
+func UnmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1Struct, err error) {
+	superBlockV1, err = unmarshalSuperBlockV1(superBlockV1Buf)
+	return
+}
+
+// InodeTableEntryValueVersionV* specifies the format of all preceeding bytes
 // in an InodeTable entry's Value InodeTableEntryStruct.
 //
 // The value is stored in BigEndian (binary uint64) format.
 //
 const (
-	InodeTableEntryVersionV1 uint64 = 1
+	InodeTableEntryValueVersionV1 uint64 = 1
 )
 
+// UnmarshalInodeTableEntryValueVersion extracts inodeTableEntryValueVersion from inodeTableEntryValueBuf.
+//
+func UnmarshalInodeTableEntryValueVersion(inodeTableEntryValueBuf []byte) (inodeTableEntryValueVersion uint64, err error) {
+	inodeTableEntryValueVersion, err = UnmarshalInodeTableEntryValueVersion(inodeTableEntryValueBuf)
+	return
+}
+
 // InodeTableEntryValueV1Struct specifies the format of the bytes in the InodeTable entry's
-// Value preceeding InodeTableEntryVersionV1.
+// Value preceeding InodeTableEntryValueVersionV1.
 //
 // The struct is serialized as a sequence of BigEndian (binary uint64) formatted fields.
 //
@@ -94,6 +137,16 @@ type InodeTableEntryValueV1Struct struct {
 	InodeHeadLength       uint64 // Total length of the InodeHead found at the end of the Object indicated by InodeHeadObjectNumber
 }
 
+func (inodeTableEntryValueV1 *InodeTableEntryValueV1Struct) MarshalInodeTableEntryValueV1() (inodeTableEntryValueV1Buf []byte, err error) {
+	inodeTableEntryValueV1Buf, err = inodeTableEntryValueV1.marshalInodeTableEntryValueV1()
+	return
+}
+
+func UnmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTableEntryValueV1 *InodeTableEntryValueV1Struct, err error) {
+	inodeTableEntryValueV1, err = unmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf)
+	return
+}
+
 // InodeHeadVersionV* specifies the format of all preceeding bytes referenced
 // by InodeTableEntryValueV1Struct.InodeHead{ObjectNumber|Length}.
 //
@@ -102,6 +155,13 @@ type InodeTableEntryValueV1Struct struct {
 const (
 	InodeHeadVersionV1 uint64 = 1
 )
+
+// UnmarshalInodeHeadVersion extracts inodeHeadVersion from inodeHeadBuf.
+//
+func UnmarshalInodeHeadVersion(inodeHeadBuf []byte) (inodeHeadVersion uint64, err error) {
+	inodeHeadVersion, err = unmarshalInodeHeadVersion(inodeHeadBuf)
+	return
+}
 
 // InodeType* specifies the type of Inode.
 //
@@ -166,7 +226,7 @@ type InodeHeadLayoutEntryV1Struct struct {
 //   For table fields, a uint64 length in BigEndian format is followed by the serialization specified in
 //     the table entry struct.
 //   For time.Time fields, a string (i.e. uint64 length followed by that number of bytes) is used.
-//     The string is itself time.RFC3339 formatted
+//     The string is itself time.RFC3339 formatted.
 //
 // Note that the InodeTableEntryValueV1Struct.InodeHeadLength also includes the bytes for
 // holding InodeHeadVersionV1 that is appended.
@@ -189,6 +249,16 @@ type InodeHeadV1Struct struct {
 	PayloadObjectLength uint64                         // For Dir & File Inodes, number of bytes in the Object of the root of the Directory or ExtentMap B+Tree
 	SymlinkTarget       string                         // For Symlink Inodes, the target of the link
 	Layout              []InodeHeadLayoutEntryV1Struct // Describes the data and space occupied by the the InodeTable
+}
+
+func (inodeHeadV1 *InodeHeadV1Struct) MarshalInodeHeadV1() (inodeHeadV1Buf []byte, err error) {
+	inodeHeadV1Buf, err = inodeHeadV1.marshalInodeHeadV1()
+	return
+}
+
+func UnmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct, err error) {
+	inodeHeadV1, err = unmarshalInodeHeadV1(inodeHeadV1Buf)
+	return
 }
 
 // DirectoryEntryValueV1Struct specifies the format, for an Inode of type InodeTypeDir,
