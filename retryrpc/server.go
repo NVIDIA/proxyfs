@@ -5,7 +5,6 @@ package retryrpc
 
 import (
 	"container/list"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -466,7 +465,10 @@ func (server *Server) returnResults(ior *ioReply, cCtx *connCtx) {
 	// Write Len back
 	cCtx.Lock()
 	cCtx.conn.SetDeadline(time.Now().Add(server.deadlineIO))
-	binErr := binary.Write(cCtx.conn, binary.BigEndian, ior.Hdr)
+	n, binErr := cCtx.conn.Write(marshalIoHeader(&ior.Hdr))
+	if binErr == nil && n != ioHeaderLenOnTheWire {
+		binErr = fmt.Errorf("client.connection.Write performed short write")
+	}
 	if binErr != nil {
 		cCtx.Unlock()
 		// Conn will be closed when serviceClient() returns

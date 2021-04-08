@@ -6,6 +6,7 @@
 package retryrpc
 
 import (
+	"bytes"
 	"container/list"
 	"encoding/binary"
 	"encoding/json"
@@ -137,6 +138,9 @@ type ioHeader struct {
 	Magic    uint32 // Magic number - if invalid means have not read complete header
 }
 
+// the length is 14 when marshaled using binary.Write()
+const ioHeaderLenOnTheWire = 14
+
 // ioRequest tracks fields written on wire
 type ioRequest struct {
 	Hdr  ioHeader
@@ -257,6 +261,67 @@ func buildINeedIDRequest() (iinreq *internalINeedIDRequest, err error) {
 	return
 }
 
+// Marshal an i/o header to send over the wire
+func marshalIoHeader(hdr *ioHeader) (hdrBytes []byte) {
+
+	var err error
+
+	hdrBuf := &bytes.Buffer{}
+
+	err = binary.Write(hdrBuf, binary.LittleEndian, hdr.Len)
+	if err != nil {
+		panic("hdr.Len")
+	}
+	err = binary.Write(hdrBuf, binary.LittleEndian, hdr.Protocol)
+	if err != nil {
+		panic("hdr.Protocol")
+	}
+	err = binary.Write(hdrBuf, binary.LittleEndian, hdr.Version)
+	if err != nil {
+		panic("hdr.Version")
+	}
+	err = binary.Write(hdrBuf, binary.LittleEndian, hdr.Type)
+	if err != nil {
+		panic("hdr.Type")
+	}
+	err = binary.Write(hdrBuf, binary.LittleEndian, hdr.Magic)
+	if err != nil {
+		panic("hdr.Magic")
+	}
+
+	hdrBytes = hdrBuf.Bytes()
+	return
+}
+
+// Unmarshal an i/o header received over the wire
+func unmarshalIoHeader(hdrBytes []byte, hdr *ioHeader) (err error) {
+
+	// Unmarshal an IoRequest header
+	hdrBuf := bytes.NewBuffer(hdrBytes)
+	err = binary.Read(hdrBuf, binary.LittleEndian, &hdr.Len)
+	if err != nil {
+		return
+	}
+	err = binary.Read(hdrBuf, binary.LittleEndian, &hdr.Protocol)
+	if err != nil {
+		return
+	}
+	err = binary.Read(hdrBuf, binary.LittleEndian, &hdr.Version)
+	if err != nil {
+		return
+	}
+	err = binary.Read(hdrBuf, binary.LittleEndian, &hdr.Type)
+	if err != nil {
+		return
+	}
+	err = binary.Read(hdrBuf, binary.LittleEndian, &hdr.Magic)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
 func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, msgType MsgType, err error) {
 	if printDebugLogs {
 		logger.Infof("conn: %v", conn)
@@ -264,13 +329,19 @@ func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, 
 
 	// Read in the header of the request first
 	var hdr ioHeader
+	hdrBuf := make([]byte, ioHeaderLenOnTheWire)
 
 	err = conn.SetDeadline(time.Now().Add(deadlineIO))
 	if err != nil {
 		return
 	}
 
-	err = binary.Read(conn, binary.BigEndian, &hdr)
+	_, err = io.ReadFull(conn, hdrBuf)
+	if err != nil {
+		return
+	}
+
+	err = unmarshalIoHeader(hdrBuf, &hdr)
 	if err != nil {
 		return
 	}
