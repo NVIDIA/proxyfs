@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"sync"
 	"testing"
@@ -54,6 +56,8 @@ var testTLSCerts *testTLSCertsStruct
 
 func TestMain(m *testing.M) {
 	//setup, run, teardown, exit
+
+	go http.ListenAndServe("localhost:62000", nil)
 
 	cleanupFuncs := testSetup()
 

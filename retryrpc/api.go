@@ -27,6 +27,12 @@ import (
 	"github.com/google/btree"
 )
 
+type requestBundle struct {
+	ci         *clientInfo
+	cCtx       *connCtx
+	requestBuf []byte
+}
+
 // Server tracks the state of the server
 type Server struct {
 	sync.Mutex
@@ -47,6 +53,8 @@ type Server struct {
 	tlsCertificate       tls.Certificate
 	listenersWG          sync.WaitGroup
 	receiver             reflect.Value          // Package receiver being served
+	requestChan          chan requestBundle     // pass requests to processRequest goroutine
+	requestWaiters       int32                  // number of goroutines waiting on requestChan
 	perClientInfo        map[uint64]*clientInfo // Key: "clientID".  Tracks clients
 	completedTickerDone  chan bool
 	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
@@ -79,6 +87,7 @@ func NewServer(config *ServerConfig) *Server {
 	server.perClientInfo = make(map[uint64]*clientInfo)
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
+	server.requestChan = make(chan requestBundle, 1)
 
 	return server
 }
@@ -192,6 +201,7 @@ func (server *Server) SendCallback(clientID uint64, msg []byte) {
 func (server *Server) Close() {
 	server.Lock()
 	server.halting = true
+	close(server.requestChan)
 	server.Unlock()
 
 	if len(server.tlsCertificate.Certificate) == 0 {
