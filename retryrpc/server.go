@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
@@ -106,7 +107,7 @@ func (server *Server) run() {
 
 // processRequest is given a request from the client.
 func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []byte) {
-	defer server.goroutineWG.Done()
+	// defer server.goroutineWG.Done()
 
 	// We first unmarshal the raw buf to find the method
 	//
@@ -335,6 +336,7 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 		}
 
 		if msgType != RPC {
+			server.Unlock()
 			err := fmt.Errorf("serviceClient() received invalid msgType: %v - dropping", msgType)
 			logger.PanicfWithError(err, "")
 			continue
@@ -345,13 +347,41 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 		cCtx.activeRPCsWG.Add(1)
 		server.Unlock()
 
+		// find the number of go routines waiting to process requests
+		waiters := atomic.LoadInt32(&server.requestWaiters)
+
 		// No sense blocking the read of the next request,
-		// push the work off on processRequest().
+		// push the work to a processRequest() go routine.
+		rb := requestBundle{
+			ci:         ci,
+			cCtx:       cCtx,
+			requestBuf: buf,
+		}
+		server.requestChan <- rb
+
+		if waiters == 0 {
+			go func() {
+				server.goroutineWG.Add(1)
+				for {
+					atomic.AddInt32(&server.requestWaiters, 1)
+
+					rb, ok := <-server.requestChan
+					atomic.AddInt32(&server.requestWaiters, -1)
+
+					if !ok {
+						break
+					}
+					server.processRequest(rb.ci, rb.cCtx, rb.requestBuf)
+				}
+				server.goroutineWG.Done()
+			}()
+		}
+
 		//
 		// Writes back on the socket wil have to be serialized so
 		// pass the per connection context.
-		server.goroutineWG.Add(1)
-		go server.processRequest(ci, cCtx, buf)
+		// server.goroutineWG.Add(1)
+		// go server.processRequest(ci, cCtx, buf)
 	}
 }
 
