@@ -5,7 +5,6 @@ package retryrpc
 
 import (
 	"crypto/tls"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -173,7 +172,10 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 
 	// Send header
 	client.connection.SetDeadline(time.Now().Add(client.deadlineIO))
-	err := binary.Write(client.connection.ioWriter(), binary.BigEndian, ctx.ioreq.Hdr)
+	n, err := client.connection.Write(marshalIoHeader(&ctx.ioreq.Hdr))
+	if err == nil && n != ioHeaderLenOnTheWire {
+		err = fmt.Errorf("client.connection.Write performed short write")
+	}
 	if err != nil {
 		genNum := ctx.genNum
 		client.Unlock()
@@ -435,7 +437,10 @@ func (client *Client) getMyUniqueID() (err error) {
 
 	// We only have the header to send
 	client.connection.SetDeadline(time.Now().Add(client.deadlineIO))
-	err = binary.Write(client.connection.ioWriter(), binary.BigEndian, iinreq.Hdr)
+	n, err := client.connection.Write(marshalIoHeader(&iinreq.Hdr))
+	if err == nil && n != ioHeaderLenOnTheWire {
+		err = fmt.Errorf("client.connection.Write performed short write")
+	}
 	if err != nil {
 		return
 	}
@@ -466,7 +471,10 @@ func (client *Client) sendMyInfo() (err error) {
 
 	// Send header
 	client.connection.SetDeadline(time.Now().Add(client.deadlineIO))
-	err = binary.Write(client.connection.ioWriter(), binary.BigEndian, isreq.Hdr)
+	n, err := client.connection.Write(marshalIoHeader(&isreq.Hdr))
+	if err == nil && n != ioHeaderLenOnTheWire {
+		err = fmt.Errorf("client.connection.Write performed short write")
+	}
 	if err != nil {
 		return
 	}
