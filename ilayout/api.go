@@ -36,20 +36,20 @@ type CheckPointHeaderV1Struct struct {
 	ReservedToNonce        uint64 // Ensures all numbers requiring uniqueness (e.g. Object numbers, Inode numbers) are never reused
 }
 
-func (checkPointHeaderV1 *CheckPointHeaderV1Struct) MarshalCheckPointHeaderV1() (checkPointHeaderString string, err error) {
-	checkPointHeaderString, err = checkPointHeaderV1.marshalCheckPointHeaderV1()
+func (checkPointHeaderV1 *CheckPointHeaderV1Struct) MarshalCheckPointHeaderV1() (checkPointHeaderV1String string, err error) {
+	checkPointHeaderV1String, err = checkPointHeaderV1.marshalCheckPointHeaderV1()
 	return
 }
 
-func UnmarshalCheckPointHeaderV1(checkPointHeaderString string) (checkPointHeaderV1 *CheckPointHeaderV1Struct, err error) {
-	checkPointHeaderV1, err = UnmarshalCheckPointHeaderV1(checkPointHeaderString)
+func UnmarshalCheckPointHeaderV1(checkPointHeaderV1String string) (checkPointHeaderV1 *CheckPointHeaderV1Struct, err error) {
+	checkPointHeaderV1, err = unmarshalCheckPointHeaderV1(checkPointHeaderV1String)
 	return
 }
 
 // SuperBlockVersionV* specifies the format of all preceeding bytes
 // referenced by CheckPointHeaderV1Struct.SuperBlock{ObjectNumber|Length}.
 //
-// The value is stored in BigEndian (binary uint64) format.
+// The value is stored in LittleEndian format.
 //
 const (
 	SuperBlockVersionV1 uint64 = 1
@@ -67,7 +67,7 @@ func UnmarshalSuperBlockVersion(superBlockBuf []byte) (superBlockVersion uint64,
 // being written to a new Object, when BytesReferenced drops to zero, the Object
 // may be deleted.
 //
-// The struct is serialized as a sequence of BigEndian (binary uint64) formatted fields.
+// The struct is serialized as a sequence of LittleEndian formatted fields.
 //
 type InodeTableLayoutEntryV1Struct struct {
 	ObjectNumber    uint64 // Identifies the Object containing the page(s) of the InodeTable B+Tree
@@ -82,12 +82,12 @@ type InodeTableLayoutEntryV1Struct struct {
 // to it.
 //
 // The InodeTable is a B+Tree where the Key is the uint64 InodeNumber. The Value
-// is
+// is a InodeTableEntryValueV1Struct.
 //
-// The struct is serialized as a sequence of BigEndian (binary uint64) formatted fields.
-// The InodeTableLayout slice is serialized by a preceeding BigEndian (binary uint64)
-// count of the number of InodeTableLayoutEntryV1Struct's followed by the serialization
-// of each one.
+// The struct is serialized as a sequence of LittleEndian formatted fields.
+// The InodeTableLayout slice is serialized by a preceeding LittleEndian
+// count of the number of InodeTableLayoutEntryV1Struct's followed by the
+// serialization of each one.
 //
 // Note that the CheckPointHeaderV1Struct.SuperBlockLength also includes the bytes for
 // holding SuperBlockVersionV1 that is appended.
@@ -109,10 +109,10 @@ func UnmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1St
 	return
 }
 
-// InodeTableEntryValueVersionV* specifies the format of all preceeding bytes
+// InodeTableEntryValueVersionV* specifies the format of all following bytes
 // in an InodeTable entry's Value InodeTableEntryStruct.
 //
-// The value is stored in BigEndian (binary uint64) format.
+// The value is stored in LittleEndian format.
 //
 const (
 	InodeTableEntryValueVersionV1 uint64 = 1
@@ -121,14 +121,14 @@ const (
 // UnmarshalInodeTableEntryValueVersion extracts inodeTableEntryValueVersion from inodeTableEntryValueBuf.
 //
 func UnmarshalInodeTableEntryValueVersion(inodeTableEntryValueBuf []byte) (inodeTableEntryValueVersion uint64, err error) {
-	inodeTableEntryValueVersion, err = UnmarshalInodeTableEntryValueVersion(inodeTableEntryValueBuf)
+	inodeTableEntryValueVersion, err = unmarshalInodeTableEntryValueVersion(inodeTableEntryValueBuf)
 	return
 }
 
 // InodeTableEntryValueV1Struct specifies the format of the bytes in the InodeTable entry's
-// Value preceeding InodeTableEntryValueVersionV1.
+// Value following InodeTableEntryValueVersionV1.
 //
-// The struct is serialized as a sequence of BigEndian (binary uint64) formatted fields.
+// The struct is serialized as a sequence of LittleEndian formatted fields.
 //
 // Note that there is no InodeTableEntryKeyV1Struct as it is simply a uint64 InodeNumber.
 //
@@ -150,7 +150,7 @@ func UnmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTab
 // InodeHeadVersionV* specifies the format of all preceeding bytes referenced
 // by InodeTableEntryValueV1Struct.InodeHead{ObjectNumber|Length}.
 //
-// The value is stored in BigEndian (binary uint64) format.
+// The value is stored in LittleEndian format.
 //
 const (
 	InodeHeadVersionV1 uint64 = 1
@@ -173,8 +173,8 @@ const (
 
 // InodeLinkTableEntryStruct specifies the layout of an InodeHeadV1Struct.LinkTable's entry.
 //
-// The struct's uint64 field is serialized in BigEndian (binary uint64) format followed by
-// the struct's string field serialized as a BigEndian (binary uint64) length followed by
+// The struct's uint64 field is serialized in LittleEndian format followed by
+// the struct's string field serialized as a LittleEndian length followed by
 // the bytes of the string.
 //
 type InodeLinkTableEntryStruct struct {
@@ -185,7 +185,7 @@ type InodeLinkTableEntryStruct struct {
 // InodeModeMask provides a bound on the acceptable values of an Inode's Mode field's
 // protection bits (i.e. rwx bits for each of user, group, and other).
 //
-// The value is stored in BigEndian (binary uint16) format.
+// The value is stored in LittleEndian format.
 //
 const (
 	InodeModeMask uint16 = 0o777
@@ -194,7 +194,7 @@ const (
 // InodeStreamTableEntryStruct specifies the layout of an InodeHeadV1Struct.StreamTable's entry.
 //
 // The struct is serialized be treating both fields as an array of bytes preceeded
-// by a BigEndian (binary uint64) length.
+// by a LittleEndian length.
 //
 type InodeStreamTableEntryStruct struct {
 	Name  string
@@ -207,7 +207,7 @@ type InodeStreamTableEntryStruct struct {
 // modification of the Inode will result in a fresh InodeHeadStruct being written to a new
 // Object, when BytesReferenced drops to zero, the Object may be deleted.
 //
-// The struct is serialized as a sequence of BigEndian (binary uint64) formatted fields.
+// The struct is serialized as a sequence of LittleEndian formatted fields.
 //
 type InodeHeadLayoutEntryV1Struct struct {
 	ObjectNumber uint64 //    For DirInode's:
@@ -222,9 +222,9 @@ type InodeHeadLayoutEntryV1Struct struct {
 // InodeHeadV1Struct specifies the layout of an Inode.
 //
 // The struct is serializes as a sequence of fields.
-//   For uint* fields, BigEndian format is used.
-//   For table fields, a uint64 length in BigEndian format is followed by the serialization specified in
-//     the table entry struct.
+//   For uint* fields, LittleEndian format is used.
+//   For table fields, a uint64 length in LittleEndian format is followed by the serialization
+//     specified in the table entry struct.
 //   For time.Time fields, a string (i.e. uint64 length followed by that number of bytes) is used.
 //     The string is itself time.RFC3339 formatted.
 //
@@ -235,7 +235,7 @@ type InodeHeadV1Struct struct {
 	InodeNumber         uint64
 	InodeType           uint8                       //    One of InodeType*
 	LinkTable           []InodeLinkTableEntryStruct //    List of Directory Entry references to this Inode
-	Size                uint64
+	Size                uint64                      //    Only applicable to File Inodes
 	CreationTime        time.Time
 	ModificationTime    time.Time
 	AccessTimeTime      time.Time
@@ -264,10 +264,10 @@ func UnmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct
 // DirectoryEntryValueV1Struct specifies the format, for an Inode of type InodeTypeDir,
 // of the bytes in a .Payload-identified B+Tree's Value.
 //
-// The struct is serialized as a sequence of uint* fields in BigEndian (binary uint64) format.
+// The struct is serialized as a sequence of uint* fields in LittleEndian format.
 //
 // Note that there is no DirectoryEntryKeyV1Struct as it is simply a string serialized
-// by a uint64 length in BigEndian format followed by the bytes of the string.
+// by a uint64 length in LittleEndian format followed by the bytes of the string.
 //
 type DirectoryEntryValueV1Struct struct {
 	InodeNumber uint64
@@ -277,10 +277,10 @@ type DirectoryEntryValueV1Struct struct {
 // ExtentMapEntryValueV1Struct specifies the format, for an Inode of type InodeTypeFile,
 // of the bytes in a .Payload-identified B+Tree's Value.
 //
-// The struct is serialized as a sequence of uint64 fields in BigEndian (binary uint64) format.
+// The struct is serialized as a sequence of uint64 fields in LittleEndian format.
 //
 // Note that there is no ExtentMapEntryKeyV1Struct as it is simply a uint64 serialized
-// in BigEndian format.
+// in LittleEndian format.
 //
 type ExtentMapEntryValueV1Struct struct {
 	FileOffset   uint64 // Offset from the start of the File
