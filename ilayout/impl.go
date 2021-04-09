@@ -55,7 +55,7 @@ func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf [
 		inodeTableLayoutIndex int
 	)
 
-	superBlockV1Buf = make([]byte, 8+8+8+8+(len(superBlockV1.InodeTableLayout)*(8+8+8))+8)
+	superBlockV1Buf = make([]byte, 8+8+8+8+(len(superBlockV1.InodeTableLayout)*(8+8+8))+8+8+8+8)
 
 	curPos = 0
 
@@ -94,6 +94,21 @@ func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf [
 		if nil != err {
 			return
 		}
+	}
+
+	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeObjectCount)
+	if nil != err {
+		return
+	}
+
+	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeObjectSize)
+	if nil != err {
+		return
+	}
+
+	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeBytesReferenced)
+	if nil != err {
+		return
 	}
 
 	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, SuperBlockVersionV1)
@@ -154,6 +169,21 @@ func unmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1St
 		if nil != err {
 			return
 		}
+	}
+
+	superBlockV1.InodeObjectCount, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	if nil != err {
+		return
+	}
+
+	superBlockV1.InodeObjectSize, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	if nil != err {
+		return
+	}
+
+	superBlockV1.InodeBytesReferenced, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	if nil != err {
+		return
 	}
 
 	superBlockVersion, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
@@ -750,11 +780,11 @@ func lePutUint64ToBuf(buf []byte, curPos int, u64 uint64) (nextPos int, err erro
 	buf[curPos] = uint8(u64 & 0xFF)
 	buf[curPos+1] = uint8((u64 >> 8) & 0xFF)
 	buf[curPos+2] = uint8((u64 >> 16) & 0xFF)
-	buf[curPos+1] = uint8((u64 >> 24) & 0xFF)
-	buf[curPos+2] = uint8((u64 >> 32) & 0xFF)
-	buf[curPos+1] = uint8((u64 >> 40) & 0xFF)
-	buf[curPos+2] = uint8((u64 >> 48) & 0xFF)
-	buf[curPos+3] = uint8(u64 >> 56)
+	buf[curPos+3] = uint8((u64 >> 24) & 0xFF)
+	buf[curPos+4] = uint8((u64 >> 32) & 0xFF)
+	buf[curPos+5] = uint8((u64 >> 40) & 0xFF)
+	buf[curPos+6] = uint8((u64 >> 48) & 0xFF)
+	buf[curPos+7] = uint8(u64 >> 56)
 
 	err = nil
 	return
