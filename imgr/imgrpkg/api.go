@@ -11,37 +11,39 @@
 // argument, a package conf ConfMap. Here is a sample .conf file:
 //
 //  [IMGR]
-//  PublicIPAddr:                  172.28.128.2
-//  PrivateIPAddr:                 172.28.128.2
-//  RetryRPCPort:                  32356
-//  HTTPServerPort:                15346
+//  PublicIPAddr:                        172.28.128.2
+//  PrivateIPAddr:                       172.28.128.2
+//  RetryRPCPort:                        32356
+//  HTTPServerPort:                      15346
 //
-//  RetryRPCTTLCompleted:          10m
-//  RetryRPCAckTrim:               100ms
-//  RetryRPCDeadlineIO:            60s
-//  RetryRPCKeepAlivePeriod:       60s
+//  RetryRPCTTLCompleted:                10m
+//  RetryRPCAckTrim:                     100ms
+//  RetryRPCDeadlineIO:                  60s
+//  RetryRPCKeepAlivePeriod:             60s
 //
-//  RetryRPCCertFilePath:                       # If both RetryRPC{Cert|Key}FilePath are missing or empty,
-//  RetryRPCKeyFilePath:                        #   non-TLS RetryRPC will be selected; otherwise TLS will be used
+//  RetryRPCCertFilePath:                             # If both RetryRPC{Cert|Key}FilePath are missing or empty,
+//  RetryRPCKeyFilePath:                              #   non-TLS RetryRPC will be selected; otherwise TLS will be used
 //
-//  FetchNonceRangeTpReturn:       100
+//  FetchNonceRangeToReturn:             100
 //
-//  MinLeaseDuration:              250ms
-//  LeaseInterruptInterval:        250ms
-//  LeaseInterruptLimit:           20
+//  MinLeaseDuration:                    250ms
+//  LeaseInterruptInterval:              250ms
+//  LeaseInterruptLimit:                 20
 //
-//  SwiftRetryDelay:               1s
-//  SwiftRetryExpBackoff:          1.5
-//  SwiftRetryLimit:               11
+//  SwiftRetryDelay:                     1s
+//  SwiftRetryExpBackoff:                1.5
+//  SwiftRetryLimit:                     11
 //
-//  SwiftConnectionPoolSize:       128
+//  SwiftConnectionPoolSize:             128
 //
-//  InodeTableCacheEvictLowLimit:  10000
-//  InodeTableCacheEvictHighLimit: 10010
+//  InodeTableCacheEvictLowLimit:        10000
+//  InodeTableCacheEvictHighLimit:       10010
 //
-//  LogFilePath:                                # imgr.log
-//  LogToConsole:                  true         # false
-//  TraceEnabled:                  false
+//  InodeTableMaxInodesPerBPlusTreePage: 2048
+//
+//  LogFilePath:                                      # imgr.log
+//  LogToConsole:                        true         # false
+//  TraceEnabled:                        false
 //
 // Most of the config keys are required and must have values. One exception
 // is LogFilePath that will default to "" and, hence, cause logging to not
@@ -55,20 +57,52 @@
 //
 // In addition to the package retryrpc-exposed RPCs, the package also includes
 // an embedded HTTP Server (at URL http://<PrivateIPAddr>:<HTTPServerPort>)
-// responses to the following.
+// responses to the following:
 //
 //  DELETE /volume/<volumeName>
-//   - removes the specified <volumeName> from being served
+//
+// This will cause the specified <volumeName> to no longer be served. Note that
+// this does not actually affect the contents of the associated Container.
+//
 //  GET /config
-//   - returns a JSON document of the supplied ConfMap passed to Start()
+//
+// This will return a JSON document that matches the conf.ConfMap used to
+// launch this package.
+//
 //  GET /stats
-//   - returns a package bucketstats dump
+//
+// This will return a raw bucketstats dump.
+//
 //  GET /volume
-//   - returns a JSON document describing details of the specified <volumeName>
+//
+// This will return a JSON document containing an array of volumes currently
+// being served with details about each.
+//
 //  GET /volume/<volumeName>
-//   - returns a JSON document describing details of all volumes
+//
+// This will return a JSON document containing only the specified
+// <volumeName> details (assuming it is currently being served).
+//
+//  POST /volume/<volumeName>
+//  Content-Type: application/json
+//
+//  {
+//     "StorageURL": "http://172.28.128.2:8080/v1/AUTH_test/con"
+//  }
+//
+// This will cause the specified <volumeName> to be served. The StorageURL
+// specified in the JSON document content identifies the Container to first
+// format and then serve.
+//
 //  PUT /volume/<volumeName>
-//   - content should be a StorageURL (including the Container)
+//  Content-Type: application/json
+//
+//  {
+//     "StorageURL": "http://172.28.128.2:8080/v1/AUTH_test/con"
+//  }
+//
+// This will cause the specified <volumeName> to be served. The StorageURL
+// specified in the JSON document content identifies the Container to serve.
 //
 package imgrpkg
 

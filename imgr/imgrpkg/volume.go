@@ -208,6 +208,11 @@ func getVolumeListAsJSON() (volumeList []byte) {
 	return
 }
 
+func postVolume(name string, storageURL string) (err error) {
+	err = fmt.Errorf("TODO")
+	return
+}
+
 func putVolume(name string, storageURL string) (err error) {
 	var (
 		ok     bool

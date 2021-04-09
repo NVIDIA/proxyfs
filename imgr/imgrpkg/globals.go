@@ -33,7 +33,7 @@ type configStruct struct {
 	RetryRPCCertFilePath string
 	RetryRPCKeyFilePath  string
 
-	FetchNonceRangeTpReturn uint64
+	FetchNonceRangeToReturn uint64
 
 	MinLeaseDuration       time.Duration
 	LeaseInterruptInterval time.Duration
@@ -47,6 +47,8 @@ type configStruct struct {
 
 	InodeTableCacheEvictLowLimit  uint64
 	InodeTableCacheEvictHighLimit uint64
+
+	InodeTableMaxInodesPerBPlusTreePage uint64
 
 	LogFilePath  string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole bool
@@ -75,6 +77,7 @@ type statsStruct struct {
 	GetStatsUsecs      bucketstats.BucketLog2Round // GET /stats
 	GetVolumeListUsecs bucketstats.BucketLog2Round // GET /volume
 	GetVolumeUsecs     bucketstats.BucketLog2Round // GET /volume/<volumeName>
+	PostVolumeUsecs    bucketstats.BucketLog2Round // POST /volume/<volumeName>
 	PutVolumeUsecs     bucketstats.BucketLog2Round // PUT /volume/<volumeName>
 
 	AdjustInodeTableEntryOpenCountUsecs bucketstats.BucketLog2Round // (*RetryRPCServerStruct).AdjustInodeTableEntryOpenCount()
@@ -237,7 +240,7 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		}
 	}
 
-	globals.config.FetchNonceRangeTpReturn, err = confMap.FetchOptionValueUint64("IMGR", "FetchNonceRangeTpReturn")
+	globals.config.FetchNonceRangeToReturn, err = confMap.FetchOptionValueUint64("IMGR", "FetchNonceRangeToReturn")
 	if nil != err {
 		logFatal(err)
 	}
@@ -278,6 +281,11 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 	globals.config.InodeTableCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("IMGR", "InodeTableCacheEvictHighLimit")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.InodeTableMaxInodesPerBPlusTreePage, err = confMap.FetchOptionValueUint64("IMGR", "InodeTableMaxInodesPerBPlusTreePage")
 	if nil != err {
 		logFatal(err)
 	}
@@ -326,7 +334,7 @@ func uninitializeGlobals() (err error) {
 	globals.config.RetryRPCCertFilePath = ""
 	globals.config.RetryRPCKeyFilePath = ""
 
-	globals.config.FetchNonceRangeTpReturn = 0
+	globals.config.FetchNonceRangeToReturn = 0
 
 	globals.config.MinLeaseDuration = time.Duration(0)
 	globals.config.LeaseInterruptInterval = time.Duration(0)
@@ -340,6 +348,8 @@ func uninitializeGlobals() (err error) {
 
 	globals.config.InodeTableCacheEvictLowLimit = 0
 	globals.config.InodeTableCacheEvictHighLimit = 0
+
+	globals.config.InodeTableMaxInodesPerBPlusTreePage = 0
 
 	globals.config.LogFilePath = ""
 	globals.config.LogToConsole = false
