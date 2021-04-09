@@ -238,8 +238,8 @@ type InodeHeadV1Struct struct {
 	Size                uint64                      //    Only applicable to File Inodes
 	CreationTime        time.Time
 	ModificationTime    time.Time
-	AccessTimeTime      time.Time
-	AttrChangeTimeTime  time.Time
+	AccessTime          time.Time
+	AttrChangeTime      time.Time
 	Mode                uint16 //                         Must be <= InodeModeMask (Note: does not include InodeType encoding)
 	UserID              uint64
 	GroupID             uint64
