@@ -4,6 +4,7 @@
 package ilayout
 
 import (
+	"bytes"
 	"testing"
 	"time"
 )
@@ -29,16 +30,19 @@ func TestAPI(t *testing.T) {
 			InodeTableRootObjectLength: 3,
 			InodeTableLayout: []InodeTableLayoutEntryV1Struct{
 				{
-					ObjectNumber:    4,
-					ObjectSize:      5,
-					BytesReferenced: 6,
+					ObjectNumber:    11,
+					ObjectSize:      12,
+					BytesReferenced: 13,
 				},
 				{
-					ObjectNumber:    7,
-					ObjectSize:      8,
-					BytesReferenced: 9,
+					ObjectNumber:    21,
+					ObjectSize:      22,
+					BytesReferenced: 23,
 				},
 			},
+			InodeObjectCount:     4,
+			InodeObjectSize:      5,
+			InodeBytesReferenced: 6,
 		}
 
 		marshaledSuperBlockV1        []byte
@@ -56,7 +60,7 @@ func TestAPI(t *testing.T) {
 		unmarshaledInodeTableEntryValueVersion uint64
 		unmarshaledInodeTableEntryValueV1      *InodeTableEntryValueV1Struct
 
-		testStartTime = time.Now()
+		testStartTime = time.Now().Truncate(time.Second)
 
 		testInodeHeadV1 = &InodeHeadV1Struct{
 			InodeNumber: 1,
@@ -110,6 +114,10 @@ func TestAPI(t *testing.T) {
 		marshaledInodeHeadV1        []byte
 		unmarshaledInodeHeadVersion uint64
 		unmarshaledInodeHeadV1      *InodeHeadV1Struct
+
+		linkTableIndex   int
+		streamTableIndex int
+		layoutIndex      int
 	)
 
 	marshaledCheckPointHeaderV1, err = testCheckPointHeaderV1.MarshalCheckPointHeaderV1()
@@ -201,6 +209,39 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
-
-	t.Logf("TODO: finish testing UnmarshalInodeHeadV1(); %+v", unmarshaledInodeHeadV1)
+	if (testInodeHeadV1.InodeNumber != unmarshaledInodeHeadV1.InodeNumber) ||
+		(testInodeHeadV1.InodeType != unmarshaledInodeHeadV1.InodeType) ||
+		(len(testInodeHeadV1.LinkTable) != len(unmarshaledInodeHeadV1.LinkTable)) ||
+		(testInodeHeadV1.Size != unmarshaledInodeHeadV1.Size) ||
+		(testInodeHeadV1.CreationTime != unmarshaledInodeHeadV1.CreationTime) ||
+		(testInodeHeadV1.ModificationTime != unmarshaledInodeHeadV1.ModificationTime) ||
+		(testInodeHeadV1.AccessTime != unmarshaledInodeHeadV1.AccessTime) ||
+		(testInodeHeadV1.AttrChangeTime != unmarshaledInodeHeadV1.AttrChangeTime) ||
+		(testInodeHeadV1.Mode != unmarshaledInodeHeadV1.Mode) ||
+		(testInodeHeadV1.UserID != unmarshaledInodeHeadV1.UserID) ||
+		(testInodeHeadV1.GroupID != unmarshaledInodeHeadV1.GroupID) ||
+		(len(testInodeHeadV1.StreamTable) != len(unmarshaledInodeHeadV1.StreamTable)) ||
+		(testInodeHeadV1.PayloadObjectNumber != unmarshaledInodeHeadV1.PayloadObjectNumber) ||
+		(testInodeHeadV1.PayloadObjectOffset != unmarshaledInodeHeadV1.PayloadObjectOffset) ||
+		(testInodeHeadV1.PayloadObjectLength != unmarshaledInodeHeadV1.PayloadObjectLength) ||
+		(testInodeHeadV1.SymlinkTarget != unmarshaledInodeHeadV1.SymlinkTarget) ||
+		(len(testInodeHeadV1.Layout) != len(unmarshaledInodeHeadV1.Layout)) {
+		t.Fatalf("Bad unmarshaledInodeHeadV1 (%+v) - expected testInodeHeadV1 (%+v) [Case 1]", unmarshaledInodeHeadV1, testInodeHeadV1)
+	}
+	for linkTableIndex = range testInodeHeadV1.LinkTable {
+		if testInodeHeadV1.LinkTable[linkTableIndex] != unmarshaledInodeHeadV1.LinkTable[linkTableIndex] {
+			t.Fatalf("Bad unmarshaledInodeHeadV1 (%+v) - expected testInodeHeadV1 (%+v) [Case 2]", unmarshaledInodeHeadV1, testInodeHeadV1)
+		}
+	}
+	for streamTableIndex = range testInodeHeadV1.StreamTable {
+		if (testInodeHeadV1.StreamTable[streamTableIndex].Name != unmarshaledInodeHeadV1.StreamTable[streamTableIndex].Name) ||
+			(0 != bytes.Compare(testInodeHeadV1.StreamTable[streamTableIndex].Value, unmarshaledInodeHeadV1.StreamTable[streamTableIndex].Value)) {
+			t.Fatalf("Bad unmarshaledInodeHeadV1 (%+v) - expected testInodeHeadV1 (%+v) [Case 3]", unmarshaledInodeHeadV1, testInodeHeadV1)
+		}
+	}
+	for layoutIndex = range testInodeHeadV1.Layout {
+		if testInodeHeadV1.Layout[layoutIndex] != unmarshaledInodeHeadV1.Layout[layoutIndex] {
+			t.Fatalf("Bad unmarshaledInodeHeadV1 (%+v) - expected testInodeHeadV1 (%+v) [Case 4]", unmarshaledInodeHeadV1, testInodeHeadV1)
+		}
+	}
 }
