@@ -5,6 +5,7 @@ package ilayout
 
 import (
 	"testing"
+	"time"
 )
 
 func TestAPI(t *testing.T) {
@@ -54,6 +55,61 @@ func TestAPI(t *testing.T) {
 		marshaledInodeTableEntryValueV1        []byte
 		unmarshaledInodeTableEntryValueVersion uint64
 		unmarshaledInodeTableEntryValueV1      *InodeTableEntryValueV1Struct
+
+		testStartTime = time.Now()
+
+		testInodeHeadV1 = &InodeHeadV1Struct{
+			InodeNumber: 1,
+			InodeType:   InodeTypeSymlink,
+			LinkTable: []InodeLinkTableEntryStruct{
+				{
+					ParentDirInodeNumber: 101,
+					ParentDirEntryName:   "101",
+				},
+				{
+					ParentDirInodeNumber: 102,
+					ParentDirEntryName:   "102",
+				},
+			},
+			Size:             3,
+			CreationTime:     testStartTime.AddDate(0, 0, -4),
+			ModificationTime: testStartTime.AddDate(0, 0, -3),
+			AccessTime:       testStartTime.AddDate(0, 0, -1),
+			AttrChangeTime:   testStartTime.AddDate(0, 0, -2),
+			Mode:             0o456,
+			UserID:           7,
+			GroupID:          8,
+			StreamTable: []InodeStreamTableEntryStruct{
+				{
+					Name:  "201",
+					Value: []byte{2, 0, 1},
+				},
+				{
+					Name:  "202",
+					Value: []byte{2, 0, 2},
+				},
+			},
+			PayloadObjectNumber: 11,
+			PayloadObjectOffset: 12,
+			PayloadObjectLength: 13,
+			SymlinkTarget:       "sym-target",
+			Layout: []InodeHeadLayoutEntryV1Struct{
+				{
+					ObjectNumber:    311,
+					ObjectSize:      312,
+					BytesReferenced: 313,
+				},
+				{
+					ObjectNumber:    321,
+					ObjectSize:      322,
+					BytesReferenced: 323,
+				},
+			},
+		}
+
+		marshaledInodeHeadV1        []byte
+		unmarshaledInodeHeadVersion uint64
+		// unmarshaledInodeHeadV1      *InodeHeadV1Struct
 	)
 
 	marshaledCheckPointHeaderV1, err = testCheckPointHeaderV1.MarshalCheckPointHeaderV1()
@@ -74,7 +130,7 @@ func TestAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	if *testCheckPointHeaderV1 != *unmarshaledCheckPointHeaderV1 {
-		t.Fatalf("Bad unmarshaledCheckPointHeaderV1 (%#v) - expected testCheckPointHeaderV1 (%#v)", unmarshaledCheckPointHeaderV1, testCheckPointHeaderV1)
+		t.Fatalf("Bad unmarshaledCheckPointHeaderV1 (%+v) - expected testCheckPointHeaderV1 (%+v)", unmarshaledCheckPointHeaderV1, testCheckPointHeaderV1)
 	}
 
 	marshaledSuperBlockV1, err = testSuperBlockV1.MarshalSuperBlockV1()
@@ -98,11 +154,11 @@ func TestAPI(t *testing.T) {
 		(testSuperBlockV1.InodeTableRootObjectOffset != unmarshaledSuperBlockV1.InodeTableRootObjectOffset) ||
 		(testSuperBlockV1.InodeTableRootObjectLength != unmarshaledSuperBlockV1.InodeTableRootObjectLength) ||
 		(len(testSuperBlockV1.InodeTableLayout) != len(unmarshaledSuperBlockV1.InodeTableLayout)) {
-		t.Fatalf("Bad unmarshaledSuperBlockV1 (%#v) - expected testSuperBlockV1 (%#v) [Case 1]", unmarshaledSuperBlockV1, testSuperBlockV1)
+		t.Fatalf("Bad unmarshaledSuperBlockV1 (%+v) - expected testSuperBlockV1 (%+v) [Case 1]", unmarshaledSuperBlockV1, testSuperBlockV1)
 	}
 	for inodeTableLayoutIndex = range testSuperBlockV1.InodeTableLayout {
 		if testSuperBlockV1.InodeTableLayout[inodeTableLayoutIndex] != unmarshaledSuperBlockV1.InodeTableLayout[inodeTableLayoutIndex] {
-			t.Fatalf("Bad unmarshaledSuperBlockV1 (%#v) - expected testSuperBlockV1 (%#v) [Case 2]", unmarshaledSuperBlockV1, testSuperBlockV1)
+			t.Fatalf("Bad unmarshaledSuperBlockV1 (%+v) - expected testSuperBlockV1 (%+v) [Case 2]", unmarshaledSuperBlockV1, testSuperBlockV1)
 		}
 	}
 
@@ -125,10 +181,21 @@ func TestAPI(t *testing.T) {
 	}
 	if (testInodeTableEntryValueV1.InodeHeadObjectNumber != unmarshaledInodeTableEntryValueV1.InodeHeadObjectNumber) ||
 		(testInodeTableEntryValueV1.InodeHeadLength != unmarshaledInodeTableEntryValueV1.InodeHeadLength) {
-		t.Fatalf("Bad unmarshaledInodeTableEntryValueV1 (%#v) - expected testInodeTableEntryValueV1 (%#v)", unmarshaledInodeTableEntryValueV1, testInodeTableEntryValueV1)
+		t.Fatalf("Bad unmarshaledInodeTableEntryValueV1 (%+v) - expected testInodeTableEntryValueV1 (%+v)", unmarshaledInodeTableEntryValueV1, testInodeTableEntryValueV1)
 	}
 
-	t.Logf("TODO: test MarshalInodeHeadV1()")
-	t.Logf("TODO: test UnmarshalInodeHeadVersion()")
+	marshaledInodeHeadV1, err = testInodeHeadV1.MarshalInodeHeadV1()
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	unmarshaledInodeHeadVersion, err = UnmarshalInodeHeadVersion(marshaledInodeHeadV1)
+	if nil != err {
+		t.Fatal(err)
+	}
+	if InodeHeadVersionV1 != unmarshaledInodeHeadVersion {
+		t.Fatalf("Bad unmarshaledInodeHeadVersion (%016X) - expected InodeHeadVersionV1 (%016X)", unmarshaledInodeHeadVersion, InodeHeadVersionV1)
+	}
+
 	t.Logf("TODO: test UnmarshalInodeHeadV1()")
 }
