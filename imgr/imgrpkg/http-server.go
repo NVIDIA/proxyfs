@@ -85,6 +85,8 @@ func (dummy *globalsStruct) ServeHTTP(responseWriter http.ResponseWriter, reques
 		serveHTTPDelete(responseWriter, request, requestPath)
 	case http.MethodGet:
 		serveHTTPGet(responseWriter, request, requestPath)
+	case http.MethodPost:
+		serveHTTPPost(responseWriter, request, requestPath, requestBody)
 	case http.MethodPut:
 		serveHTTPPut(responseWriter, request, requestPath, requestBody)
 	default:
@@ -245,6 +247,54 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 	}
 }
 
+func serveHTTPPost(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
+	switch {
+	case strings.HasPrefix(requestPath, "/volume"):
+		serveHTTPPostOfVolume(responseWriter, request, requestPath, requestBody)
+	default:
+		responseWriter.WriteHeader(http.StatusNotFound)
+	}
+}
+
+type serveHTTPPostOfVolumeRequestBodyAsJSONStruct struct {
+	StorageURL string
+}
+
+func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
+	var (
+		err               error
+		pathSplit         []string
+		requestBodyAsJSON serveHTTPPostOfVolumeRequestBodyAsJSONStruct
+		startTime         time.Time
+	)
+
+	startTime = time.Now()
+
+	pathSplit = strings.Split(requestPath, "/")
+
+	switch len(pathSplit) {
+	case 3:
+		defer func() {
+			globals.stats.PostVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+		}()
+
+		err = json.Unmarshal(requestBody, &requestBodyAsJSON)
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		err = postVolume(pathSplit[2], requestBodyAsJSON.StorageURL)
+		if nil == err {
+			responseWriter.WriteHeader(http.StatusCreated)
+		} else {
+			responseWriter.WriteHeader(http.StatusConflict)
+		}
+	default:
+		responseWriter.WriteHeader(http.StatusBadRequest)
+	}
+}
+
 func serveHTTPPut(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
 	switch {
 	case strings.HasPrefix(requestPath, "/volume"):
@@ -254,12 +304,16 @@ func serveHTTPPut(responseWriter http.ResponseWriter, request *http.Request, req
 	}
 }
 
+type serveHTTPPutOfVolumeRequestBodyAsJSONStruct struct {
+	StorageURL string
+}
+
 func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
 	var (
-		err        error
-		pathSplit  []string
-		startTime  time.Time
-		storageURL string
+		err               error
+		pathSplit         []string
+		requestBodyAsJSON serveHTTPPutOfVolumeRequestBodyAsJSONStruct
+		startTime         time.Time
 	)
 
 	startTime = time.Now()
@@ -272,9 +326,13 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			globals.stats.PutVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 		}()
 
-		storageURL = string(requestBody[:])
+		err = json.Unmarshal(requestBody, &requestBodyAsJSON)
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
-		err = putVolume(pathSplit[2], storageURL)
+		err = putVolume(pathSplit[2], requestBodyAsJSON.StorageURL)
 		if nil == err {
 			responseWriter.WriteHeader(http.StatusCreated)
 		} else {
