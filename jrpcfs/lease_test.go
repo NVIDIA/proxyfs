@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
@@ -1569,6 +1570,8 @@ func BenchmarkRpcLeaseRemote(b *testing.B) {
 	}
 
 	b.StopTimer()
+
+	fmt.Printf("RetryRPC Bucketstats: %v\n", bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", "*"))
 
 	unmountRequest = &UnmountRequest{
 		MountID: mountByAccountNameReply.MountID,

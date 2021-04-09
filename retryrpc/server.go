@@ -372,7 +372,6 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 	ma := server.svrMap[jReq.Method]
 	if ma != nil {
 
-		startUnmarshalRPC := time.Now()
 		// Another unmarshal of buf to find the parameters specific to
 		// this RPC
 		typOfReq = ma.request.Elem()
@@ -391,17 +390,14 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 		// Create the reply structure
 		typOfReply := ma.reply.Elem()
 		myReply := reflect.New(typOfReply)
-		si.PreRPCUnmarshalUsec.Add(uint64(time.Since(startUnmarshalRPC).Microseconds()))
 
 		// Call the method
 		function := ma.methodPtr.Func
-		startRealRPC := time.Now()
 		if ma.passClientID {
 			returnValues = function.Call([]reflect.Value{server.receiver, cid, req, myReply})
 		} else {
 			returnValues = function.Call([]reflect.Value{server.receiver, req, myReply})
 		}
-		si.RPCOnlyUsec.Add(uint64(time.Since(startRealRPC).Microseconds()))
 
 		// The return value for the method is an error.
 		errInter := returnValues[0].Interface()
@@ -421,13 +417,11 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 		jReply.ErrStr = fmt.Sprintf("errno: %d", unix.ENOENT)
 	}
 
-	startReturnRPC := time.Now()
 	// Convert response into JSON for return trip
 	reply.JResult, err = json.Marshal(jReply)
 	if err != nil {
 		logger.PanicfWithError(err, "Unable to marshal jReply: %+v", jReply)
 	}
-	si.PostRPCMarshalUsec.Add(uint64(time.Duration(time.Since(startReturnRPC).Microseconds())))
 
 	return reply
 }
@@ -457,7 +451,6 @@ func (server *Server) returnResults(ior *ioReply, cCtx *connCtx) {
 	if e != nil {
 		logger.Infof("returnResults() returned err: %v cnt: %v length of JResult: %v", e, cnt, len(ior.JResult))
 	}
-
 	cCtx.Unlock()
 }
 

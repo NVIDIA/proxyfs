@@ -31,11 +31,13 @@ const (
 
 // Useful stats for the client side
 type clientSideStatsInfo struct {
-	RetransmitsStarted bucketstats.Total           // Number of retransmits attempted
-	SendCalled         bucketstats.Total           // Number of times Send called
-	ReplyCalled        bucketstats.Total           // Number of times receive Reply to RPC
-	UpcallCalled       bucketstats.Total           // Number of times received an Upcall
-	TimeSendRPCUsec    bucketstats.BucketLog2Round // Tracks time when Send() called and returned
+	RetransmitsStarted      bucketstats.Total           // Number of retransmits attempted
+	SendCalled              bucketstats.Total           // Number of times Send called
+	ReplyCalled             bucketstats.Total           // Number of times receive Reply to RPC
+	UpcallCalled            bucketstats.Total           // Number of times received an Upcall
+	SeesIOAndSignalsChannel bucketstats.BucketLog2Round // Tracks time after returnReply() -> getIO and reply channel
+	TimeSendRPCUsec         bucketstats.BucketLog2Round // Tracks time when Send() called and returned
+	SendToServer            bucketstats.BucketLog2Round // Tracks time takes to send message to server
 }
 
 // TODO - what if RPC was completed on Server1 and before response,
@@ -90,7 +92,6 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 			}
 		}
 	}
-	timeSent := time.Now()
 
 	// Put request data into structure to be be marshaled into JSON
 	jreq := jsonRequest{Method: method, HighestReplySeen: client.highestConsecutive}
@@ -117,7 +118,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	}
 
 	// Create context to wait result and to handle retransmits
-	ctx := &reqCtx{ioreq: ioreq, rpcReply: &rpcReply}
+	ctx := &reqCtx{ioreq: ioreq, rpcReply: &rpcReply, startTime: time.Now()}
 	ctx.answer = make(chan replyCtx)
 
 	// Send request to server.
@@ -129,7 +130,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 
 	// Now wait for response
 	answer := <-ctx.answer
-	client.stats.TimeSendRPCUsec.Add(uint64(time.Duration(time.Since(timeSent).Microseconds())))
+	client.stats.TimeSendRPCUsec.Add(uint64(time.Duration(time.Since(ctx.startTime).Microseconds())))
 
 	return answer.err
 }
@@ -141,6 +142,8 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 // completes OR the client is shutdown.
 func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 	defer client.goroutineWG.Done()
+
+	startTime := time.Now()
 
 	// Now send the request to the server.
 	// We need to GRAB THE MUTEX HERE TO SERIALIZE WRITES on socket
@@ -207,9 +210,10 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 	}
 
 	client.Unlock()
+	client.stats.SendToServer.Add(uint64(time.Duration(time.Since(startTime).Microseconds())))
 }
 
-func (client *Client) notifyReply(buf []byte, genNum uint64) {
+func (client *Client) notifyReply(buf []byte, genNum uint64, recvResponse time.Time) {
 	defer client.goroutineWG.Done()
 
 	// Unmarshal once to get the header fields
@@ -275,6 +279,7 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 		r.err = fmt.Errorf("%v", jReply.ErrStr)
 	}
 	ctx.answer <- r
+	client.stats.SeesIOAndSignalsChannel.Add(uint64(time.Duration(time.Since(recvResponse).Microseconds())))
 
 	// Fork off a goroutine to update highestConsecutiveNum
 	go client.updateHighestConsecutiveNum(crID)
@@ -330,6 +335,7 @@ func (client *Client) readReplies(callingGenNum uint64) {
 			client.retransmit(callingGenNum)
 			return
 		}
+		recvResponse := time.Now()
 
 		// Figure out what type of message it is
 		switch msgType {
@@ -338,7 +344,7 @@ func (client *Client) readReplies(callingGenNum uint64) {
 			// and sending the reply to blocked Send() so that this routine
 			// can read the next response.
 			client.goroutineWG.Add(1)
-			go client.notifyReply(buf, callingGenNum)
+			go client.notifyReply(buf, callingGenNum, recvResponse)
 			client.stats.ReplyCalled.Add(1)
 
 		case Upcall:
