@@ -109,7 +109,7 @@ func TestAPI(t *testing.T) {
 
 		marshaledInodeHeadV1        []byte
 		unmarshaledInodeHeadVersion uint64
-		// unmarshaledInodeHeadV1      *InodeHeadV1Struct
+		unmarshaledInodeHeadV1      *InodeHeadV1Struct
 	)
 
 	marshaledCheckPointHeaderV1, err = testCheckPointHeaderV1.MarshalCheckPointHeaderV1()
@@ -197,5 +197,10 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Bad unmarshaledInodeHeadVersion (%016X) - expected InodeHeadVersionV1 (%016X)", unmarshaledInodeHeadVersion, InodeHeadVersionV1)
 	}
 
-	t.Logf("TODO: test UnmarshalInodeHeadV1()")
+	unmarshaledInodeHeadV1, err = UnmarshalInodeHeadV1(marshaledInodeHeadV1)
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	t.Logf("TODO: finish testing UnmarshalInodeHeadV1(); %+v", unmarshaledInodeHeadV1)
 }
