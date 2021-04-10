@@ -64,7 +64,7 @@ func TestAPI(t *testing.T) {
 
 		testInodeHeadV1 = &InodeHeadV1Struct{
 			InodeNumber: 1,
-			InodeType:   InodeTypeSymlink,
+			InodeType:   InodeTypeSymLink,
 			LinkTable: []InodeLinkTableEntryStruct{
 				{
 					ParentDirInodeNumber: 101,
@@ -96,7 +96,7 @@ func TestAPI(t *testing.T) {
 			PayloadObjectNumber: 11,
 			PayloadObjectOffset: 12,
 			PayloadObjectLength: 13,
-			SymlinkTarget:       "sym-target",
+			SymLinkTarget:       "sym-link-target",
 			Layout: []InodeHeadLayoutEntryV1Struct{
 				{
 					ObjectNumber:    311,
@@ -118,6 +118,24 @@ func TestAPI(t *testing.T) {
 		linkTableIndex   int
 		streamTableIndex int
 		layoutIndex      int
+
+		testDirectoryEntryValueV1 = &DirectoryEntryValueV1Struct{
+			InodeNumber: 1,
+			InodeType:   2,
+		}
+
+		marshaledDirectoryEntryValueV1   []byte
+		unmarshaledDirectoryEntryValueV1 *DirectoryEntryValueV1Struct
+
+		testExtentMapEntryValueV1 = &ExtentMapEntryValueV1Struct{
+			FileOffset:   1,
+			Length:       2,
+			ObjectNumber: 3,
+			ObjectOffset: 4,
+		}
+
+		marshaledExtentMapEntryValueV1   []byte
+		unmarshaledExtentMapEntryValueV1 *ExtentMapEntryValueV1Struct
 	)
 
 	marshaledCheckPointHeaderV1, err = testCheckPointHeaderV1.MarshalCheckPointHeaderV1()
@@ -224,7 +242,7 @@ func TestAPI(t *testing.T) {
 		(testInodeHeadV1.PayloadObjectNumber != unmarshaledInodeHeadV1.PayloadObjectNumber) ||
 		(testInodeHeadV1.PayloadObjectOffset != unmarshaledInodeHeadV1.PayloadObjectOffset) ||
 		(testInodeHeadV1.PayloadObjectLength != unmarshaledInodeHeadV1.PayloadObjectLength) ||
-		(testInodeHeadV1.SymlinkTarget != unmarshaledInodeHeadV1.SymlinkTarget) ||
+		(testInodeHeadV1.SymLinkTarget != unmarshaledInodeHeadV1.SymLinkTarget) ||
 		(len(testInodeHeadV1.Layout) != len(unmarshaledInodeHeadV1.Layout)) {
 		t.Fatalf("Bad unmarshaledInodeHeadV1 (%+v) - expected testInodeHeadV1 (%+v) [Case 1]", unmarshaledInodeHeadV1, testInodeHeadV1)
 	}
@@ -243,5 +261,31 @@ func TestAPI(t *testing.T) {
 		if testInodeHeadV1.Layout[layoutIndex] != unmarshaledInodeHeadV1.Layout[layoutIndex] {
 			t.Fatalf("Bad unmarshaledInodeHeadV1 (%+v) - expected testInodeHeadV1 (%+v) [Case 4]", unmarshaledInodeHeadV1, testInodeHeadV1)
 		}
+	}
+
+	marshaledDirectoryEntryValueV1, err = testDirectoryEntryValueV1.MarshalDirectoryEntryValueV1()
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	unmarshaledDirectoryEntryValueV1, err = UnmarshalDirectoryEntryValueV1(marshaledDirectoryEntryValueV1)
+	if nil != err {
+		t.Fatal(err)
+	}
+	if *testDirectoryEntryValueV1 != *unmarshaledDirectoryEntryValueV1 {
+		t.Fatalf("Bad unmarshaledDirectoryEntryValueV1 (%+v) - expected testDirectoryEntryValueV1 (%+v)", unmarshaledDirectoryEntryValueV1, testDirectoryEntryValueV1)
+	}
+
+	marshaledExtentMapEntryValueV1, err = testExtentMapEntryValueV1.MarshalExtentMapEntryValueV1()
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	unmarshaledExtentMapEntryValueV1, err = UnmarshalExtentMapEntryValueV1(marshaledExtentMapEntryValueV1)
+	if nil != err {
+		t.Fatal(err)
+	}
+	if *testExtentMapEntryValueV1 != *unmarshaledExtentMapEntryValueV1 {
+		t.Fatalf("Bad unmarshaledExtentMapEntryValueV1 (%+v) - expected testExtentMapEntryValueV1 (%+v)", unmarshaledExtentMapEntryValueV1, testExtentMapEntryValueV1)
 	}
 }
