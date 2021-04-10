@@ -43,6 +43,7 @@ type configStruct struct {
 	SwiftRetryExpBackoff float64
 	SwiftRetryLimit      uint32
 
+	SwiftTimeout            time.Duration
 	SwiftConnectionPoolSize uint32
 
 	InodeTableCacheEvictLowLimit  uint64
@@ -105,6 +106,12 @@ type statsStruct struct {
 
 	InodeTableCacheHits   bucketstats.Totaler
 	InodeTableCacheMisses bucketstats.Totaler
+
+	SwiftContainerHeaderGetUsecs bucketstats.BucketLog2Round
+	SwiftContainerHeaderSetUsecs bucketstats.BucketLog2Round
+	SwiftObjectGetRangeUsecs     bucketstats.BucketLog2Round
+	SwiftObjectGetTailUsecs      bucketstats.BucketLog2Round
+	SwiftObjectPutUsecs          bucketstats.BucketLog2Round
 }
 
 type mountStruct struct {
@@ -135,6 +142,7 @@ type globalsStruct struct {
 	inodeTableCache sortedmap.BPlusTreeCache //
 	volumeMap       sortedmap.LLRBTree       // key == volumeStruct.name; value == *volumeStruct
 	mountMap        map[string]*mountStruct  // key == mountStruct.mountID
+	httpClient      *http.Client             //
 	retryrpcServer  *retryrpc.Server         //
 	httpServer      *http.Server             //
 	httpServerWG    sync.WaitGroup           //
@@ -271,6 +279,10 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 
+	globals.config.SwiftTimeout, err = confMap.FetchOptionValueDuration("IMGR", "SwiftTimeout")
+	if nil != err {
+		logFatal(err)
+	}
 	globals.config.SwiftConnectionPoolSize, err = confMap.FetchOptionValueUint32("IMGR", "SwiftConnectionPoolSize")
 	if nil != err {
 		logFatal(err)
@@ -344,6 +356,7 @@ func uninitializeGlobals() (err error) {
 	globals.config.SwiftRetryExpBackoff = 0.0
 	globals.config.SwiftRetryLimit = 0
 
+	globals.config.SwiftTimeout = time.Duration(0)
 	globals.config.SwiftConnectionPoolSize = 0
 
 	globals.config.InodeTableCacheEvictLowLimit = 0
