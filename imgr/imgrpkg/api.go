@@ -87,7 +87,8 @@
 //  Content-Type: application/json
 //
 //  {
-//     "StorageURL": "http://172.28.128.2:8080/v1/AUTH_test/con"
+//     "StorageURL": "http://172.28.128.2:8080/v1/AUTH_test/con",
+//     "AuthToken" : "AUTH_tk0123456789abcde0123456789abcdef0"
 //  }
 //
 // This will cause the specified <volumeName> to be served. The StorageURL

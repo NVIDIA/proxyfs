@@ -44,7 +44,7 @@ func unmarshalSuperBlockVersion(superBlockBuf []byte) (superBlockVersion uint64,
 		return
 	}
 
-	superBlockVersion, _, err = leGetUint64FromBuf(superBlockBuf, superBlockBufLen-8)
+	superBlockVersion, _, err = getLEUint64FromBuf(superBlockBuf, superBlockBufLen-8)
 
 	return
 }
@@ -59,59 +59,59 @@ func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf [
 
 	curPos = 0
 
-	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableRootObjectNumber)
+	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableRootObjectNumber)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableRootObjectOffset)
+	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableRootObjectOffset)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableRootObjectLength)
+	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableRootObjectLength)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, uint64(len(superBlockV1.InodeTableLayout)))
+	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, uint64(len(superBlockV1.InodeTableLayout)))
 	if nil != err {
 		return
 	}
 
 	for inodeTableLayoutIndex = 0; inodeTableLayoutIndex < len(superBlockV1.InodeTableLayout); inodeTableLayoutIndex++ {
-		curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectNumber)
+		curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectNumber)
 		if nil != err {
 			return
 		}
 
-		curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectSize)
+		curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectSize)
 		if nil != err {
 			return
 		}
 
-		curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableLayout[inodeTableLayoutIndex].BytesReferenced)
+		curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableLayout[inodeTableLayoutIndex].BytesReferenced)
 		if nil != err {
 			return
 		}
 	}
 
-	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeObjectCount)
+	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeObjectCount)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeObjectSize)
+	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeObjectSize)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeBytesReferenced)
+	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeBytesReferenced)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(superBlockV1Buf, curPos, SuperBlockVersionV1)
+	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, SuperBlockVersionV1)
 	if nil != err {
 		return
 	}
@@ -132,22 +132,22 @@ func unmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1St
 
 	curPos = 0
 
-	superBlockV1.InodeTableRootObjectNumber, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	superBlockV1.InodeTableRootObjectNumber, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	superBlockV1.InodeTableRootObjectOffset, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	superBlockV1.InodeTableRootObjectOffset, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	superBlockV1.InodeTableRootObjectLength, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	superBlockV1.InodeTableRootObjectLength, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	inodeTableLayoutLen, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	inodeTableLayoutLen, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 	if nil != err {
 		return
 	}
@@ -155,38 +155,38 @@ func unmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1St
 	superBlockV1.InodeTableLayout = make([]InodeTableLayoutEntryV1Struct, inodeTableLayoutLen)
 
 	for inodeTableLayoutIndex = 0; inodeTableLayoutIndex < inodeTableLayoutLen; inodeTableLayoutIndex++ {
-		superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectNumber, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+		superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectNumber, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 		if nil != err {
 			return
 		}
 
-		superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectSize, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+		superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectSize, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 		if nil != err {
 			return
 		}
 
-		superBlockV1.InodeTableLayout[inodeTableLayoutIndex].BytesReferenced, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+		superBlockV1.InodeTableLayout[inodeTableLayoutIndex].BytesReferenced, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 		if nil != err {
 			return
 		}
 	}
 
-	superBlockV1.InodeObjectCount, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	superBlockV1.InodeObjectCount, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	superBlockV1.InodeObjectSize, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	superBlockV1.InodeObjectSize, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	superBlockV1.InodeBytesReferenced, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	superBlockV1.InodeBytesReferenced, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	superBlockVersion, curPos, err = leGetUint64FromBuf(superBlockV1Buf, curPos)
+	superBlockVersion, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 	if nil != err {
 		return
 	}
@@ -205,7 +205,7 @@ func unmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1St
 }
 
 func unmarshalInodeTableEntryValueVersion(inodeTableEntryValueBuf []byte) (inodeTableEntryValueVersion uint64, err error) {
-	inodeTableEntryValueVersion, _, err = leGetUint64FromBuf(inodeTableEntryValueBuf, 0)
+	inodeTableEntryValueVersion, _, err = getLEUint64FromBuf(inodeTableEntryValueBuf, 0)
 
 	return
 }
@@ -219,17 +219,17 @@ func (inodeTableEntryValueV1 *InodeTableEntryValueV1Struct) marshalInodeTableEnt
 
 	curPos = 0
 
-	curPos, err = lePutUint64ToBuf(inodeTableEntryValueV1Buf, curPos, InodeTableEntryValueVersionV1)
+	curPos, err = putLEUint64ToBuf(inodeTableEntryValueV1Buf, curPos, InodeTableEntryValueVersionV1)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeTableEntryValueV1Buf, curPos, inodeTableEntryValueV1.InodeHeadObjectNumber)
+	curPos, err = putLEUint64ToBuf(inodeTableEntryValueV1Buf, curPos, inodeTableEntryValueV1.InodeHeadObjectNumber)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeTableEntryValueV1Buf, curPos, inodeTableEntryValueV1.InodeHeadLength)
+	curPos, err = putLEUint64ToBuf(inodeTableEntryValueV1Buf, curPos, inodeTableEntryValueV1.InodeHeadLength)
 	if nil != err {
 		return
 	}
@@ -246,7 +246,7 @@ func unmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTab
 
 	curPos = 0
 
-	inodeTableEntryValueVersion, curPos, err = leGetUint64FromBuf(inodeTableEntryValueV1Buf, curPos)
+	inodeTableEntryValueVersion, curPos, err = getLEUint64FromBuf(inodeTableEntryValueV1Buf, curPos)
 	if nil != err {
 		return
 	}
@@ -257,12 +257,12 @@ func unmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTab
 
 	inodeTableEntryValueV1 = &InodeTableEntryValueV1Struct{}
 
-	inodeTableEntryValueV1.InodeHeadObjectNumber, curPos, err = leGetUint64FromBuf(inodeTableEntryValueV1Buf, curPos)
+	inodeTableEntryValueV1.InodeHeadObjectNumber, curPos, err = getLEUint64FromBuf(inodeTableEntryValueV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	inodeTableEntryValueV1.InodeHeadLength, curPos, err = leGetUint64FromBuf(inodeTableEntryValueV1Buf, curPos)
+	inodeTableEntryValueV1.InodeHeadLength, curPos, err = getLEUint64FromBuf(inodeTableEntryValueV1Buf, curPos)
 	if nil != err {
 		return
 	}
@@ -288,28 +288,19 @@ func unmarshalInodeHeadVersion(inodeHeadBuf []byte) (inodeHeadVersion uint64, er
 		return
 	}
 
-	inodeHeadVersion, _, err = leGetUint64FromBuf(inodeHeadBuf, inodeHeadBufLen-8)
+	inodeHeadVersion, _, err = getLEUint64FromBuf(inodeHeadBuf, inodeHeadBufLen-8)
 
 	return
 }
 
 func (inodeHeadV1 *InodeHeadV1Struct) marshalInodeHeadV1() (inodeHeadV1Buf []byte, err error) {
 	var (
-		accessTimeAsRFC3339String       string
-		attrChangeTimeAsRFC3339String   string
-		creationTimeAsRFC3339String     string
-		curPos                          int
-		inodeHeadV1BufLen               int
-		layoutIndex                     int
-		linkTableIndex                  int
-		modificationTimeAsRFC3339String string
-		streamTableIndex                int
+		curPos            int
+		inodeHeadV1BufLen int
+		layoutIndex       int
+		linkTableIndex    int
+		streamTableIndex  int
 	)
-
-	creationTimeAsRFC3339String = inodeHeadV1.CreationTime.Format(time.RFC3339)
-	modificationTimeAsRFC3339String = inodeHeadV1.ModificationTime.Format(time.RFC3339)
-	accessTimeAsRFC3339String = inodeHeadV1.AccessTime.Format(time.RFC3339)
-	attrChangeTimeAsRFC3339String = inodeHeadV1.AttrChangeTime.Format(time.RFC3339)
 
 	inodeHeadV1BufLen = 8 + 1
 
@@ -319,11 +310,7 @@ func (inodeHeadV1 *InodeHeadV1Struct) marshalInodeHeadV1() (inodeHeadV1Buf []byt
 		inodeHeadV1BufLen += 8 + 8 + len(inodeHeadV1.LinkTable[linkTableIndex].ParentDirEntryName)
 	}
 
-	inodeHeadV1BufLen += 8
-
-	inodeHeadV1BufLen += (8 + len(creationTimeAsRFC3339String)) + (8 + len(modificationTimeAsRFC3339String)) + (8 + len(accessTimeAsRFC3339String)) + (8 + len(attrChangeTimeAsRFC3339String))
-
-	inodeHeadV1BufLen += 2 + 8 + 8
+	inodeHeadV1BufLen += 8 + 8 + 8 + 8 + 8 + 2 + 8 + 8
 
 	inodeHeadV1BufLen += 8
 
@@ -333,7 +320,7 @@ func (inodeHeadV1 *InodeHeadV1Struct) marshalInodeHeadV1() (inodeHeadV1Buf []byt
 
 	inodeHeadV1BufLen += 8 + 8 + 8
 
-	inodeHeadV1BufLen += 8 + len(inodeHeadV1.SymlinkTarget)
+	inodeHeadV1BufLen += 8 + len(inodeHeadV1.SymLinkTarget)
 
 	inodeHeadV1BufLen += 8 + (len(inodeHeadV1.Layout) * (8 + 8 + 8))
 
@@ -343,133 +330,133 @@ func (inodeHeadV1 *InodeHeadV1Struct) marshalInodeHeadV1() (inodeHeadV1Buf []byt
 
 	curPos = 0
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.InodeNumber)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.InodeNumber)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint8ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.InodeType)
+	curPos, err = putLEUint8ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.InodeType)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, uint64(len(inodeHeadV1.LinkTable)))
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, uint64(len(inodeHeadV1.LinkTable)))
 	if nil != err {
 		return
 	}
 
 	for linkTableIndex = 0; linkTableIndex < len(inodeHeadV1.LinkTable); linkTableIndex++ {
-		curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.LinkTable[linkTableIndex].ParentDirInodeNumber)
+		curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.LinkTable[linkTableIndex].ParentDirInodeNumber)
 		if nil != err {
 			return
 		}
 
-		curPos, err = lePutStringToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.LinkTable[linkTableIndex].ParentDirEntryName)
+		curPos, err = putLEStringToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.LinkTable[linkTableIndex].ParentDirEntryName)
 		if nil != err {
 			return
 		}
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Size)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Size)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutStringToBuf(inodeHeadV1Buf, curPos, creationTimeAsRFC3339String)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, uint64(inodeHeadV1.CreationTime.UnixNano()))
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutStringToBuf(inodeHeadV1Buf, curPos, modificationTimeAsRFC3339String)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, uint64(inodeHeadV1.ModificationTime.UnixNano()))
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutStringToBuf(inodeHeadV1Buf, curPos, accessTimeAsRFC3339String)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, uint64(inodeHeadV1.AccessTime.UnixNano()))
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutStringToBuf(inodeHeadV1Buf, curPos, attrChangeTimeAsRFC3339String)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, uint64(inodeHeadV1.AttrChangeTime.UnixNano()))
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint16ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Mode)
+	curPos, err = putLEUint16ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Mode)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.UserID)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.UserID)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.GroupID)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.GroupID)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, uint64(len(inodeHeadV1.StreamTable)))
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, uint64(len(inodeHeadV1.StreamTable)))
 	if nil != err {
 		return
 	}
 
 	for streamTableIndex = 0; streamTableIndex < len(inodeHeadV1.StreamTable); streamTableIndex++ {
-		curPos, err = lePutStringToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.StreamTable[streamTableIndex].Name)
+		curPos, err = putLEStringToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.StreamTable[streamTableIndex].Name)
 		if nil != err {
 			return
 		}
 
-		curPos, err = lePutByteSliceToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.StreamTable[streamTableIndex].Value)
+		curPos, err = putLEByteSliceToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.StreamTable[streamTableIndex].Value)
 		if nil != err {
 			return
 		}
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.PayloadObjectNumber)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.PayloadObjectNumber)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.PayloadObjectOffset)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.PayloadObjectOffset)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.PayloadObjectLength)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.PayloadObjectLength)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutStringToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.SymlinkTarget)
+	curPos, err = putLEStringToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.SymLinkTarget)
 	if nil != err {
 		return
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, uint64(len(inodeHeadV1.Layout)))
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, uint64(len(inodeHeadV1.Layout)))
 	if nil != err {
 		return
 	}
 
 	for layoutIndex = 0; layoutIndex < len(inodeHeadV1.Layout); layoutIndex++ {
-		curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Layout[layoutIndex].ObjectNumber)
+		curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Layout[layoutIndex].ObjectNumber)
 		if nil != err {
 			return
 		}
 
-		curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Layout[layoutIndex].ObjectSize)
+		curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Layout[layoutIndex].ObjectSize)
 		if nil != err {
 			return
 		}
 
-		curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Layout[layoutIndex].BytesReferenced)
+		curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Layout[layoutIndex].BytesReferenced)
 		if nil != err {
 			return
 		}
 	}
 
-	curPos, err = lePutUint64ToBuf(inodeHeadV1Buf, curPos, InodeHeadVersionV1)
+	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, InodeHeadVersionV1)
 	if nil != err {
 		return
 	}
@@ -480,35 +467,35 @@ func (inodeHeadV1 *InodeHeadV1Struct) marshalInodeHeadV1() (inodeHeadV1Buf []byt
 
 func unmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct, err error) {
 	var (
-		accessTimeAsRFC3339String       string
-		attrChangeTimeAsRFC3339String   string
-		creationTimeAsRFC3339String     string
-		curPos                          int
-		inodeHeadVersion                uint64
-		layoutIndex                     uint64
-		layoutLen                       uint64
-		linkTableIndex                  uint64
-		linkTableLen                    uint64
-		modificationTimeAsRFC3339String string
-		streamTableIndex                uint64
-		streamTableLen                  uint64
+		accessTimeAsUnixTimeInNs       uint64
+		attrChangeTimeAsUnixTimeInNs   uint64
+		creationTimeAsUnixTimeInNs     uint64
+		curPos                         int
+		inodeHeadVersion               uint64
+		layoutIndex                    uint64
+		layoutLen                      uint64
+		linkTableIndex                 uint64
+		linkTableLen                   uint64
+		modificationTimeAsUnixTimeInNs uint64
+		streamTableIndex               uint64
+		streamTableLen                 uint64
 	)
 
 	inodeHeadV1 = &InodeHeadV1Struct{}
 
 	curPos = 0
 
-	inodeHeadV1.InodeNumber, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadV1.InodeNumber, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	inodeHeadV1.InodeType, curPos, err = leGetUint8FromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadV1.InodeType, curPos, err = getLEUint8FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	linkTableLen, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+	linkTableLen, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
@@ -516,78 +503,66 @@ func unmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct
 	inodeHeadV1.LinkTable = make([]InodeLinkTableEntryStruct, linkTableLen)
 
 	for linkTableIndex = 0; linkTableIndex < linkTableLen; linkTableIndex++ {
-		inodeHeadV1.LinkTable[linkTableIndex].ParentDirInodeNumber, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+		inodeHeadV1.LinkTable[linkTableIndex].ParentDirInodeNumber, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 		if nil != err {
 			return
 		}
 
-		inodeHeadV1.LinkTable[linkTableIndex].ParentDirEntryName, curPos, err = leGetStringFromBuf(inodeHeadV1Buf, curPos)
+		inodeHeadV1.LinkTable[linkTableIndex].ParentDirEntryName, curPos, err = getLEStringFromBuf(inodeHeadV1Buf, curPos)
 		if nil != err {
 			return
 		}
 	}
 
-	inodeHeadV1.Size, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadV1.Size, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	creationTimeAsRFC3339String, curPos, err = leGetStringFromBuf(inodeHeadV1Buf, curPos)
+	creationTimeAsUnixTimeInNs, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	inodeHeadV1.CreationTime, err = time.Parse(time.RFC3339, creationTimeAsRFC3339String)
+	inodeHeadV1.CreationTime = time.Unix(0, int64(creationTimeAsUnixTimeInNs))
+
+	modificationTimeAsUnixTimeInNs, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	modificationTimeAsRFC3339String, curPos, err = leGetStringFromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadV1.ModificationTime = time.Unix(0, int64(modificationTimeAsUnixTimeInNs))
+
+	accessTimeAsUnixTimeInNs, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	inodeHeadV1.ModificationTime, err = time.Parse(time.RFC3339, modificationTimeAsRFC3339String)
+	inodeHeadV1.AccessTime = time.Unix(0, int64(accessTimeAsUnixTimeInNs))
+
+	attrChangeTimeAsUnixTimeInNs, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	accessTimeAsRFC3339String, curPos, err = leGetStringFromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadV1.AttrChangeTime = time.Unix(0, int64(attrChangeTimeAsUnixTimeInNs))
+
+	inodeHeadV1.Mode, curPos, err = getLEUint16FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	inodeHeadV1.AccessTime, err = time.Parse(time.RFC3339, accessTimeAsRFC3339String)
+	inodeHeadV1.UserID, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	attrChangeTimeAsRFC3339String, curPos, err = leGetStringFromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadV1.GroupID, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	inodeHeadV1.AttrChangeTime, err = time.Parse(time.RFC3339, attrChangeTimeAsRFC3339String)
-	if nil != err {
-		return
-	}
-
-	inodeHeadV1.Mode, curPos, err = leGetUint16FromBuf(inodeHeadV1Buf, curPos)
-	if nil != err {
-		return
-	}
-
-	inodeHeadV1.UserID, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
-	if nil != err {
-		return
-	}
-
-	inodeHeadV1.GroupID, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
-	if nil != err {
-		return
-	}
-
-	streamTableLen, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+	streamTableLen, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
@@ -595,38 +570,38 @@ func unmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct
 	inodeHeadV1.StreamTable = make([]InodeStreamTableEntryStruct, streamTableLen)
 
 	for streamTableIndex = 0; streamTableIndex < streamTableLen; streamTableIndex++ {
-		inodeHeadV1.StreamTable[streamTableIndex].Name, curPos, err = leGetStringFromBuf(inodeHeadV1Buf, curPos)
+		inodeHeadV1.StreamTable[streamTableIndex].Name, curPos, err = getLEStringFromBuf(inodeHeadV1Buf, curPos)
 		if nil != err {
 			return
 		}
 
-		inodeHeadV1.StreamTable[streamTableIndex].Value, curPos, err = leGetByteSliceFromBuf(inodeHeadV1Buf, curPos)
+		inodeHeadV1.StreamTable[streamTableIndex].Value, curPos, err = getLEByteSliceFromBuf(inodeHeadV1Buf, curPos)
 		if nil != err {
 			return
 		}
 	}
 
-	inodeHeadV1.PayloadObjectNumber, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadV1.PayloadObjectNumber, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	inodeHeadV1.PayloadObjectOffset, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadV1.PayloadObjectOffset, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	inodeHeadV1.PayloadObjectLength, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadV1.PayloadObjectLength, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	inodeHeadV1.SymlinkTarget, curPos, err = leGetStringFromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadV1.SymLinkTarget, curPos, err = getLEStringFromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
 
-	layoutLen, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+	layoutLen, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
@@ -634,23 +609,23 @@ func unmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct
 	inodeHeadV1.Layout = make([]InodeHeadLayoutEntryV1Struct, layoutLen)
 
 	for layoutIndex = 0; layoutIndex < layoutLen; layoutIndex++ {
-		inodeHeadV1.Layout[layoutIndex].ObjectNumber, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+		inodeHeadV1.Layout[layoutIndex].ObjectNumber, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 		if nil != err {
 			return
 		}
 
-		inodeHeadV1.Layout[layoutIndex].ObjectSize, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+		inodeHeadV1.Layout[layoutIndex].ObjectSize, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 		if nil != err {
 			return
 		}
 
-		inodeHeadV1.Layout[layoutIndex].BytesReferenced, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+		inodeHeadV1.Layout[layoutIndex].BytesReferenced, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 		if nil != err {
 			return
 		}
 	}
 
-	inodeHeadVersion, curPos, err = leGetUint64FromBuf(inodeHeadV1Buf, curPos)
+	inodeHeadVersion, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 	if nil != err {
 		return
 	}
@@ -668,7 +643,129 @@ func unmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct
 	return
 }
 
-func leGetUint8FromBuf(buf []byte, curPos int) (u8 uint8, nextPos int, err error) {
+func (directoryEntryValueV1 *DirectoryEntryValueV1Struct) marshalDirectoryEntryValueV1() (directoryEntryValueV1Buf []byte, err error) {
+	var (
+		curPos int
+	)
+
+	directoryEntryValueV1Buf = make([]byte, 8+1)
+
+	curPos = 0
+
+	curPos, err = putLEUint64ToBuf(directoryEntryValueV1Buf, curPos, directoryEntryValueV1.InodeNumber)
+	if nil != err {
+		return
+	}
+
+	curPos, err = putLEUint8ToBuf(directoryEntryValueV1Buf, curPos, directoryEntryValueV1.InodeType)
+	if nil != err {
+		return
+	}
+
+	err = nil
+	return
+}
+
+func unmarshalDirectoryEntryValueV1(directoryEntryValueV1Buf []byte) (directoryEntryValueV1 *DirectoryEntryValueV1Struct, err error) {
+	var (
+		curPos int
+	)
+
+	curPos = 0
+
+	directoryEntryValueV1 = &DirectoryEntryValueV1Struct{}
+
+	directoryEntryValueV1.InodeNumber, curPos, err = getLEUint64FromBuf(directoryEntryValueV1Buf, curPos)
+	if nil != err {
+		return
+	}
+
+	directoryEntryValueV1.InodeType, curPos, err = getLEUint8FromBuf(directoryEntryValueV1Buf, curPos)
+	if nil != err {
+		return
+	}
+
+	if curPos != len(directoryEntryValueV1Buf) {
+		err = fmt.Errorf("Incorrect size for directoryEntryValueV1Buf")
+		return
+	}
+
+	err = nil
+	return
+}
+
+func (extentMapEntryValueV1 *ExtentMapEntryValueV1Struct) marshalExtentMapEntryValueV1() (extentMapEntryValueV1Buf []byte, err error) {
+	var (
+		curPos int
+	)
+
+	extentMapEntryValueV1Buf = make([]byte, 8+8+8+8)
+
+	curPos = 0
+
+	curPos, err = putLEUint64ToBuf(extentMapEntryValueV1Buf, curPos, extentMapEntryValueV1.FileOffset)
+	if nil != err {
+		return
+	}
+
+	curPos, err = putLEUint64ToBuf(extentMapEntryValueV1Buf, curPos, extentMapEntryValueV1.Length)
+	if nil != err {
+		return
+	}
+
+	curPos, err = putLEUint64ToBuf(extentMapEntryValueV1Buf, curPos, extentMapEntryValueV1.ObjectNumber)
+	if nil != err {
+		return
+	}
+
+	curPos, err = putLEUint64ToBuf(extentMapEntryValueV1Buf, curPos, extentMapEntryValueV1.ObjectOffset)
+	if nil != err {
+		return
+	}
+
+	err = nil
+	return
+}
+
+func unmarshalExtentMapEntryValueV1(extentMapEntryValueV1Buf []byte) (extentMapEntryValueV1 *ExtentMapEntryValueV1Struct, err error) {
+	var (
+		curPos int
+	)
+
+	curPos = 0
+
+	extentMapEntryValueV1 = &ExtentMapEntryValueV1Struct{}
+
+	extentMapEntryValueV1.FileOffset, curPos, err = getLEUint64FromBuf(extentMapEntryValueV1Buf, curPos)
+	if nil != err {
+		return
+	}
+
+	extentMapEntryValueV1.Length, curPos, err = getLEUint64FromBuf(extentMapEntryValueV1Buf, curPos)
+	if nil != err {
+		return
+	}
+
+	extentMapEntryValueV1.ObjectNumber, curPos, err = getLEUint64FromBuf(extentMapEntryValueV1Buf, curPos)
+	if nil != err {
+		return
+	}
+
+	extentMapEntryValueV1.ObjectOffset, curPos, err = getLEUint64FromBuf(extentMapEntryValueV1Buf, curPos)
+	if nil != err {
+		return
+	}
+
+	if curPos != len(extentMapEntryValueV1Buf) {
+		err = fmt.Errorf("Incorrect size for extentMapEntryValueV1Buf")
+		return
+	}
+
+	err = nil
+	return
+}
+
+func getLEUint8FromBuf(buf []byte, curPos int) (u8 uint8, nextPos int, err error) {
 	nextPos = curPos + 1
 
 	if nextPos > len(buf) {
@@ -682,7 +779,7 @@ func leGetUint8FromBuf(buf []byte, curPos int) (u8 uint8, nextPos int, err error
 	return
 }
 
-func lePutUint8ToBuf(buf []byte, curPos int, u8 uint8) (nextPos int, err error) {
+func putLEUint8ToBuf(buf []byte, curPos int, u8 uint8) (nextPos int, err error) {
 	nextPos = curPos + 1
 
 	if nextPos > len(buf) {
@@ -696,7 +793,7 @@ func lePutUint8ToBuf(buf []byte, curPos int, u8 uint8) (nextPos int, err error) 
 	return
 }
 
-func leGetUint16FromBuf(buf []byte, curPos int) (u16 uint16, nextPos int, err error) {
+func getLEUint16FromBuf(buf []byte, curPos int) (u16 uint16, nextPos int, err error) {
 	nextPos = curPos + 2
 
 	if nextPos > len(buf) {
@@ -709,7 +806,7 @@ func leGetUint16FromBuf(buf []byte, curPos int) (u16 uint16, nextPos int, err er
 	return
 }
 
-func lePutUint16ToBuf(buf []byte, curPos int, u16 uint16) (nextPos int, err error) {
+func putLEUint16ToBuf(buf []byte, curPos int, u16 uint16) (nextPos int, err error) {
 	nextPos = curPos + 2
 
 	if nextPos > len(buf) {
@@ -724,7 +821,7 @@ func lePutUint16ToBuf(buf []byte, curPos int, u16 uint16) (nextPos int, err erro
 	return
 }
 
-func leGetUint32FromBuf(buf []byte, curPos int) (u32 uint32, nextPos int, err error) {
+func getLEUint32FromBuf(buf []byte, curPos int) (u32 uint32, nextPos int, err error) {
 	nextPos = curPos + 4
 
 	if nextPos > len(buf) {
@@ -738,7 +835,7 @@ func leGetUint32FromBuf(buf []byte, curPos int) (u32 uint32, nextPos int, err er
 	return
 }
 
-func lePutUint32ToBuf(buf []byte, curPos int, u32 uint32) (nextPos int, err error) {
+func putLEUint32ToBuf(buf []byte, curPos int, u32 uint32) (nextPos int, err error) {
 	nextPos = curPos + 4
 
 	if nextPos > len(buf) {
@@ -755,7 +852,7 @@ func lePutUint32ToBuf(buf []byte, curPos int, u32 uint32) (nextPos int, err erro
 	return
 }
 
-func leGetUint64FromBuf(buf []byte, curPos int) (u64 uint64, nextPos int, err error) {
+func getLEUint64FromBuf(buf []byte, curPos int) (u64 uint64, nextPos int, err error) {
 	nextPos = curPos + 8
 
 	if nextPos > len(buf) {
@@ -763,13 +860,13 @@ func leGetUint64FromBuf(buf []byte, curPos int) (u64 uint64, nextPos int, err er
 		return
 	}
 
-	u64 = uint64(buf[curPos]) + (uint64(buf[curPos+1]) << 8) + (uint64(buf[curPos+2]) << 16) + (uint64(buf[curPos+3]) << 24) + (uint64(buf[curPos+2]) << 32) + (uint64(buf[curPos+3]) << 40) + (uint64(buf[curPos+2]) << 48) + (uint64(buf[curPos+3]) << 56)
+	u64 = uint64(buf[curPos]) + (uint64(buf[curPos+1]) << 8) + (uint64(buf[curPos+2]) << 16) + (uint64(buf[curPos+3]) << 24) + (uint64(buf[curPos+4]) << 32) + (uint64(buf[curPos+5]) << 40) + (uint64(buf[curPos+6]) << 48) + (uint64(buf[curPos+7]) << 56)
 	err = nil
 
 	return
 }
 
-func lePutUint64ToBuf(buf []byte, curPos int, u64 uint64) (nextPos int, err error) {
+func putLEUint64ToBuf(buf []byte, curPos int, u64 uint64) (nextPos int, err error) {
 	nextPos = curPos + 8
 
 	if nextPos > len(buf) {
@@ -790,12 +887,12 @@ func lePutUint64ToBuf(buf []byte, curPos int, u64 uint64) (nextPos int, err erro
 	return
 }
 
-func leGetStringFromBuf(buf []byte, curPos int) (str string, nextPos int, err error) {
+func getLEStringFromBuf(buf []byte, curPos int) (str string, nextPos int, err error) {
 	var (
 		strLen uint64
 	)
 
-	strLen, nextPos, err = leGetUint64FromBuf(buf, curPos)
+	strLen, nextPos, err = getLEUint64FromBuf(buf, curPos)
 	if nil != err {
 		return
 	}
@@ -812,8 +909,8 @@ func leGetStringFromBuf(buf []byte, curPos int) (str string, nextPos int, err er
 	return
 }
 
-func lePutStringToBuf(buf []byte, curPos int, str string) (nextPos int, err error) {
-	nextPos, err = lePutUint64ToBuf(buf, curPos, uint64(len(str)))
+func putLEStringToBuf(buf []byte, curPos int, str string) (nextPos int, err error) {
+	nextPos, err = putLEUint64ToBuf(buf, curPos, uint64(len(str)))
 	if nil != err {
 		return
 	}
@@ -832,12 +929,12 @@ func lePutStringToBuf(buf []byte, curPos int, str string) (nextPos int, err erro
 	return
 }
 
-func leGetByteSliceFromBuf(buf []byte, curPos int) (byteSlice []byte, nextPos int, err error) {
+func getLEByteSliceFromBuf(buf []byte, curPos int) (byteSlice []byte, nextPos int, err error) {
 	var (
 		byteSliceLen uint64
 	)
 
-	byteSliceLen, nextPos, err = leGetUint64FromBuf(buf, curPos)
+	byteSliceLen, nextPos, err = getLEUint64FromBuf(buf, curPos)
 	if nil != err {
 		return
 	}
@@ -855,8 +952,8 @@ func leGetByteSliceFromBuf(buf []byte, curPos int) (byteSlice []byte, nextPos in
 	return
 }
 
-func lePutByteSliceToBuf(buf []byte, curPos int, byteSlice []byte) (nextPos int, err error) {
-	nextPos, err = lePutUint64ToBuf(buf, curPos, uint64(len(byteSlice)))
+func putLEByteSliceToBuf(buf []byte, curPos int, byteSlice []byte) (nextPos int, err error) {
+	nextPos, err = putLEUint64ToBuf(buf, curPos, uint64(len(byteSlice)))
 	if nil != err {
 		return
 	}

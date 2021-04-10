@@ -258,6 +258,7 @@ func serveHTTPPost(responseWriter http.ResponseWriter, request *http.Request, re
 
 type serveHTTPPostOfVolumeRequestBodyAsJSONStruct struct {
 	StorageURL string
+	AuthToken  string
 }
 
 func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
@@ -284,7 +285,7 @@ func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Req
 			return
 		}
 
-		err = postVolume(pathSplit[2], requestBodyAsJSON.StorageURL)
+		err = postVolume(pathSplit[2], requestBodyAsJSON.StorageURL, requestBodyAsJSON.AuthToken)
 		if nil == err {
 			responseWriter.WriteHeader(http.StatusCreated)
 		} else {
