@@ -326,6 +326,7 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 		rootDirDirectory          sortedmap.BPlusTree
 		rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct
 		rootDirInodeHeadV1        *ilayout.InodeHeadV1Struct
+		rootDirInodeHeadV1Buf     []byte
 		rootDirInodeObjectLength  uint64
 		rootDirInodeObjectNumber  uint64
 		rootDirInodeObjectOffset  uint64
@@ -421,12 +422,22 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 		},
 	}
 
+	rootDirInodeHeadV1Buf, err = rootDirInodeHeadV1.MarshalInodeHeadV1()
+	if nil != err {
+		return
+	}
+
 	fmt.Printf("UNDO: reservedToNonce == %v\n", reservedToNonce)
 	fmt.Printf("UNDO: rootDirInodeHeadV1:\n%s\n", utils.JSONify(rootDirInodeHeadV1, true))
 
+	rootDirDirectoryCallbacks.buf = append(rootDirDirectoryCallbacks.buf, rootDirInodeHeadV1Buf...)
+
+	err = swiftObjectPut(storageURL, authToken, rootDirInodeObjectNumber, rootDirDirectoryCallbacks.buf)
+	if nil != err {
+		return
+	}
+
 	// TODO:
-	//   1 - Append marshaled rootDirInodeHeadV1 to rootDirDirectoryCallbacks.buf
-	//   2 - PUT rootDirDirectoryCallbacks.buf contents to <storageURL>/<rootDirInodeObjectNumber>
 	//   3 - Create InodeTable to include RootDirInode
 	//   4 - Flush InodeTable to inodeTableCallbacks.buf
 	//   5 - Craft SuperBlock to reference flushed InodeTable

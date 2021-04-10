@@ -30,10 +30,11 @@
 //  LeaseInterruptInterval:              250ms
 //  LeaseInterruptLimit:                 20
 //
-//  SwiftRetryDelay:                     1s
-//  SwiftRetryExpBackoff:                1.5
-//  SwiftRetryLimit:                     11
+//  SwiftRetryDelay:                     100ms
+//  SwiftRetryExpBackoff:                2
+//  SwiftRetryLimit:                     4
 //
+//  SwiftTimeout:                        10m
 //  SwiftConnectionPoolSize:             128
 //
 //  InodeTableCacheEvictLowLimit:        10000

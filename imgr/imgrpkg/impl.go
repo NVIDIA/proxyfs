@@ -13,6 +13,11 @@ func start(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	err = startSwiftClient()
+	if nil != err {
+		return
+	}
+
 	err = startVolumeManagement()
 	if nil != err {
 		return
@@ -43,6 +48,11 @@ func stop() (err error) {
 	}
 
 	err = stopVolumeManagement()
+	if nil != err {
+		return
+	}
+
+	err = stopSwiftClient()
 	if nil != err {
 		return
 	}
