@@ -49,7 +49,8 @@ type configStruct struct {
 	InodeTableCacheEvictLowLimit  uint64
 	InodeTableCacheEvictHighLimit uint64
 
-	InodeTableMaxInodesPerBPlusTreePage uint64
+	InodeTableMaxInodesPerBPlusTreePage  uint64
+	RootDirMaxDirEntriesPerBPlusTreePage uint64
 
 	LogFilePath  string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole bool
@@ -301,6 +302,10 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		logFatal(err)
 	}
+	globals.config.RootDirMaxDirEntriesPerBPlusTreePage, err = confMap.FetchOptionValueUint64("IMGR", "RootDirMaxDirEntriesPerBPlusTreePage")
+	if nil != err {
+		logFatal(err)
+	}
 
 	globals.config.LogFilePath, err = confMap.FetchOptionValueString("IMGR", "LogFilePath")
 	if nil != err {
@@ -363,6 +368,7 @@ func uninitializeGlobals() (err error) {
 	globals.config.InodeTableCacheEvictHighLimit = 0
 
 	globals.config.InodeTableMaxInodesPerBPlusTreePage = 0
+	globals.config.RootDirMaxDirEntriesPerBPlusTreePage = 0
 
 	globals.config.LogFilePath = ""
 	globals.config.LogToConsole = false

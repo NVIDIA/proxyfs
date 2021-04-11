@@ -7,6 +7,7 @@ import (
 	"container/list"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/NVIDIA/proxyfs/ilayout"
@@ -211,42 +212,84 @@ func getVolumeListAsJSON() (volumeList []byte) {
 	return
 }
 
-type rootDirDirectoryCallbacksStruct struct {
+type postVolumeRootDirDirectoryCallbacksStruct struct {
+	io.ReadSeeker
+	sortedmap.BPlusTreeCallbacks
 	objectNumber uint64
-	buf          []byte
+	body         []byte
+	readPos      int64
 }
 
-func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) Read(p []byte) (n int, err error) {
+	n = copy(p, postVolumeRootDirDirectoryCallbacks.body[postVolumeRootDirDirectoryCallbacks.readPos:])
+	postVolumeRootDirDirectoryCallbacks.readPos += int64(n)
+
+	if postVolumeRootDirDirectoryCallbacks.readPos == int64(len(postVolumeRootDirDirectoryCallbacks.body)) {
+		err = io.EOF
+	} else {
+		err = nil
+	}
+	return
+}
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) Seek(offset int64, whence int) (int64, error) {
+	var (
+		newOffset int64
+	)
+
+	switch whence {
+	case io.SeekStart:
+		newOffset = offset
+	case io.SeekCurrent:
+		newOffset = postVolumeRootDirDirectoryCallbacks.readPos + offset
+	case io.SeekEnd:
+		newOffset = postVolumeRootDirDirectoryCallbacks.readPos + offset
+	default:
+		return 0, fmt.Errorf("invalid whence (%d)", whence)
+	}
+
+	if newOffset < 0 {
+		return 0, fmt.Errorf("resultant offset cannot be negative")
+	}
+	if newOffset > int64(len(postVolumeRootDirDirectoryCallbacks.body)) {
+		return 0, fmt.Errorf("resultant offset cannot be beyond len(body)")
+	}
+
+	postVolumeRootDirDirectoryCallbacks.readPos = newOffset
+
+	return newOffset, nil
+}
+
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
 	err = fmt.Errorf("Not implemented")
 	return
 }
 
-func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
 	err = fmt.Errorf("Not implemented")
 	return
 }
 
-func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
 	err = fmt.Errorf("Not implemented")
 	return
 }
 
-func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
-	objectNumber = rootDirDirectoryCallbacks.objectNumber
-	objectOffset = uint64(len(rootDirDirectoryCallbacks.buf))
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+	objectNumber = postVolumeRootDirDirectoryCallbacks.objectNumber
+	objectOffset = uint64(len(postVolumeRootDirDirectoryCallbacks.body))
 
-	rootDirDirectoryCallbacks.buf = append(rootDirDirectoryCallbacks.buf, nodeByteSlice...)
+	postVolumeRootDirDirectoryCallbacks.body = append(postVolumeRootDirDirectoryCallbacks.body, nodeByteSlice...)
 
 	err = nil
 	return
 }
 
-func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
 	err = nil
 	return
 }
 
-func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
 	var (
 		keyAsString string
 		nextPos     int
@@ -255,7 +298,7 @@ func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) PackKey(key so
 
 	keyAsString, ok = key.(string)
 	if !ok {
-		err = fmt.Errorf("*rootDirDirectoryCallbacksStruct).PackKey(key:%v) called with non-string", key)
+		err = fmt.Errorf("(*postVolumeRootDirDirectoryCallbacksStruct).PackKey(key:%v) called with non-string", key)
 		return
 	}
 
@@ -267,7 +310,7 @@ func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) PackKey(key so
 	}
 
 	if len(packedKey) != nextPos {
-		err = fmt.Errorf("*rootDirDirectoryCallbacksStruct).PackKey(key:%s) logic error", keyAsString)
+		err = fmt.Errorf("(*postVolumeRootDirDirectoryCallbacksStruct).PackKey(key:%s) logic error", keyAsString)
 		return
 	}
 
@@ -275,12 +318,12 @@ func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) PackKey(key so
 	return
 }
 
-func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
 	err = fmt.Errorf("Not implemented")
 	return
 }
 
-func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
 	var (
 		nextPos                      int
 		ok                           bool
@@ -289,7 +332,7 @@ func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) PackValue(valu
 
 	valueAsDirectoryEntryValueV1, ok = value.(ilayout.DirectoryEntryValueV1Struct)
 	if !ok {
-		err = fmt.Errorf("*rootDirDirectoryCallbacksStruct).PackValue(value:%v) called with non-DirectoryEntryValueV1Struct", value)
+		err = fmt.Errorf("(*postVolumeRootDirDirectoryCallbacksStruct).PackValue(value:%v) called with non-DirectoryEntryValueV1Struct", value)
 		return
 	}
 
@@ -306,7 +349,7 @@ func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) PackValue(valu
 	}
 
 	if len(packedValue) != nextPos {
-		err = fmt.Errorf("*rootDirDirectoryCallbacksStruct).PackKey(key:%#v) logic error", valueAsDirectoryEntryValueV1)
+		err = fmt.Errorf("(*postVolumeRootDirDirectoryCallbacksStruct).PackKey(key:%#v) logic error", valueAsDirectoryEntryValueV1)
 		return
 	}
 
@@ -314,24 +357,163 @@ func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) PackValue(valu
 	return
 }
 
-func (rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
+func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
+	err = fmt.Errorf("Not implemented")
+	return
+}
+
+type postVolumeSuperBlockInodeTableCallbacksStruct struct {
+	io.ReadSeeker
+	sortedmap.BPlusTreeCallbacks
+	objectNumber uint64
+	body         []byte
+	readPos      int64
+}
+
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) Read(p []byte) (n int, err error) {
+	n = copy(p, postVolumeSuperBlockInodeTableCallbacks.body[postVolumeSuperBlockInodeTableCallbacks.readPos:])
+	postVolumeSuperBlockInodeTableCallbacks.readPos += int64(n)
+
+	if postVolumeSuperBlockInodeTableCallbacks.readPos == int64(len(postVolumeSuperBlockInodeTableCallbacks.body)) {
+		err = io.EOF
+	} else {
+		err = nil
+	}
+	return
+}
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) Seek(offset int64, whence int) (int64, error) {
+	var (
+		newOffset int64
+	)
+
+	switch whence {
+	case io.SeekStart:
+		newOffset = offset
+	case io.SeekCurrent:
+		newOffset = postVolumeSuperBlockInodeTableCallbacks.readPos + offset
+	case io.SeekEnd:
+		newOffset = postVolumeSuperBlockInodeTableCallbacks.readPos + offset
+	default:
+		return 0, fmt.Errorf("invalid whence (%d)", whence)
+	}
+
+	if newOffset < 0 {
+		return 0, fmt.Errorf("resultant offset cannot be negative")
+	}
+	if newOffset > int64(len(postVolumeSuperBlockInodeTableCallbacks.body)) {
+		return 0, fmt.Errorf("resultant offset cannot be beyond len(body)")
+	}
+
+	postVolumeSuperBlockInodeTableCallbacks.readPos = newOffset
+
+	return newOffset, nil
+}
+
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+	err = fmt.Errorf("Not implemented")
+	return
+}
+
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+	err = fmt.Errorf("Not implemented")
+	return
+}
+
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	err = fmt.Errorf("Not implemented")
+	return
+}
+
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+	objectNumber = postVolumeSuperBlockInodeTableCallbacks.objectNumber
+	objectOffset = uint64(len(postVolumeSuperBlockInodeTableCallbacks.body))
+
+	postVolumeSuperBlockInodeTableCallbacks.body = append(postVolumeSuperBlockInodeTableCallbacks.body, nodeByteSlice...)
+
+	err = nil
+	return
+}
+
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+	err = nil
+	return
+}
+
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
+	var (
+		keyAsUint64 uint64
+		nextPos     int
+		ok          bool
+	)
+
+	keyAsUint64, ok = key.(uint64)
+	if !ok {
+		err = fmt.Errorf("(*postVolumeSuperBlockInodeTableCallbacksStruct).PackKey(key:%v) called with non-uint64", key)
+		return
+	}
+
+	packedKey = make([]byte, 8)
+
+	nextPos, err = ilayout.PutLEUint64ToBuf(packedKey, 0, keyAsUint64)
+	if nil != err {
+		return
+	}
+
+	if len(packedKey) != nextPos {
+		err = fmt.Errorf("(*postVolumeSuperBlockInodeTableCallbacksStruct).PackKey(key:%016X) logic error", keyAsUint64)
+		return
+	}
+
+	err = nil
+	return
+}
+
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
+	err = fmt.Errorf("Not implemented")
+	return
+}
+
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
+	var (
+		ok                            bool
+		valueAsInodeTableEntryValueV1 ilayout.InodeTableEntryValueV1Struct
+	)
+
+	valueAsInodeTableEntryValueV1, ok = value.(ilayout.InodeTableEntryValueV1Struct)
+	if !ok {
+		err = fmt.Errorf("(*postVolumeSuperBlockInodeTableCallbacksStruct).PackValue(value:%v) called with non-InodeTableEntryValueV1Struct", value)
+		return
+	}
+
+	packedValue, err = valueAsInodeTableEntryValueV1.MarshalInodeTableEntryValueV1()
+
+	return
+}
+
+func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
 	err = fmt.Errorf("Not implemented")
 	return
 }
 
 func postVolume(name string, storageURL string, authToken string) (err error) {
 	var (
-		ok                        bool
-		reservedToNonce           uint64
-		rootDirDirectory          sortedmap.BPlusTree
-		rootDirDirectoryCallbacks *rootDirDirectoryCallbacksStruct
-		rootDirInodeHeadV1        *ilayout.InodeHeadV1Struct
-		rootDirInodeHeadV1Buf     []byte
-		rootDirInodeObjectLength  uint64
-		rootDirInodeObjectNumber  uint64
-		rootDirInodeObjectOffset  uint64
-		superBlockObjectNumber    uint64
-		timeNow                   = time.Now()
+		ok                                      bool
+		inodeTable                              sortedmap.BPlusTree
+		postVolumeRootDirDirectoryCallbacks     *postVolumeRootDirDirectoryCallbacksStruct
+		postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct
+		reservedToNonce                         uint64
+		rootDirDirectory                        sortedmap.BPlusTree
+		rootDirInodeHeadV1                      *ilayout.InodeHeadV1Struct
+		rootDirInodeHeadV1Buf                   []byte
+		rootDirInodeObjectLength                uint64
+		rootDirInodeObjectNumber                uint64
+		rootDirInodeObjectOffset                uint64
+		superBlockObjectLength                  uint64
+		superBlockObjectNumber                  uint64
+		superBlockObjectOffset                  uint64
+		superBlockV1                            *ilayout.SuperBlockV1Struct
+		superBlockV1Buf                         []byte
+		timeNow                                 = time.Now()
 	)
 
 	// Reserve some Nonce values
@@ -343,15 +525,16 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 
 	// Construct RootDirInode
 
-	rootDirDirectoryCallbacks = &rootDirDirectoryCallbacksStruct{
+	postVolumeRootDirDirectoryCallbacks = &postVolumeRootDirDirectoryCallbacksStruct{
 		objectNumber: rootDirInodeObjectNumber,
-		buf:          make([]byte, 0),
+		body:         make([]byte, 0),
+		readPos:      0,
 	}
 
 	rootDirDirectory = sortedmap.NewBPlusTree(
-		globals.config.InodeTableMaxInodesPerBPlusTreePage,
+		globals.config.RootDirMaxDirEntriesPerBPlusTreePage,
 		sortedmap.CompareString,
-		rootDirDirectoryCallbacks,
+		postVolumeRootDirDirectoryCallbacks,
 		nil)
 
 	ok, err = rootDirDirectory.Put(
@@ -416,8 +599,8 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 		Layout: []ilayout.InodeHeadLayoutEntryV1Struct{
 			{
 				ObjectNumber:    rootDirInodeObjectNumber,
-				ObjectSize:      uint64(len(rootDirDirectoryCallbacks.buf)),
-				BytesReferenced: uint64(len(rootDirDirectoryCallbacks.buf)),
+				ObjectSize:      uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
+				BytesReferenced: uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
 			},
 		},
 	}
@@ -430,19 +613,72 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 	fmt.Printf("UNDO: reservedToNonce == %v\n", reservedToNonce)
 	fmt.Printf("UNDO: rootDirInodeHeadV1:\n%s\n", utils.JSONify(rootDirInodeHeadV1, true))
 
-	rootDirDirectoryCallbacks.buf = append(rootDirDirectoryCallbacks.buf, rootDirInodeHeadV1Buf...)
+	postVolumeRootDirDirectoryCallbacks.body = append(postVolumeRootDirDirectoryCallbacks.body, rootDirInodeHeadV1Buf...)
 
-	err = swiftObjectPut(storageURL, authToken, rootDirInodeObjectNumber, rootDirDirectoryCallbacks.buf)
+	err = swiftObjectPut(storageURL, authToken, rootDirInodeObjectNumber, postVolumeRootDirDirectoryCallbacks)
+	if nil != err {
+		return
+	}
+
+	// Construct SuperBlock
+
+	postVolumeSuperBlockInodeTableCallbacks = &postVolumeSuperBlockInodeTableCallbacksStruct{
+		objectNumber: superBlockObjectNumber,
+		body:         make([]byte, 0),
+		readPos:      0,
+	}
+
+	inodeTable = sortedmap.NewBPlusTree(
+		globals.config.InodeTableMaxInodesPerBPlusTreePage,
+		sortedmap.CompareUint64,
+		postVolumeSuperBlockInodeTableCallbacks,
+		nil)
+
+	ok, err = inodeTable.Put(
+		ilayout.RootDirInodeNumber,
+		ilayout.InodeTableEntryValueV1Struct{
+			InodeHeadObjectNumber: ilayout.RootDirInodeNumber,
+			InodeHeadLength:       uint64(len(rootDirInodeHeadV1Buf)), // TODO
+		})
+	if nil != err {
+		return
+	}
+	if !ok {
+		err = fmt.Errorf("inodeTable.Put(RootDirInodeNumber,) returned !ok")
+		return
+	}
+
+	_, superBlockObjectOffset, superBlockObjectLength, err = inodeTable.Flush(false)
+	if nil != err {
+		return
+	}
+
+	fmt.Printf("UNDO: superBlockObjectOffset: %v\n", superBlockObjectOffset)
+	fmt.Printf("UNDO: superBlockObjectLength: %d\n", superBlockObjectLength)
+
+	superBlockV1 = &ilayout.SuperBlockV1Struct{
+		InodeTableRootObjectNumber: superBlockObjectNumber,
+		InodeTableRootObjectOffset: superBlockObjectOffset,
+		InodeTableRootObjectLength: superBlockObjectLength,
+		InodeTableLayout:           []ilayout.InodeTableLayoutEntryV1Struct{}, // TODO
+		InodeObjectCount:           1,
+		InodeObjectSize:            uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
+		InodeBytesReferenced:       0, // TODO
+	}
+
+	superBlockV1Buf, err = superBlockV1.MarshalSuperBlockV1()
+	if nil != err {
+		return
+	}
+
+	postVolumeSuperBlockInodeTableCallbacks.body = append(postVolumeSuperBlockInodeTableCallbacks.body, superBlockV1Buf...)
+
+	err = swiftObjectPut(storageURL, authToken, superBlockObjectNumber, postVolumeSuperBlockInodeTableCallbacks)
 	if nil != err {
 		return
 	}
 
 	// TODO:
-	//   3 - Create InodeTable to include RootDirInode
-	//   4 - Flush InodeTable to inodeTableCallbacks.buf
-	//   5 - Craft SuperBlock to reference flushed InodeTable
-	//   6 - Append marshaled SuperBlock to inodeTableCallbacks.buf
-	//   7 - PUT inodeTableCallbacks.buf contents to <storageURL>/<superBlockObjectNumber>
 	//   8 - Craft CheckPointHeader to reference superBlockObjectNumber & reservedToNonce
 	//   9 - PUT X-Checkpoint-Header to <storageURL>
 

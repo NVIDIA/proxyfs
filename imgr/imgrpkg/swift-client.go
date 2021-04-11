@@ -4,8 +4,8 @@
 package imgrpkg
 
 import (
-	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -308,7 +308,7 @@ func swiftObjectGetTail(storageURL string, authToken string, objectNumber uint64
 	return
 }
 
-func swiftObjectPut(storageURL string, authToken string, objectNumber uint64, buf []byte) (err error) {
+func swiftObjectPut(storageURL string, authToken string, objectNumber uint64, body io.ReadSeeker) (err error) {
 	var (
 		httpRequest         *http.Request
 		httpResponse        *http.Response
@@ -329,7 +329,9 @@ func swiftObjectPut(storageURL string, authToken string, objectNumber uint64, bu
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		httpRequest, err = http.NewRequest("PUT", objectURL, bytes.NewReader(buf))
+		body.Seek(0, io.SeekStart)
+
+		httpRequest, err = http.NewRequest("PUT", objectURL, body)
 		if nil != err {
 			return
 		}
