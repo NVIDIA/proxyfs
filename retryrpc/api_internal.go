@@ -34,6 +34,13 @@ const (
 
 type requestID uint64
 
+// methodStats tracks per method stats
+type methodStats struct {
+	Method        string                      // Name of method
+	Count         bucketstats.Total           // Number of times this method called
+	TimeOfRPCCall bucketstats.BucketLog2Round // Length of time of this method of RPC
+}
+
 // Useful stats for the clientInfo instance
 type statsInfo struct {
 	TrimAddCompleted       bucketstats.Total           // Number added to completed list
@@ -47,6 +54,7 @@ type statsInfo struct {
 	RPCattempted           bucketstats.Total           // Number of RPCs attempted - may be completed or in process
 	RPCcompleted           bucketstats.Total           // Number of RPCs which completed - incremented after call returns
 	RPCretried             bucketstats.Total           // Number of RPCs which were just pulled from completed list
+	PerMethodStats         map[string]*methodStats     // Per method bucketstats
 }
 
 // Server side data structure storing per client information

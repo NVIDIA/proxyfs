@@ -153,9 +153,15 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// be unmarshaled again to retrieve the parameters specific to
 		// the RPC.
 		startRPC := time.Now()
-		ior := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq, &ci.stats)
+		ior, usecElapsed := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq, &ci.stats)
 		ci.stats.CallWrapRPCUsec.Add(uint64(time.Since(startRPC).Microseconds()))
 		ci.stats.RPCcompleted.Add(1)
+
+		// TODO - update per method stats !!!
+		fmt.Printf("Stats - method: %v usecElapsed: %v\n", jReq.Method, usecElapsed)
+		s := ci.stats.PerMethodStats[jReq.Method]
+		s.Count.Add(1)
+		s.TimeOfRPCCall.Add(usecElapsed)
 
 		// We had to drop the lock before calling the RPC since it
 		// could block.
@@ -283,6 +289,16 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		c := &clientInfo{cCtx: cCtx, myUniqueID: newUniqueID}
 		c.completedRequest = make(map[requestID]*completedEntry)
 		c.completedRequestLRU = list.New()
+		c.stats.PerMethodStats = make(map[string]*methodStats)
+
+		// Initialize clientInfo bucketstats
+		for k, v := range server.svrMap {
+			fmt.Printf("k: %v v: %v\n", k, v)
+			// TODO - how bucketstat.Register() ???
+			s := &methodStats{Method: k}
+			c.stats.PerMethodStats[k] = s
+		}
+
 		server.perClientInfo[newUniqueID] = c
 		server.Unlock()
 		ci = c
@@ -356,7 +372,7 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 }
 
 // callRPCAndMarshal calls the RPC and returns results to requestor
-func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *jsonRequest, si *statsInfo) (ior *ioReply) {
+func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *jsonRequest, si *statsInfo) (ior *ioReply, usecElapsed uint64) {
 	var (
 		err          error
 		returnValues []reflect.Value
@@ -365,7 +381,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 	)
 
 	// Setup the reply structure with common fields
-	reply := &ioReply{}
+	ior = &ioReply{}
 	rid := jReq.RequestID
 	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: rid}
 
@@ -393,11 +409,13 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 
 		// Call the method
 		function := ma.methodPtr.Func
+		t := time.Now()
 		if ma.passClientID {
 			returnValues = function.Call([]reflect.Value{server.receiver, cid, req, myReply})
 		} else {
 			returnValues = function.Call([]reflect.Value{server.receiver, req, myReply})
 		}
+		usecElapsed = uint64(time.Since(t).Microseconds())
 
 		// The return value for the method is an error.
 		errInter := returnValues[0].Interface()
@@ -418,12 +436,12 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 	}
 
 	// Convert response into JSON for return trip
-	reply.JResult, err = json.Marshal(jReply)
+	ior.JResult, err = json.Marshal(jReply)
 	if err != nil {
 		logger.PanicfWithError(err, "Unable to marshal jReply: %+v", jReply)
 	}
 
-	return reply
+	return
 }
 
 func (server *Server) returnResults(ior *ioReply, cCtx *connCtx) {

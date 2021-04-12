@@ -20,8 +20,8 @@ var (
 func (server *Server) buildSvrMap(typ reflect.Type) {
 	for m := 0; m < typ.NumMethod(); m++ {
 		method := typ.Method(m)
-		mtype := method.Type
-		mname := method.Name
+		mType := method.Type
+		mName := method.Name
 
 		// Just like net/rpc, we have these requirements on methods:
 		// - must be exported
@@ -34,27 +34,27 @@ func (server *Server) buildSvrMap(typ reflect.Type) {
 
 		// Will have 3 arguments if pass request/reply
 		// Will have 4 arguments if expect clientID and request/reply
-		if (mtype.NumIn() != 3) && (mtype.NumIn() != 4) {
+		if (mType.NumIn() != 3) && (mType.NumIn() != 4) {
 			continue
 		}
 
-		if mtype.NumOut() != 1 {
+		if mType.NumOut() != 1 {
 			continue
 		}
 
-		returnType := mtype.Out(0)
+		returnType := mType.Out(0)
 		if returnType != typeOfError {
 			continue
 		}
 
 		// We save off the request type so we know how to unmarshal the request.
 		// We use the reply type to allocate the reply struct and marshal the response.
-		if mtype.NumIn() == 3 {
-			argType := mtype.In(1)
+		if mType.NumIn() == 3 {
+			argType := mType.In(1)
 			if !isExportedOrBuiltinType(argType) {
 				continue
 			}
-			replyType := mtype.In(2)
+			replyType := mType.In(2)
 			if replyType.Kind() != reflect.Ptr {
 				continue
 			}
@@ -64,20 +64,20 @@ func (server *Server) buildSvrMap(typ reflect.Type) {
 			}
 
 			ma := methodArgs{methodPtr: &method, passClientID: false, request: argType, reply: replyType}
-			server.svrMap[mname] = &ma
-		} else if mtype.NumIn() == 4 {
-			argType := mtype.In(2)
+			server.svrMap[mName] = &ma
+		} else if mType.NumIn() == 4 {
+			argType := mType.In(2)
 			if !isExportedOrBuiltinType(argType) {
 				continue
 			}
 
 			// Check if first argument is uint64 for clientID
-			clientIDType := mtype.In(1)
+			clientIDType := mType.In(1)
 			if clientIDType.Kind() != reflect.Uint64 {
 				continue
 			}
 
-			replyType := mtype.In(3)
+			replyType := mType.In(3)
 			if replyType.Kind() != reflect.Ptr {
 				continue
 			}
@@ -87,7 +87,7 @@ func (server *Server) buildSvrMap(typ reflect.Type) {
 			}
 
 			ma := methodArgs{methodPtr: &method, passClientID: true, request: argType, reply: replyType}
-			server.svrMap[mname] = &ma
+			server.svrMap[mName] = &ma
 		}
 	}
 }
