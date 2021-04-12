@@ -60,6 +60,13 @@ import (
 	"time"
 )
 
+// CheckPointHeaderName specifies the name of the CheckPointHeader applied
+// to the Container to identify the SuperBlock.
+//
+const (
+	CheckPointHeaderName = "X-Container-Meta-Check-Point"
+)
+
 // CheckpointHeaderVersionV* specifies the format of the CheckPointHeader.
 // The CheckPointHeaderVersion must always be fetched by scanning the entire
 // CheckPointHeader using a %016X format specifier. This value will then be

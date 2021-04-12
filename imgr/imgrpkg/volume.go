@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/NVIDIA/proxyfs/ilayout"
-	"github.com/NVIDIA/proxyfs/utils"
 	"github.com/NVIDIA/sortedmap"
 )
 
@@ -495,10 +494,12 @@ func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCal
 	return
 }
 
-func postVolume(name string, storageURL string, authToken string) (err error) {
+func postVolume(storageURL string, authToken string) (err error) {
 	var (
-		ok                                      bool
+		checkPointHeaderV1                      *ilayout.CheckPointHeaderV1Struct
+		checkPointHeaderV1String                string
 		inodeTable                              sortedmap.BPlusTree
+		ok                                      bool
 		postVolumeRootDirDirectoryCallbacks     *postVolumeRootDirDirectoryCallbacksStruct
 		postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct
 		reservedToNonce                         uint64
@@ -523,7 +524,7 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 
 	reservedToNonce = superBlockObjectNumber
 
-	// Construct RootDirInode
+	// Create RootDirInode
 
 	postVolumeRootDirDirectoryCallbacks = &postVolumeRootDirDirectoryCallbacksStruct{
 		objectNumber: rootDirInodeObjectNumber,
@@ -610,9 +611,6 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 		return
 	}
 
-	fmt.Printf("UNDO: reservedToNonce == %v\n", reservedToNonce)
-	fmt.Printf("UNDO: rootDirInodeHeadV1:\n%s\n", utils.JSONify(rootDirInodeHeadV1, true))
-
 	postVolumeRootDirDirectoryCallbacks.body = append(postVolumeRootDirDirectoryCallbacks.body, rootDirInodeHeadV1Buf...)
 
 	err = swiftObjectPut(storageURL, authToken, rootDirInodeObjectNumber, postVolumeRootDirDirectoryCallbacks)
@@ -620,7 +618,7 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 		return
 	}
 
-	// Construct SuperBlock
+	// Create SuperBlock
 
 	postVolumeSuperBlockInodeTableCallbacks = &postVolumeSuperBlockInodeTableCallbacksStruct{
 		objectNumber: superBlockObjectNumber,
@@ -638,7 +636,7 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 		ilayout.RootDirInodeNumber,
 		ilayout.InodeTableEntryValueV1Struct{
 			InodeHeadObjectNumber: ilayout.RootDirInodeNumber,
-			InodeHeadLength:       uint64(len(rootDirInodeHeadV1Buf)), // TODO
+			InodeHeadLength:       uint64(len(rootDirInodeHeadV1Buf)),
 		})
 	if nil != err {
 		return
@@ -653,17 +651,20 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 		return
 	}
 
-	fmt.Printf("UNDO: superBlockObjectOffset: %v\n", superBlockObjectOffset)
-	fmt.Printf("UNDO: superBlockObjectLength: %d\n", superBlockObjectLength)
-
 	superBlockV1 = &ilayout.SuperBlockV1Struct{
 		InodeTableRootObjectNumber: superBlockObjectNumber,
 		InodeTableRootObjectOffset: superBlockObjectOffset,
 		InodeTableRootObjectLength: superBlockObjectLength,
-		InodeTableLayout:           []ilayout.InodeTableLayoutEntryV1Struct{}, // TODO
-		InodeObjectCount:           1,
-		InodeObjectSize:            uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
-		InodeBytesReferenced:       0, // TODO
+		InodeTableLayout: []ilayout.InodeTableLayoutEntryV1Struct{
+			{
+				ObjectNumber:    superBlockObjectNumber,
+				ObjectSize:      uint64(len(postVolumeSuperBlockInodeTableCallbacks.body)),
+				BytesReferenced: uint64(len(postVolumeSuperBlockInodeTableCallbacks.body)),
+			},
+		},
+		InodeObjectCount:     1,
+		InodeObjectSize:      uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
+		InodeBytesReferenced: uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
 	}
 
 	superBlockV1Buf, err = superBlockV1.MarshalSuperBlockV1()
@@ -678,14 +679,26 @@ func postVolume(name string, storageURL string, authToken string) (err error) {
 		return
 	}
 
-	// TODO:
-	//   8 - Craft CheckPointHeader to reference superBlockObjectNumber & reservedToNonce
-	//   9 - PUT X-Checkpoint-Header to <storageURL>
+	// Create CheckPointHeader
 
-	// Finally, start serving the volume (and pass thru that err return)
+	checkPointHeaderV1 = &ilayout.CheckPointHeaderV1Struct{
+		Version:                ilayout.CheckPointHeaderVersionV1,
+		SuperBlockObjectNumber: superBlockObjectNumber,
+		SuperBlockLength:       uint64(len(superBlockV1Buf)),
+		ReservedToNonce:        reservedToNonce,
+	}
 
-	err = putVolume(name, storageURL)
+	checkPointHeaderV1String, err = checkPointHeaderV1.MarshalCheckPointHeaderV1()
+	if nil != err {
+		return
+	}
 
+	err = swiftContainerHeaderSet(storageURL, authToken, ilayout.CheckPointHeaderName, checkPointHeaderV1String)
+	if nil != err {
+		return
+	}
+
+	err = nil
 	return
 }
 

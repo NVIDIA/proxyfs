@@ -85,7 +85,7 @@
 // This will return a JSON document containing only the specified
 // <volumeName> details (assuming it is currently being served).
 //
-//  POST /volume/<volumeName>
+//  POST /volume
 //  Content-Type: application/json
 //
 //  {
@@ -93,9 +93,7 @@
 //     "AuthToken" : "AUTH_tk0123456789abcde0123456789abcdef0"
 //  }
 //
-// This will cause the specified <volumeName> to be served. The StorageURL
-// specified in the JSON document content identifies the Container to first
-// format and then serve.
+// This will cause the specified StorageURL to be formatted.
 //
 //  PUT /volume/<volumeName>
 //  Content-Type: application/json
