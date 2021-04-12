@@ -39,9 +39,6 @@ type statsInfo struct {
 	TrimAddCompleted       bucketstats.Total           // Number added to completed list
 	TrimRmCompleted        bucketstats.Total           // Number removed from completed list
 	CallWrapRPCUsec        bucketstats.BucketLog2Round // Tracks time to unmarshal request before actual RPC
-	PreRPCUnmarshalUsec    bucketstats.BucketLog2Round // Tracks time to unmarshal request before actual RPC
-	RPCOnlyUsec            bucketstats.BucketLog2Round // Tracks RPC only with no marshaling
-	PostRPCMarshalUsec     bucketstats.BucketLog2Round // Tracks time between RPC returns and marshal the response
 	ReplySize              bucketstats.BucketLog2Round // Tracks completed RPC reply size
 	longestRPC             time.Duration               // Time of longest RPC
 	longestRPCMethod       string                      // Method of longest RPC
@@ -166,10 +163,11 @@ type replyCtx struct {
 
 // reqCtx exists on the client and tracks a request passed to Send()
 type reqCtx struct {
-	ioreq    *ioRequest // Wrapped request passed to Send()
-	rpcReply interface{}
-	answer   chan replyCtx
-	genNum   uint64 // Generation number of socket when request sent
+	ioreq     *ioRequest // Wrapped request passed to Send()
+	rpcReply  interface{}
+	answer    chan replyCtx
+	genNum    uint64    // Generation number of socket when request sent
+	startTime time.Time // Time Send() called sendToServer()
 }
 
 // jsonRequest is used to marshal an RPC request in/out of JSON
