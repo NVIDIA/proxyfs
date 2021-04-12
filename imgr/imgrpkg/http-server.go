@@ -249,8 +249,8 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 func serveHTTPPost(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
 	switch {
-	case strings.HasPrefix(requestPath, "/volume"):
-		serveHTTPPostOfVolume(responseWriter, request, requestPath, requestBody)
+	case "/volume" == requestPath:
+		serveHTTPPostOfVolume(responseWriter, request, requestBody)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
@@ -261,38 +261,30 @@ type serveHTTPPostOfVolumeRequestBodyAsJSONStruct struct {
 	AuthToken  string
 }
 
-func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
+func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestBody []byte) {
 	var (
 		err               error
-		pathSplit         []string
 		requestBodyAsJSON serveHTTPPostOfVolumeRequestBodyAsJSONStruct
 		startTime         time.Time
 	)
 
 	startTime = time.Now()
 
-	pathSplit = strings.Split(requestPath, "/")
+	defer func() {
+		globals.stats.PostVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
 
-	switch len(pathSplit) {
-	case 3:
-		defer func() {
-			globals.stats.PostVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
-		}()
-
-		err = json.Unmarshal(requestBody, &requestBodyAsJSON)
-		if nil != err {
-			responseWriter.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		err = postVolume(pathSplit[2], requestBodyAsJSON.StorageURL, requestBodyAsJSON.AuthToken)
-		if nil == err {
-			responseWriter.WriteHeader(http.StatusCreated)
-		} else {
-			responseWriter.WriteHeader(http.StatusConflict)
-		}
-	default:
+	err = json.Unmarshal(requestBody, &requestBodyAsJSON)
+	if nil != err {
 		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err = postVolume(requestBodyAsJSON.StorageURL, requestBodyAsJSON.AuthToken)
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusCreated)
+	} else {
+		responseWriter.WriteHeader(http.StatusConflict)
 	}
 }
 
