@@ -37,6 +37,7 @@ gopkgsubdirs = \
 	version \
 	emswift/emswiftpkg \
 	icert/icertpkg \
+	iclient/iclientpkg \
 	imgr/imgrpkg \
 	iswift/iswiftpkg
 
@@ -48,6 +49,7 @@ gobinsubdirs = \
 	emswift \
 	fsworkout \
 	icert \
+	iclient \
 	imgr \
 	inodeworkout \
 	iswift \
