@@ -178,6 +178,67 @@ func swiftContainerHeaderSet(storageURL string, authToken string, headerName str
 	return
 }
 
+func swiftObjectDelete(storageURL string, authToken string, objectNumber uint64) (err error) {
+	var (
+		httpRequest         *http.Request
+		httpResponse        *http.Response
+		nextSwiftRetryDelay time.Duration
+		numSwiftRetries     uint32
+		objectURL           string
+		startTime           time.Time
+	)
+
+	startTime = time.Now()
+
+	defer func() {
+		globals.stats.SwiftObjectDeleteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	objectURL = fmt.Sprintf("%s/%016X", storageURL, objectNumber)
+
+	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
+
+	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
+		httpRequest, err = http.NewRequest("DELETE", objectURL, nil)
+		if nil != err {
+			return
+		}
+
+		if "" != authToken {
+			httpRequest.Header["X-Auth-Token"] = []string{authToken}
+		}
+
+		httpResponse, err = globals.httpClient.Do(httpRequest)
+		if nil != err {
+			err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v\n", storageURL, err)
+			return
+		}
+
+		_, err = ioutil.ReadAll(httpResponse.Body)
+		if nil != err {
+			err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v\n", err)
+			return
+		}
+		err = httpResponse.Body.Close()
+		if nil != err {
+			err = fmt.Errorf("httpResponse.Body.Close() failed: %v\n", err)
+			return
+		}
+
+		if (200 <= httpResponse.StatusCode) && (299 >= httpResponse.StatusCode) {
+			err = nil
+			return
+		}
+
+		time.Sleep(nextSwiftRetryDelay)
+
+		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
+	}
+
+	err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+	return
+}
+
 func swiftObjectGetRange(storageURL string, authToken string, objectNumber uint64, objectOffset uint64, objectLength uint64) (buf []byte, err error) {
 	var (
 		httpRequest         *http.Request

@@ -15,6 +15,7 @@ import (
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/proxyfs/retryrpc"
 	"github.com/NVIDIA/proxyfs/utils"
 )
@@ -110,6 +111,7 @@ type statsStruct struct {
 
 	SwiftContainerHeaderGetUsecs bucketstats.BucketLog2Round
 	SwiftContainerHeaderSetUsecs bucketstats.BucketLog2Round
+	SwiftObjectDeleteUsecs       bucketstats.BucketLog2Round
 	SwiftObjectGetRangeUsecs     bucketstats.BucketLog2Round
 	SwiftObjectGetTailUsecs      bucketstats.BucketLog2Round
 	SwiftObjectPutUsecs          bucketstats.BucketLog2Round
@@ -126,14 +128,17 @@ type mountStruct struct {
 }
 
 type volumeStruct struct {
-	sync.RWMutex                             // must globals.{R|}Lock() before volume.{R|}Lock()
-	name             string                  //
-	storageURL       string                  //
-	mountMap         map[string]*mountStruct // key == mountStruct.mountID
-	healthyMountList *list.List              // LRU of mountStruct's with .authTokenValid == true
-	expiredMountList *list.List              // LRU of mountStruct's with .authTokenValid == false
-	deleting         bool                    //
-	inodeTable       sortedmap.BPlusTree     //
+	sync.RWMutex                                             // must globals.{R|}Lock() before volume.{R|}Lock()
+	name                   string                            //
+	storageURL             string                            //
+	mountMap               map[string]*mountStruct           // key == mountStruct.mountID
+	healthyMountList       *list.List                        // LRU of mountStruct's with .authTokenValid == true
+	expiredMountList       *list.List                        // LRU of mountStruct's with .authTokenValid == false
+	deleting               bool                              //
+	checkPointHeader       *ilayout.CheckPointHeaderV1Struct // == nil if not currently mounted and/or checkpointing
+	superBlock             *ilayout.SuperBlockV1Struct       // == nil if not currently mounted and/or checkpointing
+	inodeTable             sortedmap.BPlusTree               // == nil if not currently mounted and/or checkpointing
+	pendingObjectDeleteSet map[uint64]struct{}               // key == objectNumber
 }
 
 type globalsStruct struct {

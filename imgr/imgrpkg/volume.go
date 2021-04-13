@@ -141,6 +141,9 @@ func getVolumeAsJSON(volumeName string) (volume []byte, err error) {
 		logFatalf("[IMGR]globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
 	}
 
+	volumeAsStruct.RLock()
+	globals.RUnlock()
+
 	volumeToReturn = &volumeGETStruct{
 		Name:          volumeAsStruct.name,
 		StorageURL:    volumeAsStruct.storageURL,
@@ -148,7 +151,7 @@ func getVolumeAsJSON(volumeName string) (volume []byte, err error) {
 		ExpiredMounts: uint64(volumeAsStruct.expiredMountList.Len()),
 	}
 
-	globals.RUnlock()
+	volumeAsStruct.RUnlock()
 
 	volume, err = json.Marshal(volumeToReturn)
 	if nil != err {
@@ -193,12 +196,16 @@ func getVolumeListAsJSON() (volumeList []byte) {
 			logFatalf("[IMGR]globals.volumeMap[%d] was not a *volumeStruct", volumeListIndex)
 		}
 
+		volumeAsStruct.RLock()
+
 		volumeListToReturn[volumeListIndex] = &volumeGETStruct{
 			Name:          volumeAsStruct.name,
 			StorageURL:    volumeAsStruct.storageURL,
 			HealthyMounts: uint64(volumeAsStruct.healthyMountList.Len()),
 			ExpiredMounts: uint64(volumeAsStruct.expiredMountList.Len()),
 		}
+
+		volumeAsStruct.RUnlock()
 	}
 
 	globals.RUnlock()
@@ -708,17 +715,20 @@ func putVolume(name string, storageURL string) (err error) {
 		volume *volumeStruct
 	)
 
-	globals.Lock()
-
 	volume = &volumeStruct{
-		name:             name,
-		storageURL:       storageURL,
-		mountMap:         make(map[string]*mountStruct),
-		healthyMountList: list.New(),
-		expiredMountList: list.New(),
-		deleting:         false,
-		inodeTable:       nil,
+		name:                   name,
+		storageURL:             storageURL,
+		mountMap:               make(map[string]*mountStruct),
+		healthyMountList:       list.New(),
+		expiredMountList:       list.New(),
+		deleting:               false,
+		checkPointHeader:       nil,
+		superBlock:             nil,
+		inodeTable:             nil,
+		pendingObjectDeleteSet: make(map[uint64]struct{}),
 	}
+
+	globals.Lock()
 
 	ok, err = globals.volumeMap.Put(volume.name, volume)
 	if nil != err {
