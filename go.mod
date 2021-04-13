@@ -19,7 +19,7 @@ require (
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/ory/go-acc v0.2.6 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
-	github.com/pelletier/go-toml v1.8.1 // indirect
+	github.com/pelletier/go-toml v1.9.0 // indirect
 	github.com/sirupsen/logrus v1.2.0
 	github.com/spf13/afero v1.6.0 // indirect
 	github.com/spf13/cobra v1.1.3 // indirect
@@ -28,7 +28,7 @@ require (
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.10.1-0.20190619185213-853ac185800f
 	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7
-	golang.org/x/sys v0.0.0-20210326220804-49726bf1d181
-	golang.org/x/text v0.3.5 // indirect
+	golang.org/x/sys v0.0.0-20210412220455-f1c623a9e750
+	golang.org/x/text v0.3.6 // indirect
 	gopkg.in/ini.v1 v1.62.0 // indirect
 )
