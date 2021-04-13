@@ -18,9 +18,15 @@ import (
 	"github.com/NVIDIA/proxyfs/bucketstats"
 )
 
+const (
+	startHTTPServerUpCheckDelay      = 100 * time.Millisecond
+	startHTTPServerUpCheckMaxRetries = 10
+)
+
 func startHTTPServer() (err error) {
 	var (
-		ipAddrTCPPort string
+		ipAddrTCPPort                 string
+		startHTTPServerUpCheckRetries uint32
 	)
 
 	ipAddrTCPPort = net.JoinHostPort(globals.config.PrivateIPAddr, strconv.Itoa(int(globals.config.HTTPServerPort)))
@@ -45,7 +51,16 @@ func startHTTPServer() (err error) {
 		globals.httpServerWG.Done()
 	}()
 
-	err = nil
+	for startHTTPServerUpCheckRetries = 0; startHTTPServerUpCheckRetries < startHTTPServerUpCheckMaxRetries; startHTTPServerUpCheckRetries++ {
+		_, err = http.Get("http://" + ipAddrTCPPort + "/config")
+		if nil == err {
+			return
+		}
+
+		time.Sleep(startHTTPServerUpCheckDelay)
+	}
+
+	err = fmt.Errorf("startHTTPServerUpCheckMaxRetries (%v) exceeded", startHTTPServerUpCheckMaxRetries)
 	return
 }
 
