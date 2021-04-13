@@ -153,15 +153,9 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// be unmarshaled again to retrieve the parameters specific to
 		// the RPC.
 		startRPC := time.Now()
-		ior, usecElapsed := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq, &ci.stats)
+		ior := server.callRPCAndFormatReply(buf, ci, &jReq)
 		ci.stats.CallWrapRPCUsec.Add(uint64(time.Since(startRPC).Microseconds()))
 		ci.stats.RPCcompleted.Add(1)
-
-		// TODO - update per method stats !!!
-		fmt.Printf("Stats - method: %v usecElapsed: %v\n", jReq.Method, usecElapsed)
-		s := ci.stats.PerMethodStats[jReq.Method]
-		s.Count.Add(1)
-		s.TimeOfRPCCall.Add(usecElapsed)
 
 		// We had to drop the lock before calling the RPC since it
 		// could block.
@@ -274,11 +268,11 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 			ci.Unlock()
 		}
 	} else {
+
+		// First time we have seen this client
 		var (
 			localIOR ioReply
 		)
-
-		// First time we have seen this client
 
 		// Create a unique client ID and return to client
 		server.Lock()
@@ -286,18 +280,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		newUniqueID := server.clientIDNonce
 
 		// Setup new client data structures
-		c := &clientInfo{cCtx: cCtx, myUniqueID: newUniqueID}
-		c.completedRequest = make(map[requestID]*completedEntry)
-		c.completedRequestLRU = list.New()
-		c.stats.PerMethodStats = make(map[string]*methodStats)
-
-		// Initialize clientInfo bucketstats
-		for k, v := range server.svrMap {
-			fmt.Printf("k: %v v: %v\n", k, v)
-			// TODO - how bucketstat.Register() ???
-			s := &methodStats{Method: k}
-			c.stats.PerMethodStats[k] = s
-		}
+		c := initClientInfo(cCtx, newUniqueID, server)
 
 		server.perClientInfo[newUniqueID] = c
 		server.Unlock()
@@ -372,7 +355,7 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 }
 
 // callRPCAndMarshal calls the RPC and returns results to requestor
-func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *jsonRequest, si *statsInfo) (ior *ioReply, usecElapsed uint64) {
+func (server *Server) callRPCAndFormatReply(buf []byte, ci *clientInfo, jReq *jsonRequest) (ior *ioReply) {
 	var (
 		err          error
 		returnValues []reflect.Value
@@ -401,7 +384,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 			return
 		}
 		req := reflect.ValueOf(dummyReq)
-		cid := reflect.ValueOf(clientID)
+		cid := reflect.ValueOf(ci.myUniqueID)
 
 		// Create the reply structure
 		typOfReply := ma.reply.Elem()
@@ -415,7 +398,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 		} else {
 			returnValues = function.Call([]reflect.Value{server.receiver, req, myReply})
 		}
-		usecElapsed = uint64(time.Since(t).Microseconds())
+		ci.setMethodStats(jReq.Method, uint64(time.Since(t).Microseconds()))
 
 		// The return value for the method is an error.
 		errInter := returnValues[0].Interface()
@@ -516,6 +499,7 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 			ci.cCtx.Lock()
 			if ci.isEmpty() && ci.cCtx.serviceClientExited {
 				s10 := strconv.FormatInt(int64(ci.myUniqueID), 10)
+				ci.unregsiterMethodStats(server)
 				bucketstats.UnRegister("proxyfs.retryrpc", s10)
 				delete(server.perClientInfo, key)
 				logger.Infof("Trim - DELETE inactive clientInfo with ID: %v", ci.myUniqueID)

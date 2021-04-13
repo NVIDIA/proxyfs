@@ -225,6 +225,7 @@ func (server *Server) Close() {
 		ci.Lock()
 		s10 := strconv.FormatInt(int64(ci.myUniqueID), 10)
 		bucketstats.UnRegister("proxyfs.retryrpc", s10)
+		ci.unregsiterMethodStats(server)
 		ci.Unlock()
 
 	}
