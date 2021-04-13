@@ -6,7 +6,9 @@ package retryrpc
 import (
 	"crypto/tls"
 	"crypto/x509/pkix"
+	"fmt"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
@@ -377,4 +379,69 @@ func testStatsAndBucketstats(t *testing.T) {
 	// Unregister clients from bucketstats
 	bucketstats.UnRegister("proxyfs.retryrpc", myUniqueClient1)
 	bucketstats.UnRegister("proxyfs.retryrpc", myUniqueClient2)
+}
+
+// Unit test to show per method bucketstats
+// bucketstats does not automatically register stats in a map, etc.
+type methodStatsDemo struct {
+	Method        string                      // Name of method
+	Count         bucketstats.Total           // Number of times this method called
+	TimeOfRPCCall bucketstats.BucketLog2Round // Length of time of this method of RPC
+}
+
+type methodClientStats struct {
+	AddCompleted   bucketstats.Total           // Number added to completed list
+	PerMethodStats map[string]*methodStatsDemo // Example of per method stats
+}
+
+func mAndN(name string, method string) string {
+	return name + "-" + method
+}
+
+func TestMethodStatsAndBucketstats(t *testing.T) {
+	var (
+		myClient1       methodClientStats
+		myUniqueClient1 = "1111111"
+		method          = "method"
+	)
+
+	// Register from bucketstats from pfsagent #1
+	bucketstats.Register("proxyfs.retryrpc", myUniqueClient1, &myClient1)
+
+	// Register per method stats
+	myClient1.PerMethodStats = make(map[string]*methodStatsDemo)
+	for i := 0; i < 10; i++ {
+		msd := &methodStatsDemo{}
+		ms := method + strconv.Itoa(i)
+		myClient1.PerMethodStats[ms] = msd
+		bucketstats.Register("proxyfs.retryrpc", mAndN(myUniqueClient1, ms), msd)
+	}
+
+	// Completed list stats
+	myClient1.AddCompleted.Add(1)
+
+	// Per method stats
+	start := time.Now()
+	time.Sleep(10 * time.Millisecond)
+	for i := 0; i < 10; i++ {
+		ms := method + strconv.Itoa(i)
+		msd, _ := myClient1.PerMethodStats[ms]
+		msd.Count.Add(uint64(i))
+		msd.TimeOfRPCCall.Add(uint64(time.Since(start).Microseconds()))
+		myClient1.PerMethodStats[ms] = msd
+	}
+
+	// Dump stats
+	fmt.Printf("pfsagent #1: %s\n", bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", myUniqueClient1))
+	for i := 0; i < 10; i++ {
+		ms := method + strconv.Itoa(i)
+		fmt.Printf("method: %s\n", bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", mAndN(myUniqueClient1, ms)))
+	}
+
+	// Unregister clients from bucketstats
+	bucketstats.UnRegister("proxyfs.retryrpc", myUniqueClient1)
+	for i := 0; i < 10; i++ {
+		ms := method + strconv.Itoa(i)
+		bucketstats.UnRegister("proxyfs.retryrpc", mAndN(myUniqueClient1, ms))
+	}
 }
