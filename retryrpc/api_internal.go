@@ -30,6 +30,7 @@ const (
 
 const (
 	currentRetryVersion = 1
+	bucketStatsPkgName  = "proxyfs.retryrpc"
 )
 
 type requestID uint64

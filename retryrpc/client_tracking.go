@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/logger"
 )
 
 // This file contains functions in the server which
@@ -31,11 +32,14 @@ func initClientInfo(cCtx *connCtx, newUniqueID uint64, server *Server) (ci *clie
 	ci.completedRequestLRU = list.New()
 	ci.stats.PerMethodStats = make(map[string]*methodStats)
 
+	idAsStr := strconv.FormatInt(int64(newUniqueID), 10)
+	bucketstats.Register(bucketStatsPkgName, idAsStr, &ci.stats)
+
 	// Register per method stats
-	for m, _ := range server.svrMap {
+	for m := range server.svrMap {
 		ms := &methodStats{Method: m}
 		ci.stats.PerMethodStats[m] = ms
-		bucketstats.Register("proxyfs.retryrpc", methodAndName(strconv.FormatInt(int64(ci.myUniqueID), 10), m), ms)
+		bucketstats.Register(bucketStatsPkgName, methodAndName(strconv.FormatInt(int64(ci.myUniqueID), 10), m), ms)
 	}
 	return
 }
@@ -49,7 +53,15 @@ func (ci *clientInfo) setMethodStats(method string, deltaTime uint64) {
 
 // Unregister per method bucketstats for this client
 func (ci *clientInfo) unregsiterMethodStats(server *Server) {
-	for m, _ := range server.svrMap {
-		bucketstats.UnRegister("proxyfs.retryrpc", methodAndName(strconv.FormatInt(int64(ci.myUniqueID), 10), m))
+	idAsStr := strconv.FormatInt(int64(ci.myUniqueID), 10)
+
+	logger.Infof("bucketstats for myUniqueID: '%v' -  %s\n", ci.myUniqueID,
+		bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", "*"))
+	for m := range server.svrMap {
+		logger.Infof("bucketstats per method for myUniqueID: '%v' -  %s\n", ci.myUniqueID,
+			bucketstats.SprintStats(bucketstats.StatFormatParsable1, bucketStatsPkgName,
+				methodAndName(strconv.FormatInt(int64(ci.myUniqueID), 10), m)))
+		bucketstats.UnRegister(bucketStatsPkgName, methodAndName(strconv.FormatInt(int64(ci.myUniqueID), 10), m))
 	}
+	bucketstats.UnRegister(bucketStatsPkgName, idAsStr)
 }

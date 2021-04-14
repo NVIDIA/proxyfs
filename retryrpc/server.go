@@ -11,11 +11,9 @@ import (
 	"net"
 	"os"
 	"reflect"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/logger"
 	"golang.org/x/sys/unix"
 )
@@ -289,9 +287,6 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		cCtx.ci = ci
 		cCtx.Unlock()
 
-		s10 := strconv.FormatInt(int64(newUniqueID), 10)
-		bucketstats.Register("proxyfs.retryrpc", s10, &c.stats)
-
 		// Build reply and send back to client
 		var e error
 		localIOR.JResult, e = json.Marshal(newUniqueID)
@@ -498,9 +493,7 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 			ci.Lock()
 			ci.cCtx.Lock()
 			if ci.isEmpty() && ci.cCtx.serviceClientExited {
-				s10 := strconv.FormatInt(int64(ci.myUniqueID), 10)
 				ci.unregsiterMethodStats(server)
-				bucketstats.UnRegister("proxyfs.retryrpc", s10)
 				delete(server.perClientInfo, key)
 				logger.Infof("Trim - DELETE inactive clientInfo with ID: %v", ci.myUniqueID)
 			}
