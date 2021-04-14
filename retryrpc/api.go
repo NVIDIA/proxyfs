@@ -223,8 +223,7 @@ func (server *Server) Close() {
 	// Cleanup bucketstats so that unit tests can run
 	for _, ci := range server.perClientInfo {
 		ci.Lock()
-		s10 := strconv.FormatInt(int64(ci.myUniqueID), 10)
-		bucketstats.UnRegister("proxyfs.retryrpc", s10)
+		ci.unregsiterMethodStats(server)
 		ci.Unlock()
 
 	}
@@ -396,6 +395,7 @@ func (client *Client) Close() {
 
 	// Wait for the goroutines to return
 	client.goroutineWG.Wait()
-	bucketstats.UnRegister("proxyfs.retryrpc", client.GetStatsGroupName())
-
+	logger.Infof("bucketstats for myUniqueID: '%v' -  %s\n", client.myUniqueID,
+		bucketstats.SprintStats(bucketstats.StatFormatParsable1, bucketStatsPkgName, client.GetStatsGroupName()))
+	bucketstats.UnRegister(bucketStatsPkgName, client.GetStatsGroupName())
 }
