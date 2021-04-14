@@ -74,7 +74,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 
 				// Now that we have a connection - we can setup bucketstats
 				if client.connection.state == CONNECTED {
-					bucketstats.Register("proxyfs.retryrpc", client.GetStatsGroupName(), &client.stats)
+					bucketstats.Register(bucketStatsPkgName, client.GetStatsGroupName(), &client.stats)
 				}
 				break
 			}

@@ -11,11 +11,9 @@ import (
 	"net"
 	"os"
 	"reflect"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/logger"
 	"golang.org/x/sys/unix"
 )
@@ -153,7 +151,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// be unmarshaled again to retrieve the parameters specific to
 		// the RPC.
 		startRPC := time.Now()
-		ior := server.callRPCAndFormatReply(buf, ci.myUniqueID, &jReq, &ci.stats)
+		ior := server.callRPCAndFormatReply(buf, ci, &jReq)
 		ci.stats.CallWrapRPCUsec.Add(uint64(time.Since(startRPC).Microseconds()))
 		ci.stats.RPCcompleted.Add(1)
 
@@ -268,11 +266,11 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 			ci.Unlock()
 		}
 	} else {
+
+		// First time we have seen this client
 		var (
 			localIOR ioReply
 		)
-
-		// First time we have seen this client
 
 		// Create a unique client ID and return to client
 		server.Lock()
@@ -280,18 +278,14 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		newUniqueID := server.clientIDNonce
 
 		// Setup new client data structures
-		c := &clientInfo{cCtx: cCtx, myUniqueID: newUniqueID}
-		c.completedRequest = make(map[requestID]*completedEntry)
-		c.completedRequestLRU = list.New()
+		c := initClientInfo(cCtx, newUniqueID, server)
+
 		server.perClientInfo[newUniqueID] = c
 		server.Unlock()
 		ci = c
 		cCtx.Lock()
 		cCtx.ci = ci
 		cCtx.Unlock()
-
-		s10 := strconv.FormatInt(int64(newUniqueID), 10)
-		bucketstats.Register("proxyfs.retryrpc", s10, &c.stats)
 
 		// Build reply and send back to client
 		var e error
@@ -356,7 +350,7 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 }
 
 // callRPCAndMarshal calls the RPC and returns results to requestor
-func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *jsonRequest, si *statsInfo) (ior *ioReply) {
+func (server *Server) callRPCAndFormatReply(buf []byte, ci *clientInfo, jReq *jsonRequest) (ior *ioReply) {
 	var (
 		err          error
 		returnValues []reflect.Value
@@ -365,7 +359,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 	)
 
 	// Setup the reply structure with common fields
-	reply := &ioReply{}
+	ior = &ioReply{}
 	rid := jReq.RequestID
 	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: rid}
 
@@ -385,7 +379,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 			return
 		}
 		req := reflect.ValueOf(dummyReq)
-		cid := reflect.ValueOf(clientID)
+		cid := reflect.ValueOf(ci.myUniqueID)
 
 		// Create the reply structure
 		typOfReply := ma.reply.Elem()
@@ -393,11 +387,13 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 
 		// Call the method
 		function := ma.methodPtr.Func
+		t := time.Now()
 		if ma.passClientID {
 			returnValues = function.Call([]reflect.Value{server.receiver, cid, req, myReply})
 		} else {
 			returnValues = function.Call([]reflect.Value{server.receiver, req, myReply})
 		}
+		ci.setMethodStats(jReq.Method, uint64(time.Since(t).Microseconds()))
 
 		// The return value for the method is an error.
 		errInter := returnValues[0].Interface()
@@ -418,12 +414,12 @@ func (server *Server) callRPCAndFormatReply(buf []byte, clientID uint64, jReq *j
 	}
 
 	// Convert response into JSON for return trip
-	reply.JResult, err = json.Marshal(jReply)
+	ior.JResult, err = json.Marshal(jReply)
 	if err != nil {
 		logger.PanicfWithError(err, "Unable to marshal jReply: %+v", jReply)
 	}
 
-	return reply
+	return
 }
 
 func (server *Server) returnResults(ior *ioReply, cCtx *connCtx) {
@@ -497,8 +493,7 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 			ci.Lock()
 			ci.cCtx.Lock()
 			if ci.isEmpty() && ci.cCtx.serviceClientExited {
-				s10 := strconv.FormatInt(int64(ci.myUniqueID), 10)
-				bucketstats.UnRegister("proxyfs.retryrpc", s10)
+				ci.unregsiterMethodStats(server)
 				delete(server.perClientInfo, key)
 				logger.Infof("Trim - DELETE inactive clientInfo with ID: %v", ci.myUniqueID)
 			}
