@@ -56,9 +56,9 @@ func (ci *clientInfo) unregsiterMethodStats(server *Server) {
 	idAsStr := strconv.FormatInt(int64(ci.myUniqueID), 10)
 
 	logger.Infof("bucketstats for myUniqueID: '%v' -  %s\n", ci.myUniqueID,
-		bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", "*"))
+		bucketstats.SprintStats(bucketstats.StatFormatParsable1, bucketStatsPkgName, "*"))
 	for m := range server.svrMap {
-		logger.Infof("bucketstats per method for myUniqueID: '%v' -  %s\n", ci.myUniqueID,
+		logger.Infof("bucketstats myUniqueID: '%v' method: '%v'-  %s\n", ci.myUniqueID, m,
 			bucketstats.SprintStats(bucketstats.StatFormatParsable1, bucketStatsPkgName,
 				methodAndName(strconv.FormatInt(int64(ci.myUniqueID), 10), m)))
 		bucketstats.UnRegister(bucketStatsPkgName, methodAndName(strconv.FormatInt(int64(ci.myUniqueID), 10), m))

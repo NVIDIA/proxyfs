@@ -395,5 +395,7 @@ func (client *Client) Close() {
 
 	// Wait for the goroutines to return
 	client.goroutineWG.Wait()
+	logger.Infof("bucketstats for myUniqueID: '%v' -  %s\n", client.myUniqueID,
+		bucketstats.SprintStats(bucketstats.StatFormatParsable1, bucketStatsPkgName, client.GetStatsGroupName()))
 	bucketstats.UnRegister(bucketStatsPkgName, client.GetStatsGroupName())
 }
