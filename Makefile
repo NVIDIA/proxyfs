@@ -198,7 +198,7 @@ pre-generate:
 
 python-test:
 	cd meta_middleware && tox -e lint
-	cd pfs_middleware && tox -e py27-release,py27-minver,py36-release,lint
+	cd pfs_middleware && LATEST_SWIFT_TAG=` git ls-remote --refs --tags https://github.com/NVIDIA/swift.git | cut -d '/' -f 3 | grep ^ss-release- | sort --version-sort | tail -n 1 ` tox -e py27-release,py27-minver,py36-release,lint
 
 test:
 	@set -e; \

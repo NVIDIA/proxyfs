@@ -228,7 +228,8 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 cd ~swift
 git clone https://github.com/NVIDIA/swift.git
 cd swift
-git checkout ss-release-2.27.0.2
+export SWIFT_TAG="$( git describe --tags --abbrev=0 $(git rev-list --tags --max-count=1) )"
+git checkout $SWIFT_TAG
 pip install wheel
 python setup.py bdist_wheel
 yum remove -y python-greenlet

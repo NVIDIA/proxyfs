@@ -3,7 +3,7 @@
 
 FROM centos:7.4.1708
 
-ARG SwiftVersion=ss-release-2.27.0.2
+ARG SwiftVersion
 ARG GolangVersion=1.15.5
 ARG ProxyFS_Version=stable
 
@@ -111,7 +111,7 @@ RUN pip install -r test-requirements.txt
 WORKDIR /home/swift
 RUN git clone https://github.com/NVIDIA/swift.git
 WORKDIR /home/swift/swift
-RUN git checkout $SwiftVersion
+RUN if [[ -n "$SwiftVersion" ]] ; then git checkout $SwiftVersion ; else git checkout $( git describe --tags --abbrev=0 $(git rev-list --tags --max-count=1) ) ; fi
 RUN pip install wheel
 RUN python setup.py bdist_wheel
 RUN yum remove -y python-greenlet
