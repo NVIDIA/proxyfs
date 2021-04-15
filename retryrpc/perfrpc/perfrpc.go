@@ -4,11 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // A subcommandAction is a function that implements a subcommand.
 //
-type subcommandAction func(name string, flagSet *flag.FlagSet, ipaddr string, port string) (err error)
+type subcommandAction func(name string, flagSet *flag.FlagSet, ipaddr string, port int) (err error)
 
 // A subcommandInfo holds the flags that a subcommand accepts and a function
 // that performs the subcommand's action.  After parsing, flagSet will include
@@ -51,13 +52,34 @@ func Usage(cmdName string, subcmdMap map[string]subcommandInfo) {
 	os.Exit(2)
 }
 
-func clientConfig(subcmd string, config *flag.FlagSet, ipaddr string, port string) (err error) {
-	fmt.Printf("in clientConfig - subcmd: %v config: %v\n", subcmd, config)
+// TODO - call code in client.go
+//
+// pass count of messages, warm up like Craig said..... what other options?
+// how dump bucketstats??
+func clientCmd(subcmd string, flagSet *flag.FlagSet, ipAddr string, port int) (err error) {
+	if flagSet.NArg() < 4 {
+		err = fmt.Errorf("Must pass ipaddr, port, clients and messages")
+		fmt.Printf("NArg: %v\n", flagSet.NArg())
+		return
+	}
+	// TODO - clients, messages, proper checking?
+
+	c := flagSet.Lookup("clients").Value
+	clientCnt, _ := strconv.Atoi(c)
+	m := flagSet.Lookup("messages").Value.String()
+	messageCnt, _ := strconv.Atoi(m)
+
+	fmt.Printf("clientCnt: %v messages: %v\n", clientCnt, messageCnt)
+
+	/*
+		parallelClientSenders(ipAddr, port, count)
+	*/
 	return
 }
 
-func serverConfig(subcmd string, config *flag.FlagSet, ipaddr string, port string) (err error) {
-	fmt.Printf("in serverConfig - subcmd: %v config: %v\n", subcmd, config)
+// TODO - how dump bucketstats, etc???? do from webserver?
+func serverCmd(subcmd string, flagSet *flag.FlagSet, ipAddr string, port int) (err error) {
+	becomeAServer(ipAddr, int, true)
 	return
 }
 
@@ -71,23 +93,25 @@ func main() {
 	subcmdMap := make(map[string]subcommandInfo)
 
 	var (
-		err     error
-		flagSet *flag.FlagSet
+		err      error
+		flagSet  *flag.FlagSet
+		ipAddr   *string
+		port     *int
+		clients  *int
+		messages *int
 	)
 
 	// client subcommand
-	flagSet = addSubcommand(subcmdMap, cmdName, "client", clientConfig)
-	flagSet.String("port", "",
-		"port to use to connect to server (required)")
-	flagSet.String("ipaddr", "",
-		"IP address to use to connect to server (required)")
+	flagSet = addSubcommand(subcmdMap, cmdName, "client", clientCmd)
+	port = flagSet.Int("port", 0, "port to use to connect to server (required)")
+	ipAddr = flagSet.String("ipaddr", "", "IP address to use to connect to server (required)")
+	clients = flagSet.Int("clients", 0, "number of clients (required)")
+	messages = flagSet.Int("messages", 0, "number of messages to send (required)")
 
 	// server subcommand
-	flagSet = addSubcommand(subcmdMap, cmdName, "server", serverConfig)
-	flagSet.String("port", "",
-		"port to use to connect to server (required)")
-	flagSet.String("ipaddr", "",
-		"IP address to use to connect to server (required)")
+	flagSet = addSubcommand(subcmdMap, cmdName, "server", serverCmd)
+	port = flagSet.Int("port", 0, "port to use to connect to server (required)")
+	ipAddr = flagSet.String("ipaddr", "", "IP address to use to connect to server (required)")
 
 	// verify that a subcommand has been provided
 	if len(os.Args) < 2 {
@@ -106,6 +130,9 @@ func main() {
 	}
 	flagSet = subcmdInfo.flagSet
 
+	fmt.Printf("os.Args: %v\n", os.Args)
+	fmt.Printf("os.Args[2:]: %v\n", os.Args[2:])
+
 	// parse the command line based on the subcommands' flags;
 	// os.Args[2:] will be all arguments starting after the subcommand at os.Args[1]
 	err = flagSet.Parse(os.Args[2:])
@@ -113,24 +140,24 @@ func main() {
 		panic(fmt.Sprintf("Parse returned an error (should have exited): %v", err))
 	}
 
-	// extract the environ file from the mandatory "env" option (every
-	// subcommand has the option) and open it
-	port := flagSet.Lookup("port").Value.String()
-	if port == "" {
+	fmt.Printf("flagSet: %+v\n", flagSet)
+
+	// Verify that the user specified the IP address and port
+	if *port == 0 {
 		fmt.Println("The 'port <port number used by server>' option is not optional -- must specify a port number")
 		flagSet.Usage()
 		os.Exit(1)
 	}
 
-	ipAddr := flagSet.Lookup("ipaddr").Value.String()
-	if ipAddr == "" {
+	if *ipAddr == "" {
 		fmt.Println("The 'ipaddr <IP Address of server>' option is not optional -- must specify an IP Address")
 		flagSet.Usage()
 		os.Exit(1)
 	}
+	fmt.Printf("main() flagSet.NArg(): %v \n", flagSet.NArg())
 
 	// invoke the action for the subcommand
-	err = subcmdMap[subcmd].action(subcmd, flagSet, ipAddr, port)
+	err = subcmdMap[subcmd].action(subcmd, flagSet, *ipAddr, *port)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %s error: %s\n", cmdName, subcmd, err)
