@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -67,7 +66,6 @@ type configStruct struct {
 	XAttrEnabled                 bool
 	EntryDuration                time.Duration
 	AttrDuration                 time.Duration
-	AttrBlockSize                uint64
 	ReaddirMaxEntries            uint64
 	FUSEMaxBackground            uint16
 	FUSECongestionThreshhold     uint16
@@ -614,14 +612,6 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.config.AttrDuration, err = confMap.FetchOptionValueDuration("Agent", "AttrDuration")
 	if nil != err {
 		logFatal(err)
-	}
-
-	globals.config.AttrBlockSize, err = confMap.FetchOptionValueUint64("Agent", "AttrBlockSize")
-	if nil != err {
-		logFatal(err)
-	}
-	if (0 == globals.config.AttrBlockSize) || (math.MaxUint32 < globals.config.AttrBlockSize) {
-		logFatalf("AttrBlockSize must be non-zero and fit in a uint32")
 	}
 
 	globals.config.ReaddirMaxEntries, err = confMap.FetchOptionValueUint64("Agent", "ReaddirMaxEntries")

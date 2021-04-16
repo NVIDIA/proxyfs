@@ -21,6 +21,8 @@ import (
 )
 
 const (
+	attrBlockSize = uint32(512)
+
 	initOutFlagsMaskReadDirPlusDisabled = uint32(0) |
 		fission.InitFlagsAsyncRead |
 		fission.InitFlagsFileOps |
@@ -87,9 +89,9 @@ func convertErrToErrno(err error, defaultErrno syscall.Errno) (errno syscall.Err
 
 func fixAttrSizes(attr *fission.Attr) {
 	if syscall.S_IFREG == (attr.Mode & syscall.S_IFMT) {
-		attr.Blocks = attr.Size + (globals.config.AttrBlockSize - 1)
-		attr.Blocks /= globals.config.AttrBlockSize
-		attr.BlkSize = uint32(globals.config.AttrBlockSize)
+		attr.Blocks = attr.Size + (uint64(attrBlockSize) - 1)
+		attr.Blocks /= uint64(attrBlockSize)
+		attr.BlkSize = attrBlockSize
 	} else {
 		attr.Size = 0
 		attr.Blocks = 0
