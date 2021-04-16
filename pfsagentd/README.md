@@ -70,7 +70,6 @@ ReadDirPlusEnabled:                                       false
 XAttrEnabled:                                             false
 EntryDuration:                                               0s
 AttrDuration:                                                0s
-AttrBlockSize:                                            65536
 ReaddirMaxEntries:                                         1024
 FUSEMaxBackground:                                          100
 FUSECongestionThreshhold:                                     0
