@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.com/NVIDIA/proxyfs.svg?branch=development)](https://travis-ci.com/NVIDIA/proxyfs)
+![Build Status](https://github.com/NVIDIA/proxyfs/actions/workflows/run-unit-tests.yml/badge.svg)
 [![Coverage Status](https://coveralls.io/repos/github/swiftstack/ProxyFS/badge.svg?branch=development)](https://coveralls.io/github/swiftstack/ProxyFS?branch=development)
 
 # ProxyFS
