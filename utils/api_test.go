@@ -226,8 +226,7 @@ func TestStopwatch(t *testing.T) {
 
 	// check stuff
 	startTime2 := sw2.StartTime                    // Save startTime for later checks
-	time.Sleep(10 * time.Millisecond)
-	assert.True(sw2.StartTime.Before(time.Now()))  // Start time is in the past
+	assert.True(sw2.StartTime.Before(time.Now()), "Time stopped!", sw2, startTime2)  // Start time is in the past
 	assert.True(sw2.StopTime.IsZero())             // Stop time isn't set yet
 	assert.Equal(int64(sw2.ElapsedTime), int64(0)) // Elapsed time isn't set yet
 	assert.True(sw2.IsRunning)                     // stopwatch is running
