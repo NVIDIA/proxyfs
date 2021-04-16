@@ -222,11 +222,11 @@ func TestStopwatch(t *testing.T) {
 	// Create another stopwatch
 	//
 	sw2 := NewStopwatch()
-	fmt.Printf("After creation: sw2.StartTime is %v\n", sw2.StartTime)
+	//fmt.Printf("After creation: sw2 is %v\n", sw2)
 
 	// check stuff
 	startTime2 := sw2.StartTime                    // Save startTime for later checks
-	fmt.Printf("After saving startTime2: time.Now() is %v\n", time.Now())
+	time.Sleep(10 * time.Millisecond)
 	assert.True(sw2.StartTime.Before(time.Now()))  // Start time is in the past
 	assert.True(sw2.StopTime.IsZero())             // Stop time isn't set yet
 	assert.Equal(int64(sw2.ElapsedTime), int64(0)) // Elapsed time isn't set yet
