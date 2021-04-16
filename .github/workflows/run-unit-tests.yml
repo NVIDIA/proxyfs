@@ -9,4 +9,4 @@ jobs:
           fetch-depth: 0
           submodules: false
       - name: Build, run unit tests, and get coverage
-        run: docker run -e "COVERALLS_TOKEN=${{ secrets.COVERALLS_TOKEN }}" -e "TRAVIS_BRANCH=$TRAVIS_BRANCH" --cap-add SYS_ADMIN --device /dev/fuse -i -v `pwd`:/gopathroot/src/github.com/NVIDIA/proxyfs swiftstack/proxyfs_unit_tests
+        run: docker run -e "COVERALLS_TOKEN=${{ secrets.COVERALLS_TOKEN }}" -e "GIT_BRANCH=${{ github.ref }}" --cap-add SYS_ADMIN --device /dev/fuse -i -v `pwd`:/gopathroot/src/github.com/NVIDIA/proxyfs swiftstack/proxyfs_unit_tests
