@@ -26,7 +26,7 @@ require (
 	github.com/stretchr/testify v1.5.1
 	go.etcd.io/etcd v0.5.0-alpha.5.0.20200401174654-e694b7bb0875
 	go.uber.org/multierr v1.5.0 // indirect
-	go.uber.org/zap v1.10.1-0.20190619185213-853ac185800f // indirect
+	go.uber.org/zap v1.10.1-0.20190619185213-853ac185800f
 	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7
 	golang.org/x/sys v0.0.0-20210326220804-49726bf1d181
 	golang.org/x/text v0.3.5 // indirect

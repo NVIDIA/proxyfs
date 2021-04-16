@@ -1,0 +1,130 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"crypto/tls"
+	"flag"
+	"fmt"
+	"time"
+
+	"github.com/NVIDIA/proxyfs/retryrpc"
+)
+
+// TODO - probably need to create the certificate on the server and then copy it to the client
+// machine.... write to file....
+func configNewServer(ipAddr string, port int, lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr *retryrpc.Server, err error) {
+	var (
+		config *retryrpc.ServerConfig
+	)
+
+	if useTLS {
+		config = &retryrpc.ServerConfig{
+			LongTrim:        lt,
+			ShortTrim:       100 * time.Millisecond,
+			IPAddr:          ipAddr,
+			Port:            port,
+			DeadlineIO:      60 * time.Second,
+			KeepAlivePeriod: 60 * time.Second,
+			/* TODO
+			TLSCertificate:  testTLSCerts.endpointTLSCert,
+			*/
+		}
+	} else {
+		config = &retryrpc.ServerConfig{
+			LongTrim:        lt,
+			ShortTrim:       100 * time.Millisecond,
+			IPAddr:          ipAddr,
+			Port:            port,
+			DeadlineIO:      60 * time.Second,
+			KeepAlivePeriod: 60 * time.Second,
+			TLSCertificate:  tls.Certificate{},
+		}
+	}
+
+	// Create a new RetryRPC Server.  Completed request will live on
+	// completedRequests for 10 seconds.
+	rrSvr = retryrpc.NewServer(config)
+
+	return
+}
+
+// TODO - should this be a goroutine with WG?????
+// want way to shutdown with curl/WS? how dump stats?
+func becomeAServer(ipAddr string, port int, useTLS bool) error {
+
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &PerfPingServer{}
+
+	rrSvr, err := configNewServer(ipAddr, port, 10*time.Minute, false, useTLS)
+	if err != nil {
+		return err
+	}
+
+	// Register the Server - sets up the methods supported by the
+	// server
+	err = rrSvr.Register(myJrpcfs)
+	if err != nil {
+		return err
+	}
+
+	// Start listening for requests on the ipaddr/port
+	err = rrSvr.Start()
+	if err != nil {
+		return err
+	}
+
+	// Tell server to start accepting and processing requests
+	rrSvr.Run()
+
+	// TODO - how block here? how exit???
+	time.Sleep(1000 * time.Minute)
+
+	/*
+		// Stop the server before exiting
+		rrSvr.Close()
+	*/
+	return nil
+}
+
+type ServerSubcommand struct {
+	fs     *flag.FlagSet
+	ipAddr string // IP Address server will use
+	port   int    // Port on which to listen
+}
+
+func NewServerCommand() *ServerSubcommand {
+	s := &ServerSubcommand{
+		fs: flag.NewFlagSet("server", flag.ContinueOnError),
+	}
+	s.fs.StringVar(&s.ipAddr, "ipaddr", "", "IP Address server will use")
+	s.fs.IntVar(&s.port, "port", 0, "Port on which to listen")
+
+	return s
+}
+
+func (s *ServerSubcommand) Init(args []string) error {
+	return s.fs.Parse(args)
+}
+
+func (s *ServerSubcommand) Name() string {
+	return s.fs.Name()
+}
+
+// TODO - how dump bucketstats, etc???? do from webserver?
+func (s *ServerSubcommand) Run() (err error) {
+	if s.ipAddr == "" {
+		err = fmt.Errorf("IP Address cannot be blank")
+		s.fs.PrintDefaults()
+		return
+	}
+	if s.port == 0 {
+		err = fmt.Errorf("Port cannot be 0")
+		s.fs.PrintDefaults()
+		return
+	}
+	fmt.Printf("ipAddr: %v port: %v\n", s.ipAddr, s.port)
+	err = becomeAServer(s.ipAddr, s.port, true)
+	return err
+}
