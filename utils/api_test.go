@@ -196,7 +196,7 @@ func TestStopwatch(t *testing.T) {
 	// Stop it
 	assert.True(sw1.IsRunning) // stopwatch is still running
 	elapsed1 := sw1.Stop()
-	now := time.Now()
+	now = time.Now()
 
 	// check stuff
 	assert.False(sw1.IsRunning)                                               // stopwatch is not running
