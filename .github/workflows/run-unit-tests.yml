@@ -6,4 +6,4 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Build image
-        run: docker run -e "COVERALLS_TOKEN=$COVERALLS_TOKEN" -e "TRAVIS_BRANCH=$TRAVIS_BRANCH" --cap-add SYS_ADMIN --device /dev/fuse -i -v `pwd`:/gopathroot/src/github.com/NVIDIA/proxyfs swiftstack/proxyfs_unit_tests
+        run: pwd; ls -lah; echo ${{ github.workspace }}; ls -lah ${{ github.workspace }}; docker run -e "COVERALLS_TOKEN=$COVERALLS_TOKEN" -e "TRAVIS_BRANCH=$TRAVIS_BRANCH" --cap-add SYS_ADMIN --device /dev/fuse -i -v `pwd`:/gopathroot/src/github.com/NVIDIA/proxyfs swiftstack/proxyfs_unit_tests
