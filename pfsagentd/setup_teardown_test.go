@@ -120,7 +120,6 @@ func testSetup(t *testing.T) {
 		"Agent.XAttrEnabled=false",
 		"Agent.EntryDuration=10s",
 		"Agent.AttrDuration=10s",
-		"Agent.AttrBlockSize=65536",
 		"Agent.ReaddirMaxEntries=1024",
 		"Agent.FUSEMaxBackground=100",
 		"Agent.FUSECongestionThreshhold=0",
