@@ -1,17 +1,9 @@
 name: Unit Tests
-on: [push]
+on: [push, pull_request]
 jobs:
-  Explore-GitHub-Actions:
+  Build-and-unit-test:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
-      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
-      - run: echo "🖥️ The workflow is now ready to test your code on the runner."
-      - name: List files in the repository
-        run: |
-          ls ${{ github.workspace }}
-      - run: echo "🍏 This job's status is ${{ job.status }}."
+      - uses: actions/checkout@v2
+      - name: Build image
+        run: docker run -e "COVERALLS_TOKEN=$COVERALLS_TOKEN" -e "TRAVIS_BRANCH=$TRAVIS_BRANCH" --cap-add SYS_ADMIN --device /dev/fuse -it -v `pwd`:/gopathroot/src/github.com/NVIDIA/proxyfs swiftstack/proxyfs_unit_tests
