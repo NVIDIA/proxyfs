@@ -1,5 +1,5 @@
 name: Unit Tests
-on: [push, pull_request]
+on: [push]
 jobs:
   Build-and-unit-test:
     runs-on: ubuntu-latest
@@ -10,4 +10,3 @@ jobs:
           submodules: false
       - name: Build, run unit tests, and get coverage
         run: docker run -e "COVERALLS_TOKEN=${{ secrets.COVERALLS_TOKEN }}" -e "GIT_BRANCH=${{ github.ref }}" --cap-add SYS_ADMIN --device /dev/fuse -i -v `pwd`:/gopathroot/src/github.com/NVIDIA/proxyfs swiftstack/proxyfs_unit_tests
-
