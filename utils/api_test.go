@@ -180,14 +180,14 @@ func TestStopwatch(t *testing.T) {
 	// Create stopwatch
 	//
 	sw1 := NewStopwatch()
-	//fmt.Printf("After creation: sw1 is %v\n", sw1)
+	now := time.Now()
 
 	// check stuff
-	startTime1 := sw1.StartTime                    // Save startTime for later checks
-	assert.True(sw1.StartTime.Before(time.Now()))  // Start time is in the past
-	assert.True(sw1.StopTime.IsZero())             // Stop time isn't set yet
-	assert.Equal(int64(sw1.ElapsedTime), int64(0)) // Elapsed time isn't set yet
-	assert.True(sw1.IsRunning)                     // stopwatch is running
+	startTime1 := sw1.StartTime                                              // Save startTime for later checks
+	assert.True(sw1.StartTime.Before(now), "time stopped!", startTime1, now) // Start time is in the past
+	assert.True(sw1.StopTime.IsZero())                                       // Stop time isn't set yet
+	assert.Equal(int64(sw1.ElapsedTime), int64(0))                           // Elapsed time isn't set yet
+	assert.True(sw1.IsRunning)                                               // stopwatch is running
 
 	// Delay then stop and check nonzero elapsed time
 	sleepTime := 100 * time.Millisecond
@@ -196,14 +196,14 @@ func TestStopwatch(t *testing.T) {
 	// Stop it
 	assert.True(sw1.IsRunning) // stopwatch is still running
 	elapsed1 := sw1.Stop()
-	//fmt.Printf("After stop: sw1 is %v\n", sw1)
+	now := time.Now()
 
 	// check stuff
-	assert.False(sw1.IsRunning)                  // stopwatch is not running
-	assert.False(sw1.StopTime.IsZero())          // Stop time is set
-	assert.True(sw1.StopTime.Before(time.Now())) // Stop time is in the past
-	assert.True(sw1.StartTime == startTime1)     // StartTime hasn't changed
-	assert.True(elapsed1 >= sleepTime)           // elapsed time is reasonable
+	assert.False(sw1.IsRunning)                                               // stopwatch is not running
+	assert.False(sw1.StopTime.IsZero())                                       // Stop time is set
+	assert.True(sw1.StopTime.Before(now), "time stopped!", sw1.StopTime, now) // Stop time is in the past
+	assert.True(sw1.StartTime == startTime1)                                  // StartTime hasn't changed
+	assert.True(elapsed1 >= sleepTime)                                        // elapsed time is reasonable
 
 	//
 	// Call Elapsed() when stopped
@@ -222,15 +222,14 @@ func TestStopwatch(t *testing.T) {
 	// Create another stopwatch
 	//
 	sw2 := NewStopwatch()
-	//fmt.Printf("After creation: sw2 is %v\n", sw2)
+	now = time.Now()
 
 	// check stuff
-	startTime2 := sw2.StartTime                    // Save startTime for later checks
-	now := time.Now()
-	assert.True(sw2.StartTime.Before(now), "Time stopped!", startTime2, now)  // Start time is in the past
-	assert.True(sw2.StopTime.IsZero())             // Stop time isn't set yet
-	assert.Equal(int64(sw2.ElapsedTime), int64(0)) // Elapsed time isn't set yet
-	assert.True(sw2.IsRunning)                     // stopwatch is running
+	startTime2 := sw2.StartTime                                              // Save startTime for later checks
+	assert.True(sw2.StartTime.Before(now), "Time stopped!", startTime2, now) // Start time is in the past
+	assert.True(sw2.StopTime.IsZero())                                       // Stop time isn't set yet
+	assert.Equal(int64(sw2.ElapsedTime), int64(0))                           // Elapsed time isn't set yet
+	assert.True(sw2.IsRunning)                                               // stopwatch is running
 
 	// Delay then check nonzero elapsed time (but don't stop)
 	sleepTime = 856 * time.Millisecond
@@ -252,28 +251,28 @@ func TestStopwatch(t *testing.T) {
 	// Stop and then call Elapsed() again
 	//
 	elapsed3 := sw2.Stop()
-	//fmt.Printf("After stop: sw2 is %v\n", sw2)
+	now = time.Now()
 
 	// check stuff
-	assert.False(sw2.IsRunning)                  // stopwatch is not running
-	assert.False(sw2.StopTime.IsZero())          // Stop time is set
-	assert.True(sw2.StopTime.Before(time.Now())) // Stop time is in the past
-	assert.True(sw2.StartTime == startTime2)     // StartTime hasn't changed
-	assert.True(elapsed3 > elapsed2)             // elapsed time is later than before
+	assert.False(sw2.IsRunning)                                               // stopwatch is not running
+	assert.False(sw2.StopTime.IsZero())                                       // Stop time is set
+	assert.True(sw2.StopTime.Before(now), "time stopped?", sw2.StopTime, now) // Stop time is in the past
+	assert.True(sw2.StartTime == startTime2)                                  // StartTime hasn't changed
+	assert.True(elapsed3 > elapsed2)                                          // elapsed time is later than before
 	assert.True(sw2.Elapsed() == elapsed3)
 
 	//
 	// restart a previously running stopwatch
 	//
 	sw2.Restart()
-	//fmt.Printf("After restart: sw2 is %v\n", sw2)
+	now = time.Now()
 
 	// check stuff
-	startTime3 := sw2.StartTime                    // Save startTime for later checks
-	assert.True(sw2.StartTime.Before(time.Now()))  // Start time is in the past
-	assert.True(sw2.StopTime.IsZero())             // Stop time isn't set yet
-	assert.Equal(int64(sw2.ElapsedTime), int64(0)) // Elapsed time isn't set yet
-	assert.True(sw2.IsRunning)                     // stopwatch is running
+	startTime3 := sw2.StartTime                                                 // Save startTime for later checks
+	assert.True(sw2.StartTime.Before(now), "time stopped?", sw2.StartTime, now) // Start time is in the past
+	assert.True(sw2.StopTime.IsZero())                                          // Stop time isn't set yet
+	assert.Equal(int64(sw2.ElapsedTime), int64(0))                              // Elapsed time isn't set yet
+	assert.True(sw2.IsRunning)                                                  // stopwatch is running
 
 	// Delay then stop and check nonzero elapsed time
 	sleepTime = 912 * time.Microsecond
@@ -284,14 +283,14 @@ func TestStopwatch(t *testing.T) {
 	//
 	assert.True(sw2.IsRunning) // stopwatch is still running
 	elapsed4 := sw2.Stop()
-	//fmt.Printf("After stop: sw2 is %v\n", sw2)
+	now = time.Now()
 
 	// check stuff
-	assert.False(sw2.IsRunning)                  // stopwatch is not running
-	assert.False(sw2.StopTime.IsZero())          // Stop time is set
-	assert.True(sw2.StopTime.Before(time.Now())) // Stop time is in the past
-	assert.True(sw2.StartTime == startTime3)     // StartTime hasn't changed
-	assert.True(elapsed4 >= sleepTime)           // elapsed time is reasonable
+	assert.False(sw2.IsRunning)                                               // stopwatch is not running
+	assert.False(sw2.StopTime.IsZero())                                       // Stop time is set
+	assert.True(sw2.StopTime.Before(now), "time stopped?", sw2.StopTime, now) // Stop time is in the past
+	assert.True(sw2.StartTime == startTime3)                                  // StartTime hasn't changed
+	assert.True(elapsed4 >= sleepTime)                                        // elapsed time is reasonable
 
 	//
 	// Call Elapsed() when stopped
@@ -308,14 +307,14 @@ func TestStopwatch(t *testing.T) {
 	// restart a non-previously running stopwatch
 	//
 	sw3 := NewStopwatch()
-	//fmt.Printf("After creation: sw3 is %v\n", sw3)
+	now = time.Now()
 
 	// check stuff
-	startTime4 := sw3.StartTime                    // Save startTime for later checks
-	assert.True(sw3.StartTime.Before(time.Now()))  // Start time is in the past
-	assert.True(sw3.StopTime.IsZero())             // Stop time isn't set yet
-	assert.Equal(int64(sw3.ElapsedTime), int64(0)) // Elapsed time isn't set yet
-	assert.True(sw3.IsRunning)                     // stopwatch is running
+	startTime4 := sw3.StartTime                                // Save startTime for later checks
+	assert.True(sw3.StartTime.Before(now), sw3.StartTime, now) // Start time is in the past
+	assert.True(sw3.StopTime.IsZero())                         // Stop time isn't set yet
+	assert.Equal(int64(sw3.ElapsedTime), int64(0))             // Elapsed time isn't set yet
+	assert.True(sw3.IsRunning)                                 // stopwatch is running
 
 	// Attempt restart, shouldn't do anything since not stopped
 	sw3.Restart()
