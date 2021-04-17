@@ -24,6 +24,15 @@ func TestAPI(t *testing.T) {
 		unmarshaledCheckPointHeaderVersion uint64
 		unmarshaledCheckPointHeaderV1      *CheckPointHeaderV1Struct
 
+		testObjectTrailer = &ObjectTrailerStruct{
+			ObjType: 1,
+			Version: 2,
+			Length:  0, // Appropriate if marshaledObjectTrailer is used to unmarshal (with no prepended payload)
+		}
+
+		marshaledObjectTrailer   []byte
+		unmarshaledObjectTrailer *ObjectTrailerStruct
+
 		testSuperBlockV1 = &SuperBlockV1Struct{
 			InodeTableRootObjectNumber: 1,
 			InodeTableRootObjectOffset: 2,
@@ -45,9 +54,8 @@ func TestAPI(t *testing.T) {
 			InodeBytesReferenced: 6,
 		}
 
-		marshaledSuperBlockV1        []byte
-		unmarshaledSuperBlockVersion uint64
-		unmarshaledSuperBlockV1      *SuperBlockV1Struct
+		marshaledSuperBlockV1   []byte
+		unmarshaledSuperBlockV1 *SuperBlockV1Struct
 
 		inodeTableLayoutIndex int
 
@@ -111,9 +119,8 @@ func TestAPI(t *testing.T) {
 			},
 		}
 
-		marshaledInodeHeadV1        []byte
-		unmarshaledInodeHeadVersion uint64
-		unmarshaledInodeHeadV1      *InodeHeadV1Struct
+		marshaledInodeHeadV1   []byte
+		unmarshaledInodeHeadV1 *InodeHeadV1Struct
 
 		linkTableIndex   int
 		streamTableIndex int
@@ -159,17 +166,24 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Bad unmarshaledCheckPointHeaderV1 (%+v) - expected testCheckPointHeaderV1 (%+v)", unmarshaledCheckPointHeaderV1, testCheckPointHeaderV1)
 	}
 
-	marshaledSuperBlockV1, err = testSuperBlockV1.MarshalSuperBlockV1()
+	marshaledObjectTrailer, err = testObjectTrailer.marshalObjectTrailer()
 	if nil != err {
 		t.Fatal(err)
 	}
 
-	unmarshaledSuperBlockVersion, err = UnmarshalSuperBlockVersion(marshaledSuperBlockV1)
+	unmarshaledObjectTrailer, err = UnmarshalObjectTrailer(marshaledObjectTrailer)
 	if nil != err {
 		t.Fatal(err)
 	}
-	if SuperBlockVersionV1 != unmarshaledSuperBlockVersion {
-		t.Fatalf("Bad unmarshaledSuperBlockVersion (%016X) - expected SuperBlockVersionV1 (%016X)", unmarshaledSuperBlockVersion, SuperBlockVersionV1)
+	if (testObjectTrailer.ObjType != unmarshaledObjectTrailer.ObjType) ||
+		(testObjectTrailer.Version != unmarshaledObjectTrailer.Version) ||
+		(testObjectTrailer.Length != unmarshaledObjectTrailer.Length) {
+		t.Fatalf("Bad unmarshaledObjectTrailer (%+v) - expected testObjectTrailer (%+v)", unmarshaledObjectTrailer, testObjectTrailer)
+	}
+
+	marshaledSuperBlockV1, err = testSuperBlockV1.MarshalSuperBlockV1()
+	if nil != err {
+		t.Fatal(err)
 	}
 
 	unmarshaledSuperBlockV1, err = UnmarshalSuperBlockV1(marshaledSuperBlockV1)
@@ -198,7 +212,7 @@ func TestAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	if InodeTableEntryValueVersionV1 != unmarshaledInodeTableEntryValueVersion {
-		t.Fatalf("Bad unmarshaledSuperBlockVersion (%016X) - expected SuperBlockVersionV1 (%016X)", unmarshaledSuperBlockVersion, SuperBlockVersionV1)
+		t.Fatalf("Bad unmarshaledInodeTableEntryValueVersion (%016X) - expected InodeTableEntryValueVersionV1 (%016X)", unmarshaledInodeTableEntryValueVersion, InodeTableEntryValueVersionV1)
 	}
 
 	unmarshaledInodeTableEntryValueV1, err = UnmarshalInodeTableEntryValueV1(marshaledInodeTableEntryValueV1)
@@ -213,14 +227,6 @@ func TestAPI(t *testing.T) {
 	marshaledInodeHeadV1, err = testInodeHeadV1.MarshalInodeHeadV1()
 	if nil != err {
 		t.Fatal(err)
-	}
-
-	unmarshaledInodeHeadVersion, err = UnmarshalInodeHeadVersion(marshaledInodeHeadV1)
-	if nil != err {
-		t.Fatal(err)
-	}
-	if InodeHeadVersionV1 != unmarshaledInodeHeadVersion {
-		t.Fatalf("Bad unmarshaledInodeHeadVersion (%016X) - expected InodeHeadVersionV1 (%016X)", unmarshaledInodeHeadVersion, InodeHeadVersionV1)
 	}
 
 	unmarshaledInodeHeadV1, err = UnmarshalInodeHeadV1(marshaledInodeHeadV1)

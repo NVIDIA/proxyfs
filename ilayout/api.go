@@ -110,21 +110,49 @@ func UnmarshalCheckPointHeaderV1(checkPointHeaderV1String string) (checkPointHea
 	return
 }
 
-// SuperBlockVersionV* specifies the format of all preceeding bytes
-// referenced by CheckPointHeaderV1Struct.SuperBlock{ObjectNumber|Length}.
+// ObjectTrailerStruct specifies the layout of a trailer found in each Object
+// that identifies the objType, version, and size of a structure immediately
+// proceeding it.
 //
-// The value is stored in LittleEndian format.
+// The struct is serialized as a sequence of LittleEndian formatted fields.
 //
-const (
-	SuperBlockVersionV1 uint64 = 1
-)
+type ObjectTrailerStruct struct {
+	ObjType uint16
+	Version uint16
+	Length  uint32
+}
 
-// UnmarshalSuperBlockVersion extracts superBlockVersion from superBlockBuf.
+// MarshalObjectTrailer encodes objectTrailer to objectTrailerBuf.
 //
-func UnmarshalSuperBlockVersion(superBlockBuf []byte) (superBlockVersion uint64, err error) {
-	superBlockVersion, err = unmarshalSuperBlockVersion(superBlockBuf)
+func (objectTrailer *ObjectTrailerStruct) MarshalObjectTrailer() (objectTrailerBuf []byte, err error) {
+	objectTrailerBuf, err = objectTrailer.marshalObjectTrailer()
 	return
 }
+
+// UnmarshalObjectTrailer decodes objectTrailer from objectTrailerBuf.
+//
+// Note that the last 8 bytes of objectTrailerBuf are decoded. The entire
+// objectTrailerBuf is expected to contain precisely objectTrailer.Length
+// bytes before the ObjectTrailerStruct.
+//
+func UnmarshalObjectTrailer(objectTrailerBuf []byte) (objectTrailer *ObjectTrailerStruct, err error) {
+	objectTrailer, err = unmarshalObjectTrailer(objectTrailerBuf)
+	return
+}
+
+// SuperBlockType specifies that this ObjectTrailerStruct refers to
+// a SuperBlockV*Struct immediately preceeding it.
+//
+const (
+	SuperBlockType uint16 = 0x5342 // 'S' 'B'
+)
+
+// SuperBlockVersionV* specifies, for an ObjectTrailerStruct of Type SuperBlockType,
+// the Version of the SuperBlockV*Struct immediately preceeding the ObjectTrailerStruct.
+//
+const (
+	SuperBlockVersionV1 uint16 = 1
+)
 
 // InodeTableLayoutEntryV1Struct specifies the layout of the InodeTable B+Tree in Objects.
 // Since any modification of the Volume will result in a fresh SuperBlockV1Struct
@@ -142,8 +170,6 @@ type InodeTableLayoutEntryV1Struct struct {
 // SuperBlockStruct specifies the format of the SuperBlock found at
 // the CheckPointHeaderV1Struct.SuperBlockLength trailing bytes of
 // the Object indicated by CheckPointHeaderV1Struct.SuperBlockObjectNumber.
-// Note that the ...Length includes the SuperBlockVersionV1 value appended
-// to it.
 //
 // The InodeTable is a B+Tree where the Key is the uint64 InodeNumber. The Value
 // is a InodeTableEntryValueV1Struct.
@@ -222,21 +248,19 @@ func UnmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTab
 	return
 }
 
-// InodeHeadVersionV* specifies the format of all preceeding bytes referenced
-// by InodeTableEntryValueV1Struct.InodeHead{ObjectNumber|Length}.
-//
-// The value is stored in LittleEndian format.
+// InodeHeadType specifies that this ObjectTrailerStruct refers to
+// a InodeHeadV*Struct immediately preceeding it.
 //
 const (
-	InodeHeadVersionV1 uint64 = 1
+	InodeHeadType uint16 = 0x4948 // 'I' 'H'
 )
 
-// UnmarshalInodeHeadVersion extracts inodeHeadVersion from inodeHeadBuf.
+// InodeHeadVersionV* specifies, for an ObjectTrailerStruct of Type InodeHeadType,
+// the Version of InodeHeadV*Struct immediately preceeding the ObjectTrailerStruct.
 //
-func UnmarshalInodeHeadVersion(inodeHeadBuf []byte) (inodeHeadVersion uint64, err error) {
-	inodeHeadVersion, err = unmarshalInodeHeadVersion(inodeHeadBuf)
-	return
-}
+const (
+	InodeHeadVersionV1 uint16 = 1
+)
 
 // RootDirInodeNumber is the InodeNumber for the directory at the root of the file system.
 //
