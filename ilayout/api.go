@@ -180,7 +180,8 @@ type InodeTableLayoutEntryV1Struct struct {
 // serialization of each one.
 //
 // Note that the CheckPointHeaderV1Struct.SuperBlockLength also includes the bytes for
-// holding SuperBlockVersionV1 that is appended.
+// holding the ObjectTrailerStruct{ObjType: SuperBlockType, Version: SuperBlockVersionV1}
+// that is appended.
 //
 type SuperBlockV1Struct struct {
 	InodeTableRootObjectNumber uint64                          // Identifies the Object containing the root of the InodeTable
@@ -326,14 +327,15 @@ type InodeHeadLayoutEntryV1Struct struct {
 
 // InodeHeadV1Struct specifies the layout of an Inode.
 //
-// The struct is serializes as a sequence of fields.
+// The struct is serializes as a sequence of fields:
 //   For uint* fields, LittleEndian format is used.
 //   For table fields, a uint64 length in LittleEndian format is followed by the serialization
 //     specified in the table entry struct.
 //   For time.Time fields, a uint64 in LittleEndian is used to hold the UnixNano() equivalent.
 //
 // Note that the InodeTableEntryValueV1Struct.InodeHeadLength also includes the bytes for
-// holding InodeHeadVersionV1 that is appended.
+// holding the ObjectTrailerStruct{ObjType: InodeHeadType, Version: InodeHeadVersionV1}
+// that is appended.
 //
 type InodeHeadV1Struct struct {
 	InodeNumber         uint64
