@@ -538,11 +538,30 @@ func GetLEByteSliceFromBuf(buf []byte, curPos int) (byteSlice []byte, nextPos in
 
 // PutLEByteSliceToBuf writes a []byte to buf starting at curPos.
 //
-// The []byte is written aas a LittleEndian byte order uint64 length followed by the
+// The []byte is written as a LittleEndian byte order uint64 length followed by the
 // bytes that make up the []byte. The returned nextPost indicates where the next field
 // (if any) should be written.
 //
 func PutLEByteSliceToBuf(buf []byte, curPos int, byteSlice []byte) (nextPos int, err error) {
 	nextPos, err = putLEByteSliceToBuf(buf, curPos, byteSlice)
+	return
+}
+
+// GetFixedByteSliceFromBuf fetches a []byte from buf starting at curPos.
+//
+// The []byte is assumed to have been written with the same length as byteSlice.
+// The returned nextPos indicates where the next field (if any) should be read from.
+//
+func GetFixedByteSliceFromBuf(buf []byte, curPos int, byteSlice []byte) (nextPos int, err error) {
+	nextPos, err = getFixedByteSliceFromBuf(buf, curPos, byteSlice)
+	return
+}
+
+// PutFixedByteSliceToBuf writes a []byte to buf starting at curPos.
+//
+// The returned nextPost indicates where the next field (if any) should be written.
+//
+func PutFixedByteSliceToBuf(buf []byte, curPos int, byteSlice []byte) (nextPos int, err error) {
+	nextPos, err = putFixedByteSliceToBuf(buf, curPos, byteSlice)
 	return
 }
