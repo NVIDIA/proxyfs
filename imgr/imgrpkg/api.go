@@ -155,17 +155,17 @@ type MountRequestStruct struct {
 	AuthToken  string
 }
 
-// MountReplyStruct is the reply object for Mount.
+// MountResponseStruct is the response object for Mount.
 //
-type MountReplyStruct struct {
+type MountResponseStruct struct {
 	MountID string
 }
 
 // Mount performs a mount of the specified Volume and returns a MountID to be used
 // in all subsequent RPCs to reference this Volume by this Client.
 //
-func (dummy *RetryRPCServerStruct) Mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountReply *MountReplyStruct) (err error) {
-	return mount(retryRPCClientID, mountRequest, mountReply)
+func (dummy *RetryRPCServerStruct) Mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountResponse *MountResponseStruct) (err error) {
+	return mount(retryRPCClientID, mountRequest, mountResponse)
 }
 
 // RenewMountRequestStruct is the request object for RenewMount.
@@ -175,14 +175,14 @@ type RenewMountRequestStruct struct {
 	AuthToken string
 }
 
-// RenewMountReplyStruct is the reply object for RenewMount.
+// RenewMountResponseStruct is the response object for RenewMount.
 //
-type RenewMountReplyStruct struct{}
+type RenewMountResponseStruct struct{}
 
 // RenewMount updates the AuthToken for the specified MountID.
 //
-func (dummy *RetryRPCServerStruct) RenewMount(renewMountRequest *RenewMountRequestStruct, renewMountReply *RenewMountReplyStruct) (err error) {
-	return renewMount(renewMountRequest, renewMountReply)
+func (dummy *RetryRPCServerStruct) RenewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *RenewMountResponseStruct) (err error) {
+	return renewMount(renewMountRequest, renewMountResponse)
 }
 
 // UnmountRequestStruct is the request object for Unmount.
@@ -191,15 +191,15 @@ type UnmountRequestStruct struct {
 	MountID string
 }
 
-// UnmountReplyStruct is the reply object for Unmount.
+// UnmountResponseStruct is the response object for Unmount.
 //
-type UnmountReplyStruct struct{}
+type UnmountResponseStruct struct{}
 
 // Unmount requests that the given MountID be released (and implicitly releases
 // any Leases held by the MountID).
 //
-func (dummy *RetryRPCServerStruct) Unmount(unmountRequest *UnmountRequestStruct, unmountReply *UnmountReplyStruct) (err error) {
-	return unmount(unmountRequest, unmountReply)
+func (dummy *RetryRPCServerStruct) Unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountResponseStruct) (err error) {
+	return unmount(unmountRequest, unmountResponse)
 }
 
 // FetchNonceRangeRequestStruct is the request object for FetchNonceRange.
@@ -208,9 +208,9 @@ type FetchNonceRangeRequestStruct struct {
 	MountID string
 }
 
-// FetchNonceRangeReplyStruct is the reply object for FetchNonceRange.
+// FetchNonceRangeResponseStruct is the response object for FetchNonceRange.
 //
-type FetchNonceRangeReplyStruct struct {
+type FetchNonceRangeResponseStruct struct {
 	NextNonce        uint64
 	NumNoncesFetched uint64
 }
@@ -218,8 +218,8 @@ type FetchNonceRangeReplyStruct struct {
 // FetchNonceRange requests a range of uint64 nonce values (i.e. values that will
 // never be reused).
 //
-func (dummy *RetryRPCServerStruct) FetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeReply *FetchNonceRangeReplyStruct) (err error) {
-	return fetchNonceRange(fetchNonceRangeRequest, fetchNonceRangeReply)
+func (dummy *RetryRPCServerStruct) FetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeResponse *FetchNonceRangeResponseStruct) (err error) {
+	return fetchNonceRange(fetchNonceRangeRequest, fetchNonceRangeResponse)
 }
 
 // GetInodeTableEntryRequestStruct is the request object for GetInodeTableEntry.
@@ -229,17 +229,17 @@ type GetInodeTableEntryRequestStruct struct {
 	InodeNumber uint64
 }
 
-// GetInodeTableEntryReplyStruct is the reply object for GetInodeTableEntry.
+// GetInodeTableEntryResponseStruct is the response object for GetInodeTableEntry.
 //
-type GetInodeTableEntryReplyStruct struct {
+type GetInodeTableEntryResponseStruct struct {
 	// TODO
 }
 
 // GetInodeTableEntry requests the Inode information for the specified Inode
 // (which must have an active Shared or Exclusive Lease granted to the MountID).
 //
-func (dummy *RetryRPCServerStruct) GetInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryReply *GetInodeTableEntryReplyStruct) (err error) {
-	return getInodeTableEntry(getInodeTableEntryRequest, getInodeTableEntryReply)
+func (dummy *RetryRPCServerStruct) GetInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryResponse *GetInodeTableEntryResponseStruct) (err error) {
+	return getInodeTableEntry(getInodeTableEntryRequest, getInodeTableEntryResponse)
 }
 
 // PutInodeTableEntriesRequestStruct is the request object for PutInodeTableEntries.
@@ -249,15 +249,15 @@ type PutInodeTableEntriesRequestStruct struct {
 	// TODO
 }
 
-// PutInodeTableEntriesReplyStruct is the reply object for PutInodeTableEntries.
+// PutInodeTableEntriesResponseStruct is the response object for PutInodeTableEntries.
 //
-type PutInodeTableEntriesReplyStruct struct{}
+type PutInodeTableEntriesResponseStruct struct{}
 
 // PutInodeTableEntries requests an atomic update of the listed Inodes (which must
 // each have an active Exclusive Lease granted to the MountID).
 //
-func (dummy *RetryRPCServerStruct) PutInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesReply *PutInodeTableEntriesReplyStruct) (err error) {
-	return putInodeTableEntries(putInodeTableEntriesRequest, putInodeTableEntriesReply)
+func (dummy *RetryRPCServerStruct) PutInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesResponse *PutInodeTableEntriesResponseStruct) (err error) {
+	return putInodeTableEntries(putInodeTableEntriesRequest, putInodeTableEntriesResponse)
 }
 
 // DeleteInodeTableEntryRequestStruct is the request object for DeleteInodeTableEntry.
@@ -267,9 +267,9 @@ type DeleteInodeTableEntryRequestStruct struct {
 	InodeNumber uint64
 }
 
-// DeleteInodeTableEntryReplyStruct is the reply object for DeleteInodeTableEntry.
+// DeleteInodeTableEntryResponseStruct is the response object for DeleteInodeTableEntry.
 //
-type DeleteInodeTableEntryReplyStruct struct {
+type DeleteInodeTableEntryResponseStruct struct {
 	// TODO
 }
 
@@ -278,8 +278,8 @@ type DeleteInodeTableEntryReplyStruct struct {
 // unless/until the OpenCount for the Inode drops to zero, the Inode will
 // still exist.
 //
-func (dummy *RetryRPCServerStruct) DeleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryReply *DeleteInodeTableEntryReplyStruct) (err error) {
-	return deleteInodeTableEntry(deleteInodeTableEntryRequest, deleteInodeTableEntryReply)
+func (dummy *RetryRPCServerStruct) DeleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *DeleteInodeTableEntryResponseStruct) (err error) {
+	return deleteInodeTableEntry(deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)
 }
 
 // AdjustInodeTableEntryOpenCountRequestStruct is the request object for AdjustInodeTableEntryOpenCount.
@@ -290,9 +290,9 @@ type AdjustInodeTableEntryOpenCountRequestStruct struct {
 	Adjustment  int64
 }
 
-// AdjustInodeTableEntryOpenCountReplyStruct is the reply object for AdjustInodeTableEntryOpenCount.
+// AdjustInodeTableEntryOpenCountResponseStruct is the response object for AdjustInodeTableEntryOpenCount.
 //
-type AdjustInodeTableEntryOpenCountReplyStruct struct {
+type AdjustInodeTableEntryOpenCountResponseStruct struct {
 	CurrentOpenCountThisMount uint64
 	CurrentOpenCountAllMounts uint64
 }
@@ -303,8 +303,8 @@ type AdjustInodeTableEntryOpenCountReplyStruct struct {
 // for deletion by a prior call to DeleteInodeTableEntry, the Inode will be
 // deleted.
 //
-func (dummy *RetryRPCServerStruct) AdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountReply *AdjustInodeTableEntryOpenCountReplyStruct) (err error) {
-	return adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountReply)
+func (dummy *RetryRPCServerStruct) AdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct) (err error) {
+	return adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
 }
 
 // FlushRequestStruct is the request object for Flush.
@@ -314,14 +314,14 @@ type FlushRequestStruct struct {
 	// TODO
 }
 
-// FlushReplyStruct is the reply object for Flush.
+// FlushResponseStruct is the response object for Flush.
 //
-type FlushReplyStruct struct{}
+type FlushResponseStruct struct{}
 
 // Flush that the results of prior PutInodeTableEntries requests be persisted.
 //
-func (dummy *RetryRPCServerStruct) Flush(flushRequest *FlushRequestStruct, flushReply *FlushReplyStruct) (err error) {
-	return flush(flushRequest, flushReply)
+func (dummy *RetryRPCServerStruct) Flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct) (err error) {
+	return flush(flushRequest, flushResponse)
 }
 
 // LeaseRequestType specifies the requested lease operation.
@@ -344,31 +344,31 @@ type LeaseRequestStruct struct {
 	LeaseRequestType // One of LeaseRequestType*
 }
 
-// LeaseReplyType specifies the acknowledgement that the requested lease operation
+// LeaseResponseType specifies the acknowledgement that the requested lease operation
 // has been completed or denied (e.g. when a Promotion request cannot be satisfied
 // and the client will soon be receiving a LeaseInterruptTypeRelease).
 //
-type LeaseReplyType uint32
+type LeaseResponseType uint32
 
 const (
-	LeaseReplyTypeDenied    LeaseReplyType = iota // Request denied (e.g. Promotion deadlock avoidance)
-	LeaseReplyTypeShared                          // SharedLease granted
-	LeaseReplyTypePromoted                        // SharedLease promoted to ExclusiveLease
-	LeaseReplyTypeExclusive                       // ExclusiveLease granted
-	LeaseReplyTypeDemoted                         // ExclusiveLease demoted to SharedLease
-	LeaseReplyTypeReleased                        // SharedLease or ExclusiveLease released
+	LeaseResponseTypeDenied    LeaseResponseType = iota // Request denied (e.g. Promotion deadlock avoidance)
+	LeaseResponseTypeShared                             // SharedLease granted
+	LeaseResponseTypePromoted                           // SharedLease promoted to ExclusiveLease
+	LeaseResponseTypeExclusive                          // ExclusiveLease granted
+	LeaseResponseTypeDemoted                            // ExclusiveLease demoted to SharedLease
+	LeaseResponseTypeReleased                           // SharedLease or ExclusiveLease released
 )
 
-// LeaseReplyStruct is the reply object for Lease.
+// LeaseResponseStruct is the response object for Lease.
 //
-type LeaseReplyStruct struct {
-	LeaseReplyType // One of LeaseReplyType*
+type LeaseResponseStruct struct {
+	LeaseResponseType // One of LeaseResponseType*
 }
 
 // Lease is a blocking Lease Request.
 //
-func (dummy *RetryRPCServerStruct) Lease(leaseRequest *LeaseRequestStruct, leaseReply *LeaseReplyStruct) (err error) {
-	return lease(leaseRequest, leaseReply)
+func (dummy *RetryRPCServerStruct) Lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct) (err error) {
+	return lease(leaseRequest, leaseResponse)
 }
 
 // RPCInterruptType specifies the action (unmount, demotion, or release) requested by ProxyFS

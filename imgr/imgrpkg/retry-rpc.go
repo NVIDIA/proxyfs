@@ -66,7 +66,7 @@ func stopRetryRPCServer() (err error) {
 	return nil
 }
 
-func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountReply *MountReplyStruct) (err error) {
+func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountResponse *MountResponseStruct) (err error) {
 	var (
 		startTime time.Time
 	)
@@ -80,7 +80,7 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountReply
 	return nil // TODO
 }
 
-func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountReply *RenewMountReplyStruct) (err error) {
+func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *RenewMountResponseStruct) (err error) {
 	var (
 		startTime time.Time
 	)
@@ -94,7 +94,7 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountReply *Ren
 	return nil // TODO
 }
 
-func unmount(unmountRequest *UnmountRequestStruct, unmountReply *UnmountReplyStruct) (err error) {
+func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountResponseStruct) (err error) {
 	var (
 		startTime time.Time
 	)
@@ -108,7 +108,7 @@ func unmount(unmountRequest *UnmountRequestStruct, unmountReply *UnmountReplyStr
 	return nil // TODO
 }
 
-func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeReply *FetchNonceRangeReplyStruct) (err error) {
+func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeResponse *FetchNonceRangeResponseStruct) (err error) {
 	var (
 		startTime time.Time
 	)
@@ -122,7 +122,7 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 	return nil // TODO
 }
 
-func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryReply *GetInodeTableEntryReplyStruct) (err error) {
+func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryResponse *GetInodeTableEntryResponseStruct) (err error) {
 	var (
 		startTime time.Time
 	)
@@ -136,7 +136,7 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 	return nil // TODO
 }
 
-func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesReply *PutInodeTableEntriesReplyStruct) (err error) {
+func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesResponse *PutInodeTableEntriesResponseStruct) (err error) {
 	var (
 		startTime time.Time
 	)
@@ -150,7 +150,7 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 	return nil // TODO
 }
 
-func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryReply *DeleteInodeTableEntryReplyStruct) (err error) {
+func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *DeleteInodeTableEntryResponseStruct) (err error) {
 	var (
 		startTime time.Time
 	)
@@ -164,7 +164,7 @@ func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRe
 	return nil // TODO
 }
 
-func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountReply *AdjustInodeTableEntryOpenCountReplyStruct) (err error) {
+func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct) (err error) {
 	var (
 		startTime time.Time
 	)
@@ -178,7 +178,7 @@ func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *Adjus
 	return nil // TODO
 }
 
-func flush(flushRequest *FlushRequestStruct, flushReply *FlushReplyStruct) (err error) {
+func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct) (err error) {
 	var (
 		startTime time.Time
 	)
@@ -192,7 +192,7 @@ func flush(flushRequest *FlushRequestStruct, flushReply *FlushReplyStruct) (err 
 	return nil // TODO
 }
 
-func lease(leaseRequest *LeaseRequestStruct, leaseReply *LeaseReplyStruct) (err error) {
+func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct) (err error) {
 	var (
 		startTime time.Time
 	)
@@ -225,7 +225,7 @@ func lease(leaseRequest *LeaseRequestStruct, leaseReply *LeaseReplyStruct) (err 
 			globals.stats.ReleaseLeaseRequestUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 		}()
 	default:
-		leaseReply.LeaseReplyType = LeaseReplyTypeDenied
+		leaseResponse.LeaseResponseType = LeaseResponseTypeDenied
 		err = fmt.Errorf("LeaseRequestType %v not supported", leaseRequest.LeaseRequestType)
 		err = blunder.AddError(err, blunder.BadLeaseRequest)
 		return
