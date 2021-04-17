@@ -5,6 +5,7 @@ package ilayout
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -32,20 +33,80 @@ func unmarshalCheckPointHeaderV1(checkPointHeaderV1String string) (checkPointHea
 	return
 }
 
-func unmarshalSuperBlockVersion(superBlockBuf []byte) (superBlockVersion uint64, err error) {
+func (objectTrailer *ObjectTrailerStruct) marshalObjectTrailer() (objectTrailerBuf []byte, err error) {
 	var (
-		superBlockBufLen int
+		curPos int
 	)
 
-	superBlockBufLen = len(superBlockBuf)
+	objectTrailerBuf = make([]byte, 2+2+4)
 
-	if superBlockBufLen < 8 {
-		err = fmt.Errorf("Insufficient space in superBlockBuf for superBlockVersion")
+	curPos = 0
+
+	curPos, err = putLEUint16ToBuf(objectTrailerBuf, curPos, objectTrailer.ObjType)
+	if nil != err {
 		return
 	}
 
-	superBlockVersion, _, err = getLEUint64FromBuf(superBlockBuf, superBlockBufLen-8)
+	curPos, err = putLEUint16ToBuf(objectTrailerBuf, curPos, objectTrailer.Version)
+	if nil != err {
+		return
+	}
 
+	curPos, err = putLEUint32ToBuf(objectTrailerBuf, curPos, objectTrailer.Length)
+	if nil != err {
+		return
+	}
+
+	err = nil
+	return
+}
+
+func unmarshalObjectTrailer(objectTrailerBuf []byte) (objectTrailer *ObjectTrailerStruct, err error) {
+	var (
+		curPos         int
+		expectedLength uint32
+	)
+
+	curPos = len(objectTrailerBuf) - (2 + 2 + 4)
+	if curPos < 0 {
+		err = fmt.Errorf("No room for ObjectTrailerStruct at end of objectTrailerBuf")
+		return
+	}
+	if curPos > math.MaxUint32 {
+		err = fmt.Errorf("Cannot parse an objectTrailerBuf with > math.MaxUint32 (0x%8X) payload preceeding ObjectTrailerStruct", math.MaxUint32)
+		return
+	}
+
+	expectedLength = uint32(curPos)
+
+	objectTrailer = &ObjectTrailerStruct{}
+
+	objectTrailer.ObjType, curPos, err = getLEUint16FromBuf(objectTrailerBuf, curPos)
+	if nil != err {
+		return
+	}
+
+	objectTrailer.Version, curPos, err = getLEUint16FromBuf(objectTrailerBuf, curPos)
+	if nil != err {
+		return
+	}
+
+	objectTrailer.Length, curPos, err = getLEUint32FromBuf(objectTrailerBuf, curPos)
+	if nil != err {
+		return
+	}
+
+	if curPos != len(objectTrailerBuf) {
+		err = fmt.Errorf("Logic error extracting ObjectTrailerStruct from end of objectTrailerBuf")
+		return
+	}
+
+	if objectTrailer.Length != expectedLength {
+		err = fmt.Errorf("Payload of objectTrailerBuf preceeding ObjectTrailerStruct length mismatch")
+		return
+	}
+
+	err = nil
 	return
 }
 
@@ -53,9 +114,11 @@ func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf [
 	var (
 		curPos                int
 		inodeTableLayoutIndex int
+		objectTrailer         *ObjectTrailerStruct
+		objectTrailerBuf      []byte
 	)
 
-	superBlockV1Buf = make([]byte, 8+8+8+8+(len(superBlockV1.InodeTableLayout)*(8+8+8))+8+8+8+8)
+	superBlockV1Buf = make([]byte, 8+8+8+8+(len(superBlockV1.InodeTableLayout)*(8+8+8))+8+8+8+(2+2+4))
 
 	curPos = 0
 
@@ -111,7 +174,23 @@ func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf [
 		return
 	}
 
-	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, SuperBlockVersionV1)
+	if curPos > math.MaxUint32 {
+		err = fmt.Errorf("Cannot marshal an superBlockV1Buf with > math.MaxUint32 (0x%8X) payload preceeding ObjectTrailerStruct", math.MaxUint32)
+		return
+	}
+
+	objectTrailer = &ObjectTrailerStruct{
+		ObjType: SuperBlockType,
+		Version: SuperBlockVersionV1,
+		Length:  uint32(curPos),
+	}
+
+	objectTrailerBuf, err = objectTrailer.MarshalObjectTrailer()
+	if nil != err {
+		return
+	}
+
+	curPos, err = putFixedByteSliceToBuf(superBlockV1Buf, curPos, objectTrailerBuf)
 	if nil != err {
 		return
 	}
@@ -125,8 +204,21 @@ func unmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1St
 		curPos                int
 		inodeTableLayoutIndex uint64
 		inodeTableLayoutLen   uint64
-		superBlockVersion     uint64
+		objectTrailer         *ObjectTrailerStruct
 	)
+
+	objectTrailer, err = unmarshalObjectTrailer(superBlockV1Buf)
+	if nil != err {
+		return
+	}
+	if objectTrailer.ObjType != SuperBlockType {
+		err = fmt.Errorf("superBlockV1Buf does not contain a SuperBlockV1Struct - wrong ObjType")
+		return
+	}
+	if objectTrailer.Version != SuperBlockVersionV1 {
+		err = fmt.Errorf("superBlockV1Buf does not contain a SuperBlockV1Struct - wrong Version")
+		return
+	}
 
 	superBlockV1 = &SuperBlockV1Struct{}
 
@@ -186,16 +278,7 @@ func unmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1St
 		return
 	}
 
-	superBlockVersion, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
-	if nil != err {
-		return
-	}
-	if superBlockVersion != SuperBlockVersionV1 {
-		err = fmt.Errorf("Incorrect Version for superBlockV1Buf")
-		return
-	}
-
-	if curPos != len(superBlockV1Buf) {
+	if curPos != int(objectTrailer.Length) {
 		err = fmt.Errorf("Incorrect size for superBlockV1Buf")
 		return
 	}
@@ -276,29 +359,14 @@ func unmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTab
 	return
 }
 
-func unmarshalInodeHeadVersion(inodeHeadBuf []byte) (inodeHeadVersion uint64, err error) {
-	var (
-		inodeHeadBufLen int
-	)
-
-	inodeHeadBufLen = len(inodeHeadBuf)
-
-	if inodeHeadBufLen < 8 {
-		err = fmt.Errorf("Insufficient space in inodeHeadBuf for inodeHeadVersion")
-		return
-	}
-
-	inodeHeadVersion, _, err = getLEUint64FromBuf(inodeHeadBuf, inodeHeadBufLen-8)
-
-	return
-}
-
 func (inodeHeadV1 *InodeHeadV1Struct) marshalInodeHeadV1() (inodeHeadV1Buf []byte, err error) {
 	var (
 		curPos            int
 		inodeHeadV1BufLen int
 		layoutIndex       int
 		linkTableIndex    int
+		objectTrailer     *ObjectTrailerStruct
+		objectTrailerBuf  []byte
 		streamTableIndex  int
 	)
 
@@ -324,7 +392,7 @@ func (inodeHeadV1 *InodeHeadV1Struct) marshalInodeHeadV1() (inodeHeadV1Buf []byt
 
 	inodeHeadV1BufLen += 8 + (len(inodeHeadV1.Layout) * (8 + 8 + 8))
 
-	inodeHeadV1BufLen += 8
+	inodeHeadV1BufLen += (2 + 2 + 4)
 
 	inodeHeadV1Buf = make([]byte, inodeHeadV1BufLen)
 
@@ -456,7 +524,23 @@ func (inodeHeadV1 *InodeHeadV1Struct) marshalInodeHeadV1() (inodeHeadV1Buf []byt
 		}
 	}
 
-	curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, InodeHeadVersionV1)
+	if curPos > math.MaxUint32 {
+		err = fmt.Errorf("Cannot marshal an inodeHeadV1Buf with > math.MaxUint32 (0x%8X) payload preceeding ObjectTrailerStruct", math.MaxUint32)
+		return
+	}
+
+	objectTrailer = &ObjectTrailerStruct{
+		ObjType: InodeHeadType,
+		Version: InodeHeadVersionV1,
+		Length:  uint32(curPos),
+	}
+
+	objectTrailerBuf, err = objectTrailer.MarshalObjectTrailer()
+	if nil != err {
+		return
+	}
+
+	curPos, err = putFixedByteSliceToBuf(inodeHeadV1Buf, curPos, objectTrailerBuf)
 	if nil != err {
 		return
 	}
@@ -471,15 +555,28 @@ func unmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct
 		attrChangeTimeAsUnixTimeInNs   uint64
 		creationTimeAsUnixTimeInNs     uint64
 		curPos                         int
-		inodeHeadVersion               uint64
 		layoutIndex                    uint64
 		layoutLen                      uint64
 		linkTableIndex                 uint64
 		linkTableLen                   uint64
 		modificationTimeAsUnixTimeInNs uint64
+		objectTrailer                  *ObjectTrailerStruct
 		streamTableIndex               uint64
 		streamTableLen                 uint64
 	)
+
+	objectTrailer, err = unmarshalObjectTrailer(inodeHeadV1Buf)
+	if nil != err {
+		return
+	}
+	if objectTrailer.ObjType != InodeHeadType {
+		err = fmt.Errorf("inodeHeadV1Buf does not contain a InodeHeadV1Struct - wrong ObjType")
+		return
+	}
+	if objectTrailer.Version != InodeHeadVersionV1 {
+		err = fmt.Errorf("inodeHeadV1Buf does not contain a InodeHeadV1Struct - wrong Version")
+		return
+	}
 
 	inodeHeadV1 = &InodeHeadV1Struct{}
 
@@ -625,16 +722,7 @@ func unmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct
 		}
 	}
 
-	inodeHeadVersion, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
-	if nil != err {
-		return
-	}
-	if inodeHeadVersion != InodeHeadVersionV1 {
-		err = fmt.Errorf("Incorrect Version for inodeHeadV1Buf")
-		return
-	}
-
-	if curPos != len(inodeHeadV1Buf) {
+	if curPos != int(objectTrailer.Length) {
 		err = fmt.Errorf("Incorrect size for inodeHeadV1Buf")
 		return
 	}
@@ -960,6 +1048,45 @@ func putLEByteSliceToBuf(buf []byte, curPos int, byteSlice []byte) (nextPos int,
 
 	curPos = nextPos
 	nextPos += len(byteSlice)
+
+	if nextPos > len(buf) {
+		err = fmt.Errorf("Insufficient space in buf[curPos:] for []byte")
+		return
+	}
+
+	copy(buf[curPos:nextPos], byteSlice)
+
+	err = nil
+	return
+}
+
+func getFixedByteSliceFromBuf(buf []byte, curPos int, byteSlice []byte) (nextPos int, err error) {
+	var (
+		byteSliceLen int
+	)
+
+	byteSliceLen = len(byteSlice)
+
+	if byteSliceLen < (len(buf) - curPos) {
+		err = fmt.Errorf("Insufficient space in buf[curPos:] for []byte of len(byteSlice) length")
+		return
+	}
+
+	copy(byteSlice, buf[nextPos:nextPos+byteSliceLen])
+	nextPos = curPos + byteSliceLen
+
+	err = nil
+	return
+}
+
+func putFixedByteSliceToBuf(buf []byte, curPos int, byteSlice []byte) (nextPos int, err error) {
+	var (
+		byteSliceLen int
+	)
+
+	byteSliceLen = len(byteSlice)
+
+	nextPos = curPos + byteSliceLen
 
 	if nextPos > len(buf) {
 		err = fmt.Errorf("Insufficient space in buf[curPos:] for []byte")
