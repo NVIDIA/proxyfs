@@ -287,12 +287,14 @@ func (dummy *RetryRPCServerStruct) DeleteInodeTableEntry(deleteInodeTableEntryRe
 type AdjustInodeTableEntryOpenCountRequestStruct struct {
 	MountID     string
 	InodeNumber uint64
+	Adjustment  int64
 }
 
 // AdjustInodeTableEntryOpenCountReplyStruct is the reply object for AdjustInodeTableEntryOpenCount.
 //
 type AdjustInodeTableEntryOpenCountReplyStruct struct {
-	// TODO
+	CurrentOpenCountThisMount uint64
+	CurrentOpenCountAllMounts uint64
 }
 
 // AdjustInodeTableEntryOpenCount requests the specified Inode's OpenCount be
