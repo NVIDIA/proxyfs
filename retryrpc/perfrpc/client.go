@@ -6,52 +6,32 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math/rand"
+	"sync"
+	"time"
+
+	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
-/*
-func testLoop(t *testing.T, useTLS bool) {
-	var (
-		agentCount = 15
-		sendCount  = 250
-	)
-	assert := assert.New(t)
-	zero := 0
-	assert.Equal(0, zero)
-
-	// Create new TestPingServer - needed for calling RPCs
-	myJrpcfs := &TestPingServer{}
-
-	rrSvr := getNewServer(65*time.Second, false, useTLS)
-	assert.NotNil(rrSvr)
-
-	// Register the Server - sets up the methods supported by the
-	// server
-	err := rrSvr.Register(myJrpcfs)
-	assert.Nil(err)
-
-	// Start listening for requests on the ipaddr/port
-	startErr := rrSvr.Start()
-	assert.Nil(startErr, "startErr is not nil")
-
-	// Tell server to start accepting and processing requests
-	rrSvr.Run()
-
-	// Start up the agents
-	parallelAgentSenders(t, rrSvr, agentCount, "RpcPing", sendCount, useTLS)
-
-	rrSvr.Close()
+// TODO - move to top
+type globalsStruct struct {
+	cs       *ClientSubcommand
+	tlsCerts *tlsCertsStruct
+	useTLS   bool
 }
-*/
 
-/*
-func ping(t *testing.T, client *Client, i int, agentID uint64, assert *assert.Assertions) {
+var globals globalsStruct
+
+func ping(client *retryrpc.Client, i int, agentID uint64) {
 	// Send a ping RPC and print the results
 	msg := fmt.Sprintf("Ping Me - %v", i)
-	pingRequest := &TestPingReq{Message: msg}
-	pingReply := &TestPingReply{}
+	pingRequest := &PerfPingReq{Message: msg}
+	pingReply := &PerfPingReply{}
 	expectedReply := fmt.Sprintf("pong %d bytes", len(msg))
 	err := client.Send("RpcTestPing", pingRequest, pingReply)
-	assert.Nil(err, "client.Send() returned an error")
+	if err != nil {
+		panic(err)
+	}
 	if expectedReply != pingReply.Message {
 		fmt.Printf("		 client - AGENTID: %v\n", agentID)
 		fmt.Printf("         client.Send(RpcPing) reply '%+v'\n", pingReply)
@@ -59,37 +39,19 @@ func ping(t *testing.T, client *Client, i int, agentID uint64, assert *assert.As
 		fmt.Printf("         client.Send(RpcPing) SENT: msg '%v' but received '%s'\n", msg, pingReply.Message)
 		fmt.Printf("         client.Send(RpcPing) len(pingRequest.Message): '%d' i: %v\n", len(pingRequest.Message), i)
 	}
-	assert.Equal(expectedReply, pingReply.Message, "Received different output then expected")
 }
 
-// pingLarge responds to the RPC with a large packet
-func pingLarge(t *testing.T, client *Client, i int, agentID uint64, assert *assert.Assertions) {
-	// Send a ping RPC and print the results
-	msg := fmt.Sprintf("Ping Me - %v", i)
-	pingRequest := &TestPingReq{Message: msg}
-	pingReply := &TestPingReply{}
-	err := client.Send("RpcTestPingLarge", pingRequest, pingReply)
-	assert.Nil(err, "client.Send() returned an error")
-}
+func sendIt(client *retryrpc.Client, i int, sendWg *sync.WaitGroup, agentID uint64, method string) {
 
-func sendIt(t *testing.T, client *Client, z int, sendCnt int, sendWg *sync.WaitGroup, prevWg *sync.WaitGroup, agentID uint64, method string, i int) {
-
-	assert := assert.New(t)
 	defer sendWg.Done()
 
 	switch method {
 	case "RpcPing":
-		ping(t, client, z, agentID, assert)
+		ping(client, i, agentID)
 		break
-	case "RpcPingLarge":
-		pingLarge(t, client, z, agentID, assert)
-		break
-	}
-
-	// The last send is blocked until the previous send has completed.   This
-	// is how we test the short trimmer.
-	if i <= (sendCnt - 2) {
-		prevWg.Done()
+	default:
+		err := fmt.Errorf("Invalid method: %v", method)
+		panic(err)
 	}
 }
 
@@ -110,9 +72,9 @@ func (cb *stressMyClient) Interrupt(payload []byte) {
 }
 
 // Represents a pfsagent - sepearate client
-func pfsagent(t *testing.T, rrSvr *Server, agentID uint64, method string, agentWg *sync.WaitGroup, sendCnt int, useTLS bool) {
+func pfsagent(agentID uint64, method string, agentWg *sync.WaitGroup, clients int, useTLS bool) {
 	var (
-		clientConfig *ClientConfig
+		clientConfig *retryrpc.ClientConfig
 	)
 
 	defer agentWg.Done()
@@ -120,106 +82,65 @@ func pfsagent(t *testing.T, rrSvr *Server, agentID uint64, method string, agentW
 	cb := &stressMyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
 	if useTLS {
-		clientConfig = &ClientConfig{
-			IPAddr:                   testIPAddr,
-			Port:                     testPort,
-			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+		clientConfig = &retryrpc.ClientConfig{
+			IPAddr:                   globals.cs.ipAddr,
+			Port:                     globals.cs.port,
+			RootCAx509CertificatePEM: globals.tlsCerts.caCertPEMBlock,
 			Callbacks:                cb,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
 		}
 	} else {
-		clientConfig = &ClientConfig{
-			IPAddr:                   testIPAddr,
-			Port:                     testPort,
+		clientConfig = &retryrpc.ClientConfig{
+			IPAddr:                   globals.cs.ipAddr,
+			Port:                     globals.cs.port,
 			RootCAx509CertificatePEM: nil,
 			Callbacks:                cb,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
 		}
 	}
-	client, err := NewClient(clientConfig)
+	client, err := retryrpc.NewClient(clientConfig)
 	if err != nil {
-		fmt.Printf("Dial() failed with err: %v\n", err)
-		return
+		err := fmt.Errorf("Dial() failed with err: %v\n", err)
+		panic(err)
 	}
 	defer client.Close()
 
 	// WG to verify all messages sent
 	var sendWg sync.WaitGroup
 
-	// WG to verify all but the last send() has been sent and
-	// received.   This is needed to test the consecutive sequence
-	// trimmer is working.
-	var prevWg sync.WaitGroup
-
-	var z, r int
-	var msg1 []byte = []byte("server msg back to client")
-	for i := 0; i < sendCnt; i++ {
-
-		z = (z + i) * 10
-
-		if i == (sendCnt - 1) {
-			// Give server time to process messages.   This last
-			// call gets us closer to highestConsecutive set to sendCnt - 1.
-			prevWg.Wait()
-
-			// The highest consecutive number is updated in the background with
-			// a goroutine when send() returns.
-			//
-			// Therefore, we loop waiting for it to hit (sendCnt - 1)
-			for {
-				var currentHighest requestID
-				client.Lock()
-				currentHighest = client.highestConsecutive
-				client.Unlock()
-
-				if int(currentHighest) == (sendCnt - 1) {
-					break
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
-		} else {
-			prevWg.Add(1)
-		}
+	for i := 0; i < globals.cs.messages; i++ {
 
 		sendWg.Add(1)
-		go func(z int, i int) {
-			sendIt(t, client, z, sendCnt, &sendWg, &prevWg, agentID, method, i)
-			rrSvr.SendCallback(client.GetMyUniqueID(), msg1)
-		}(z, i)
-
-		// Occasionally drop the connection to the server to
-		// simulate retransmits
-		r = i % 10
-		if r == 0 && (i != 0) {
-			rrSvr.CloseClientConn()
-		}
+		go func(i int) {
+			sendIt(client, i, &sendWg, agentID, method)
+		}(i)
 	}
 	sendWg.Wait()
 }
-*/
 
-// Start a bunch of "clients" in parallel sending RPCs
-func parallelClientSenders(ipAddr string, port string, agentCnt int, method string, sendCnt int, useTLS bool) {
+// Start a bunch of "clients" and send messages
+func parallelClientSenders(method string) {
 
-	/*
-		var agentWg sync.WaitGroup
+	var agentWg sync.WaitGroup
 
-		// Figure out random seed for runs
-		r := rand.New(rand.NewSource(99))
-		clientSeed := r.Uint64()
+	// Figure out random seed for runs
+	r := rand.New(rand.NewSource(99))
+	clientSeed := r.Uint64()
 
-			// Start parallel pfsagents - each agent doing sendCnt parallel sends
-			var agentID uint64
-			for i := 0; i < agentCnt; i++ {
-				agentID = clientSeed + uint64(i)
+	// TODO - warm up with N number of clients before doing
+	// performance run...... bucketstats to do measurement??
 
-				agentWg.Add(1)
-				go pfsagent(t, rrSrv, agentID, method, &agentWg, sendCnt, useTLS)
-			}
-		agentWg.Wait()
-	*/
+	// Start parallel pfsagents - each agent doing sendCnt parallel sends
+	var agentID uint64
+	for i := 0; i < globals.cs.clients; i++ {
+		agentID = clientSeed + uint64(i)
+
+		agentWg.Add(1)
+		go pfsagent(agentID, method, &agentWg, globals.cs.messages, globals.useTLS)
+	}
+	agentWg.Wait()
 }
 
 type ClientSubcommand struct {
@@ -274,11 +195,12 @@ func (cs *ClientSubcommand) Run() (err error) {
 	}
 	fmt.Printf("clients: %v messages: %v\n", cs.clients, cs.messages)
 
-	// TODO -
-	// pass count of messages, warm up like Craig said..... what other options?
-	// how dump bucketstats??
-	/*
-		parallelClientSenders(ipAddr, port, count)
-	*/
+	// Use global structure to store settings and certificate instead of
+	// passing on stack
+	globals.cs = cs
+	globals.useTLS = true // TODO - make option?
+	globals.tlsCerts = tlsCertsAllocate(cs.ipAddr)
+
+	parallelClientSenders("RpcPing")
 	return nil
 }

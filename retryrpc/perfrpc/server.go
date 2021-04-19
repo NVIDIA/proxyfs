@@ -12,14 +12,13 @@ import (
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
-// TODO - probably need to create the certificate on the server and then copy it to the client
-// machine.... write to file....
 func configNewServer(ipAddr string, port int, lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr *retryrpc.Server, err error) {
 	var (
 		config *retryrpc.ServerConfig
 	)
 
 	if useTLS {
+		tlsCert := tlsCertsAllocate(ipAddr)
 		config = &retryrpc.ServerConfig{
 			LongTrim:        lt,
 			ShortTrim:       100 * time.Millisecond,
@@ -27,9 +26,7 @@ func configNewServer(ipAddr string, port int, lt time.Duration, dontStartTrimmer
 			Port:            port,
 			DeadlineIO:      60 * time.Second,
 			KeepAlivePeriod: 60 * time.Second,
-			/* TODO
-			TLSCertificate:  testTLSCerts.endpointTLSCert,
-			*/
+			TLSCertificate:  tlsCert.endpointTLSCert,
 		}
 	} else {
 		config = &retryrpc.ServerConfig{
