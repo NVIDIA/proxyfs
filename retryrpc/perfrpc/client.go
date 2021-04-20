@@ -24,13 +24,13 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-func ping(client *retryrpc.Client, i int, agentID uint64) {
+func ping(client *retryrpc.Client, method string, i int, agentID uint64) {
 	// Send a ping RPC and print the results
 	msg := fmt.Sprintf("Ping Me - %v", i)
 	pingRequest := &PerfPingReq{Message: msg}
 	pingReply := &PerfPingReply{}
 	expectedReply := fmt.Sprintf("pong %d bytes", len(msg))
-	err := client.Send("RpcPerfPing", pingRequest, pingReply)
+	err := client.Send(method, pingRequest, pingReply)
 	if err != nil {
 		panic(err)
 	}
@@ -49,7 +49,7 @@ func sendIt(client *retryrpc.Client, i int, sendWg *sync.WaitGroup, agentID uint
 
 	switch method {
 	case "RpcPerfPing":
-		ping(client, i, agentID)
+		ping(client, method, i, agentID)
 		break
 	default:
 		err := fmt.Errorf("Invalid method: %v", method)

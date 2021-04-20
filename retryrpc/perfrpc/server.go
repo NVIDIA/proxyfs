@@ -77,15 +77,17 @@ func becomeAServer(ipAddr string, port int, tlsDir string, useTLS bool) error {
 	// Tell server to start accepting and processing requests
 	rrSvr.Run()
 
-	// TODO - how block here? how exit???
-	time.Sleep(1000 * time.Minute)
-	fmt.Printf("WAKEUP AFTER SLEEP----\n")
+	// Block indefinitely
+	for {
+
+	}
 
 	/*
+		// TODO - decide if we want a way to shutdown server
 		// Stop the server before exiting
 		rrSvr.Close()
+		return nil
 	*/
-	return nil
 }
 
 type ServerSubcommand struct {
