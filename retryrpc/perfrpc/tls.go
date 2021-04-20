@@ -20,17 +20,29 @@ type tlsCertsStruct struct {
 	endpointCertPEMBlock []byte
 	endpointKeyPEMBlock  []byte
 	endpointTLSCert      tls.Certificate
+	caCertFile           string
+	caKeyFile            string
+	endpointCertFile     string
+	endpointKeyFile      string
 }
 
 var tlsCerts *tlsCertsStruct
 
+func tlsSetFileNames(tlsCerts *tlsCertsStruct, tlsDir string) {
+	tlsCerts.caCertFile = tlsDir + "/caCertFile"
+	tlsCerts.caKeyFile = tlsDir + "/caKeyFile"
+	tlsCerts.endpointCertFile = tlsDir + "/endpointCertFile"
+	tlsCerts.endpointKeyFile = tlsDir + "/endpointKeyFile"
+}
+
 // Utility function to initialize tlsCerts
-func tlsCertsAllocate(ipAddr string) (tlsCerts *tlsCertsStruct) {
+func tlsCertsAllocate(ipAddr string, tlsDir string) (tlsCerts *tlsCertsStruct) {
 	var (
 		err error
 	)
 
 	tlsCerts = &tlsCertsStruct{}
+	tlsSetFileNames(tlsCerts, tlsDir)
 
 	tlsCerts.caCertPEMBlock, tlsCerts.caKeyPEMBlock, err = icertpkg.GenCACert(
 		icertpkg.GenerateKeyAlgorithmEd25519,
@@ -43,8 +55,8 @@ func tlsCertsAllocate(ipAddr string) (tlsCerts *tlsCertsStruct) {
 			PostalCode:    []string{},
 		},
 		time.Hour,
-		"",
-		"")
+		tlsCerts.caCertFile,
+		tlsCerts.caKeyFile)
 
 	if err != nil {
 		fmt.Printf("icertpkg.GenCACert() failed: %v", err)
@@ -66,8 +78,8 @@ func tlsCertsAllocate(ipAddr string) (tlsCerts *tlsCertsStruct) {
 		time.Hour,
 		tlsCerts.caCertPEMBlock,
 		tlsCerts.caKeyPEMBlock,
-		"",
-		"")
+		tlsCerts.endpointCertFile,
+		tlsCerts.endpointKeyFile)
 
 	if err != nil {
 		fmt.Printf("icertpkg.genEndpointCert() failed: %v", err)

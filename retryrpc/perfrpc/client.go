@@ -6,6 +6,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 type globalsStruct struct {
 	cs       *ClientSubcommand
 	tlsCerts *tlsCertsStruct
+	tlsDir   string // Directory containing TLS info
 	useTLS   bool
 }
 
@@ -28,7 +30,7 @@ func ping(client *retryrpc.Client, i int, agentID uint64) {
 	pingRequest := &PerfPingReq{Message: msg}
 	pingReply := &PerfPingReply{}
 	expectedReply := fmt.Sprintf("pong %d bytes", len(msg))
-	err := client.Send("RpcTestPing", pingRequest, pingReply)
+	err := client.Send("RpcPerfPing", pingRequest, pingReply)
 	if err != nil {
 		panic(err)
 	}
@@ -46,7 +48,7 @@ func sendIt(client *retryrpc.Client, i int, sendWg *sync.WaitGroup, agentID uint
 	defer sendWg.Done()
 
 	switch method {
-	case "RpcPing":
+	case "RpcPerfPing":
 		ping(client, i, agentID)
 		break
 	default:
@@ -122,12 +124,22 @@ func pfsagent(agentID uint64, method string, agentWg *sync.WaitGroup, clients in
 
 // Start a bunch of "clients" and send messages
 func parallelClientSenders(method string) {
-
-	var agentWg sync.WaitGroup
+	var (
+		agentWg sync.WaitGroup
+		err     error
+	)
 
 	// Figure out random seed for runs
 	r := rand.New(rand.NewSource(99))
 	clientSeed := r.Uint64()
+
+	globals.tlsCerts = &tlsCertsStruct{}
+	tlsSetFileNames(globals.tlsCerts, globals.tlsDir)
+
+	globals.tlsCerts.caCertPEMBlock, err = ioutil.ReadFile(globals.tlsCerts.caCertFile)
+	if err != nil {
+		panic(err)
+	}
 
 	// TODO - warm up with N number of clients before doing
 	// performance run...... bucketstats to do measurement??
@@ -149,6 +161,7 @@ type ClientSubcommand struct {
 	ipAddr   string // IP Address of server
 	messages int    // Number of messages to send
 	port     int    // Port on which the server is listening
+	tlsDir   string // Directory to write TLS info
 }
 
 func NewClientCommand() *ClientSubcommand {
@@ -160,6 +173,7 @@ func NewClientCommand() *ClientSubcommand {
 	cs.fs.StringVar(&cs.ipAddr, "ipaddr", "", "IP Address of server")
 	cs.fs.IntVar(&cs.messages, "messages", 0, "Number of total messages to send")
 	cs.fs.IntVar(&cs.port, "port", 0, "Port on which the server is listening")
+	cs.fs.StringVar(&cs.tlsDir, "tlsdir", "", "Directory to write TLS info")
 
 	return cs
 }
@@ -193,14 +207,19 @@ func (cs *ClientSubcommand) Run() (err error) {
 		cs.fs.PrintDefaults()
 		return
 	}
+	if cs.tlsDir == "" {
+		err = fmt.Errorf("tlsdir cannot be empty")
+		cs.fs.PrintDefaults()
+		return
+	}
 	fmt.Printf("clients: %v messages: %v\n", cs.clients, cs.messages)
 
 	// Use global structure to store settings and certificate instead of
 	// passing on stack
 	globals.cs = cs
 	globals.useTLS = true // TODO - make option?
-	globals.tlsCerts = tlsCertsAllocate(cs.ipAddr)
+	globals.tlsDir = cs.tlsDir
 
-	parallelClientSenders("RpcPing")
+	parallelClientSenders("RpcPerfPing")
 	return nil
 }

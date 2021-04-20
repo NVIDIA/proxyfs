@@ -7,18 +7,20 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
-func configNewServer(ipAddr string, port int, lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr *retryrpc.Server, err error) {
+func configNewServer(ipAddr string, port int, lt time.Duration, tlsDir string, dontStartTrimmers bool, useTLS bool) (rrSvr *retryrpc.Server, err error) {
 	var (
 		config *retryrpc.ServerConfig
 	)
 
 	if useTLS {
-		tlsCert := tlsCertsAllocate(ipAddr)
+		_ = os.Mkdir(tlsDir, os.ModeDir)
+		tlsCert := tlsCertsAllocate(ipAddr, tlsDir)
 		config = &retryrpc.ServerConfig{
 			LongTrim:        lt,
 			ShortTrim:       100 * time.Millisecond,
@@ -49,12 +51,12 @@ func configNewServer(ipAddr string, port int, lt time.Duration, dontStartTrimmer
 
 // TODO - should this be a goroutine with WG?????
 // want way to shutdown with curl/WS? how dump stats?
-func becomeAServer(ipAddr string, port int, useTLS bool) error {
+func becomeAServer(ipAddr string, port int, tlsDir string, useTLS bool) error {
 
 	// Create new TestPingServer - needed for calling RPCs
 	myJrpcfs := &PerfPingServer{}
 
-	rrSvr, err := configNewServer(ipAddr, port, 10*time.Minute, false, useTLS)
+	rrSvr, err := configNewServer(ipAddr, port, 10*time.Minute, tlsDir, false, useTLS)
 	if err != nil {
 		return err
 	}
@@ -77,6 +79,7 @@ func becomeAServer(ipAddr string, port int, useTLS bool) error {
 
 	// TODO - how block here? how exit???
 	time.Sleep(1000 * time.Minute)
+	fmt.Printf("WAKEUP AFTER SLEEP----\n")
 
 	/*
 		// Stop the server before exiting
@@ -89,6 +92,7 @@ type ServerSubcommand struct {
 	fs     *flag.FlagSet
 	ipAddr string // IP Address server will use
 	port   int    // Port on which to listen
+	tlsDir string //  Directory to read for TLS info
 }
 
 func NewServerCommand() *ServerSubcommand {
@@ -97,6 +101,7 @@ func NewServerCommand() *ServerSubcommand {
 	}
 	s.fs.StringVar(&s.ipAddr, "ipaddr", "", "IP Address server will use")
 	s.fs.IntVar(&s.port, "port", 0, "Port on which to listen")
+	s.fs.StringVar(&s.tlsDir, "tlsdir", "", "Directory containing TLS info")
 
 	return s
 }
@@ -121,7 +126,11 @@ func (s *ServerSubcommand) Run() (err error) {
 		s.fs.PrintDefaults()
 		return
 	}
-	fmt.Printf("ipAddr: %v port: %v\n", s.ipAddr, s.port)
-	err = becomeAServer(s.ipAddr, s.port, true)
+	if s.tlsDir == "" {
+		err = fmt.Errorf("tlsdir cannot be empty")
+		s.fs.PrintDefaults()
+		return
+	}
+	err = becomeAServer(s.ipAddr, s.port, s.tlsDir, true)
 	return err
 }
