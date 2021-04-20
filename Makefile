@@ -10,7 +10,7 @@ gopkgsubdirs = \
 	conf \
 	confgen \
 	dlm \
-    etcdclient \
+	etcdclient \
 	evtlog \
 	fs \
 	fuse \
@@ -85,26 +85,15 @@ gosubdirsforci = $(gopkgsubdirs) $(gobinsubdirsforci);
 gosubdirspathsforci = $(addprefix github.com/NVIDIA/proxyfs/,$(gosubdirsforci))
 
 uname = $(shell uname)
-machine = $(shell uname -m)
 
 ifeq ($(uname),Linux)
-    ifeq ($(machine),armv7l)
-        all: version fmt pre-generate generate install test
+    all: version fmt pre-generate generate install test python-test
 
-        ci: version fmt pre-generate generate install test cover
+    ci: version fmt pre-generate generate install test cover python-test
 
-        minimal: pre-generate generate install
-    else
-        distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
+    all-deb-builder: version fmt pre-generate generate install
 
-        all: version fmt pre-generate generate install test python-test
-
-        ci: version fmt pre-generate generate install test cover python-test
-
-        all-deb-builder: version fmt pre-generate generate install
-
-        minimal: pre-generate generate install
-    endif
+    minimal: pre-generate generate install
 else
     all: version fmt pre-generate generate install test
 
