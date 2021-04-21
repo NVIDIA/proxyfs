@@ -17,36 +17,44 @@ import (
 	"github.com/NVIDIA/proxyfs/conf"
 	"github.com/NVIDIA/proxyfs/icert/icertpkg"
 	"github.com/NVIDIA/proxyfs/iswift/iswiftpkg"
+	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
 const (
-	testIPAddr            = "127.0.0.1"
-	testRetryRPCPort      = 32357
-	testHTTPServerPort    = 15347
-	testSwiftProxyTCPPort = 24367
-	testSwiftAuthUser     = "test"
-	testSwiftAuthKey      = "test"
-	testContainer         = "testContainer"
-	testVolume            = "testVolume"
+	testIPAddr             = "127.0.0.1"
+	testRetryRPCPort       = 32357
+	testHTTPServerPort     = 15347
+	testSwiftProxyTCPPort  = 24367
+	testSwiftAuthUser      = "test"
+	testSwiftAuthKey       = "test"
+	testContainer          = "testContainer"
+	testVolume             = "testVolume"
+	testRPCDeadlineIO      = "60s"
+	testRPCKeepAlivePeriod = "60s"
 )
 
 type testGlobalsStruct struct {
-	tempDir          string
-	caCertFile       string
-	caKeyFile        string
-	endpointCertFile string
-	endpointKeyFile  string
-	confMap          conf.ConfMap
-	httpServerURL    string
-	authURL          string
-	authToken        string
-	accountURL       string
-	containerURL     string
+	tempDir              string
+	caCertFile           string
+	caKeyFile            string
+	caCertPEMBlock       []byte
+	caKeyPEMBlock        []byte
+	endpointCertFile     string
+	endpointKeyFile      string
+	endpointCertPEMBlock []byte
+	endpointKeyPEMBlock  []byte
+	confMap              conf.ConfMap
+	httpServerURL        string
+	authURL              string
+	authToken            string
+	accountURL           string
+	containerURL         string
+	retryrpcClientConfig *retryrpc.ClientConfig
 }
 
 var testGlobals *testGlobalsStruct
 
-func testSetup(t *testing.T) {
+func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 	var (
 		authRequestHeaders         http.Header
 		authResponseHeaders        http.Header
@@ -54,6 +62,8 @@ func testSetup(t *testing.T) {
 		err                        error
 		putAccountRequestHeaders   http.Header
 		putContainerRequestHeaders http.Header
+		retryrpcDeadlineIO         time.Duration
+		retryrpcKeepAlivePeriod    time.Duration
 		tempDir                    string
 	)
 
@@ -72,7 +82,7 @@ func testSetup(t *testing.T) {
 		authURL:          fmt.Sprintf("http://%s:%d/auth/v1.0", testIPAddr, testSwiftProxyTCPPort),
 	}
 
-	_, _, err = icertpkg.GenCACert(
+	testGlobals.caCertPEMBlock, testGlobals.caKeyPEMBlock, err = icertpkg.GenCACert(
 		icertpkg.GenerateKeyAlgorithmEd25519,
 		pkix.Name{
 			Organization:  []string{"Test Organization CA"},
@@ -89,7 +99,7 @@ func testSetup(t *testing.T) {
 		t.Fatalf("icertpkg.GenCACert() failed: %v", err)
 	}
 
-	_, _, err = icertpkg.GenEndpointCert(
+	testGlobals.endpointCertPEMBlock, testGlobals.endpointKeyPEMBlock, err = icertpkg.GenEndpointCert(
 		icertpkg.GenerateKeyAlgorithmEd25519,
 		pkix.Name{
 			Organization:  []string{"Test Organization Endpoint"},
@@ -102,8 +112,8 @@ func testSetup(t *testing.T) {
 		[]string{},
 		[]net.IP{net.ParseIP(testIPAddr)},
 		time.Hour,
-		testGlobals.caCertFile,
-		testGlobals.caKeyFile,
+		testGlobals.caCertPEMBlock,
+		testGlobals.caKeyPEMBlock,
 		testGlobals.endpointCertFile,
 		testGlobals.endpointKeyFile)
 	if nil != err {
@@ -203,6 +213,24 @@ func testSetup(t *testing.T) {
 	err = Start(testGlobals.confMap)
 	if nil != err {
 		t.Fatalf("Start(testGlobals.confMap) failed: %v", err)
+	}
+
+	retryrpcDeadlineIO, err = time.ParseDuration(testRPCDeadlineIO)
+	if nil != err {
+		t.Fatalf("time.ParseDuration(\"%s\") failed: %v", testRPCDeadlineIO, err)
+	}
+	retryrpcKeepAlivePeriod, err = time.ParseDuration(testRPCKeepAlivePeriod)
+	if nil != err {
+		t.Fatalf("time.ParseDuration(\"%s\") failed: %v", retryrpcKeepAlivePeriod, err)
+	}
+
+	testGlobals.retryrpcClientConfig = &retryrpc.ClientConfig{
+		IPAddr:                   testIPAddr,
+		Port:                     testRetryRPCPort,
+		RootCAx509CertificatePEM: testGlobals.caCertPEMBlock,
+		Callbacks:                retryrpcCallbacks,
+		DeadlineIO:               retryrpcDeadlineIO,
+		KeepAlivePeriod:          retryrpcKeepAlivePeriod,
 	}
 }
 

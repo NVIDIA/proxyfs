@@ -77,7 +77,7 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 		globals.stats.MountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return nil // TODO
+	return fmt.Errorf("TODO")
 }
 
 func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *RenewMountResponseStruct) (err error) {
@@ -91,7 +91,7 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 		globals.stats.RenewMountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return nil // TODO
+	return fmt.Errorf("TODO")
 }
 
 func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountResponseStruct) (err error) {
@@ -105,11 +105,13 @@ func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountRespo
 		globals.stats.UnmountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return nil // TODO
+	return fmt.Errorf("TODO")
 }
 
 func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeResponse *FetchNonceRangeResponseStruct) (err error) {
 	var (
+		mount     *mountStruct
+		ok        bool
 		startTime time.Time
 	)
 
@@ -119,7 +121,20 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 		globals.stats.FetchNonceRangeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return nil // TODO
+	globals.RLock()
+
+	mount, ok = globals.mountMap[fetchNonceRangeRequest.MountID]
+	if !ok {
+		globals.RUnlock()
+		err = fmt.Errorf("MountID not recognized")
+		return
+	}
+
+	fmt.Printf("TODO: Perform fetchNonceRange() for mountStruct @ %p\n", mount)
+
+	globals.RUnlock()
+
+	return fmt.Errorf("TODO")
 }
 
 func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryResponse *GetInodeTableEntryResponseStruct) (err error) {
@@ -133,7 +148,7 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 		globals.stats.GetInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return nil // TODO
+	return fmt.Errorf("TODO")
 }
 
 func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesResponse *PutInodeTableEntriesResponseStruct) (err error) {
@@ -147,7 +162,7 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 		globals.stats.PutInodeTableEntriesUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return nil // TODO
+	return fmt.Errorf("TODO")
 }
 
 func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *DeleteInodeTableEntryResponseStruct) (err error) {
@@ -161,7 +176,7 @@ func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRe
 		globals.stats.DeleteInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return nil // TODO
+	return fmt.Errorf("TODO")
 }
 
 func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct) (err error) {
@@ -175,7 +190,7 @@ func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *Adjus
 		globals.stats.AdjustInodeTableEntryOpenCountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return nil // TODO
+	return fmt.Errorf("TODO")
 }
 
 func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct) (err error) {
@@ -189,7 +204,7 @@ func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct)
 		globals.stats.FlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return nil // TODO
+	return fmt.Errorf("TODO")
 }
 
 func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct) (err error) {
@@ -231,5 +246,5 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 		return
 	}
 
-	return nil // TODO
+	return fmt.Errorf("TODO")
 }

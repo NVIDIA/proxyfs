@@ -23,7 +23,7 @@ func TestHTTPServer(t *testing.T) {
 		responseBodyExpected string
 	)
 
-	testSetup(t)
+	testSetup(t, nil)
 
 	_, _, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/config", nil, nil)
 	if nil != err {
