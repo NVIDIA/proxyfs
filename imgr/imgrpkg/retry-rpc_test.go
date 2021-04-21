@@ -5,12 +5,50 @@ package imgrpkg
 
 import (
 	"testing"
+
+	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
-func TestRetryRPC(t *testing.T) {
-	testSetup(t)
+type testRetryRPCClientCallbacksStruct struct {
+	interruptPayloadChan chan []byte
+}
 
-	// TODO: Attempt a FetchNonceRange() without a prior Mount()... which should fail (no Mount)
+func (retryrpcClientCallbacks *testRetryRPCClientCallbacksStruct) Interrupt(payload []byte) {
+	retryrpcClientCallbacks.interruptPayloadChan <- payload
+}
+
+func TestRetryRPC(t *testing.T) {
+	var (
+		err                     error
+		fetchNonceRangeRequest  *FetchNonceRangeRequestStruct
+		fetchNonceRangeResponse *FetchNonceRangeResponseStruct
+		retryrpcClient          *retryrpc.Client
+		retryrpcClientCallbacks *testRetryRPCClientCallbacksStruct
+	)
+
+	retryrpcClientCallbacks = &testRetryRPCClientCallbacksStruct{
+		interruptPayloadChan: make(chan []byte),
+	}
+
+	testSetup(t, retryrpcClientCallbacks)
+
+	retryrpcClient, err = retryrpc.NewClient(testGlobals.retryrpcClientConfig)
+	if nil != err {
+		t.Fatalf("retryrpc.NewClient() failed: %v", err)
+	}
+
+	// Attempt a FetchNonceRange() without a prior Mount()... which should fail (no Mount)
+
+	fetchNonceRangeRequest = &FetchNonceRangeRequestStruct{
+		MountID: "", // An invalid MountID... so will not be found in globals.mountMap
+	}
+	fetchNonceRangeResponse = &FetchNonceRangeResponseStruct{}
+
+	err = retryrpcClient.Send("FetchNonceRange", fetchNonceRangeRequest, fetchNonceRangeResponse)
+	if nil == err {
+		t.Fatalf("retryrpcClient.Send(\"FetchNonceRange\",,) should have failed")
+	}
+
 	// TODO: Perform a Mount()
 	// TODO: Attempt a GetInodeTableEntry() for RootDirInode... which should fail (no Lease)
 	// TODO: Force a need for a re-auth
@@ -40,6 +78,8 @@ func TestRetryRPC(t *testing.T) {
 	// TODO: Perform a Lease Release on FileInode
 	// TODO: Perform a Unmount()... without first releasing Exclusive Lease on RootDirInode
 	// TODO: Verify that Exclusive Lease on RootDirInode is implicitly released
+
+	retryrpcClient.Close()
 
 	testTeardown(t)
 }
