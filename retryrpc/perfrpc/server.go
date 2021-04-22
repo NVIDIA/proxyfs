@@ -7,6 +7,8 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -19,7 +21,7 @@ func configNewServer(ipAddr string, port int, lt time.Duration, tlsDir string, d
 	)
 
 	if useTLS {
-		_ = os.Mkdir(tlsDir, os.ModeDir)
+		_ = os.Mkdir(tlsDir, os.ModePerm)
 		tlsCert := tlsCertsAllocate(ipAddr, tlsDir)
 		config = &retryrpc.ServerConfig{
 			LongTrim:        lt,
@@ -79,7 +81,7 @@ func becomeAServer(ipAddr string, port int, tlsDir string, useTLS bool) error {
 
 	// Block indefinitely
 	for {
-
+		time.Sleep(1 * time.Hour)
 	}
 
 	/*
@@ -133,6 +135,9 @@ func (s *ServerSubcommand) Run() (err error) {
 		s.fs.PrintDefaults()
 		return
 	}
+
+	go http.ListenAndServe("localhost:12123", nil)
+
 	err = becomeAServer(s.ipAddr, s.port, s.tlsDir, true)
 	return err
 }

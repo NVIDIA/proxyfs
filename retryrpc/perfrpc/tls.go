@@ -54,7 +54,7 @@ func tlsCertsAllocate(ipAddr string, tlsDir string) (tlsCerts *tlsCertsStruct) {
 			StreetAddress: []string{},
 			PostalCode:    []string{},
 		},
-		time.Hour,
+		24*time.Hour,
 		tlsCerts.caCertFile,
 		tlsCerts.caKeyFile)
 

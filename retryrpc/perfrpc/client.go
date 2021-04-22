@@ -74,16 +74,16 @@ func (cb *stressMyClient) Interrupt(payload []byte) {
 }
 
 // Represents a pfsagent - sepearate client
-func pfsagent(agentID uint64, method string, agentWg *sync.WaitGroup, clients int, useTLS bool) {
+func pfsagent(agentID uint64, method string, agentWG *sync.WaitGroup, warmUpCompleteWG *sync.WaitGroup, fence chan int) {
 	var (
 		clientConfig *retryrpc.ClientConfig
 	)
 
-	defer agentWg.Done()
+	defer agentWG.Done()
 
 	cb := &stressMyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
-	if useTLS {
+	if globals.useTLS {
 		clientConfig = &retryrpc.ClientConfig{
 			IPAddr:                   globals.cs.ipAddr,
 			Port:                     globals.cs.port,
@@ -109,24 +109,47 @@ func pfsagent(agentID uint64, method string, agentWg *sync.WaitGroup, clients in
 	}
 	defer client.Close()
 
-	// WG to verify all messages sent
-	var sendWg sync.WaitGroup
+	// Send messages to create connection and warm up client/server
+	var warmUpWg sync.WaitGroup
+	for i := 0; i < globals.cs.warmUpCnt; i++ {
 
-	for i := 0; i < globals.cs.messages; i++ {
-
-		sendWg.Add(1)
+		warmUpWg.Add(1)
 		go func(i int) {
-			sendIt(client, i, &sendWg, agentID, method)
+			sendIt(client, i, &warmUpWg, agentID, method)
 		}(i)
 	}
-	sendWg.Wait()
+	warmUpWg.Wait()
+
+	// Signal caller that this agent has completed warmup cycle
+	warmUpCompleteWG.Done()
+
+	// We have sent and received all our messages used to warm up client/server.
+	// Block here until the channel is closed which signifies that all goroutines
+	// should run the test
+	<-fence
+
+	// Now run the real test
+	var sendWG sync.WaitGroup
+	for i := 0; i < globals.cs.messages; i++ {
+
+		sendWG.Add(1)
+		go func(i int) {
+			sendIt(client, i, &sendWG, agentID, method)
+		}(i)
+	}
+	sendWG.Wait()
 }
 
 // Start a bunch of "clients" and send messages
-func parallelClientSenders(method string) {
+//
+// We first start all the goroutines ("clients") and let them send
+// some messages to the server.    This allows us to "warmup" the
+// clients so we are only measuring the steady state.
+func parallelClientSenders(method string) (duration time.Duration) {
 	var (
-		agentWg sync.WaitGroup
-		err     error
+		agentWG          sync.WaitGroup
+		warmUpCompleteWG sync.WaitGroup
+		err              error
 	)
 
 	// Figure out random seed for runs
@@ -141,27 +164,47 @@ func parallelClientSenders(method string) {
 		panic(err)
 	}
 
-	// TODO - warm up with N number of clients before doing
-	// performance run...... bucketstats to do measurement??
-
-	// Start parallel pfsagents - each agent doing sendCnt parallel sends
+	// Start parallel pfsagents - each agent setup connection to server,
+	// send RPCs to warm up client/server and then block on channel named fence
 	var agentID uint64
+	fence := make(chan int)
 	for i := 0; i < globals.cs.clients; i++ {
 		agentID = clientSeed + uint64(i)
 
-		agentWg.Add(1)
-		go pfsagent(agentID, method, &agentWg, globals.cs.messages, globals.useTLS)
+		agentWG.Add(1)
+		warmUpCompleteWG.Add(1)
+		go pfsagent(agentID, method, &agentWG, &warmUpCompleteWG, fence)
 	}
-	agentWg.Wait()
+
+	// TODO --- bucketstats to do measurement??
+
+	// Wait for all agents to warm up
+	warmUpCompleteWG.Wait()
+
+	// At this point, we know that the goroutines/clients have started,
+	// established their connection to the server and sent some warm up
+	// messages.   The goroutines then block on fence channel.
+	//
+	// We note the current time and then close fence channel.  This in
+	// effect releases all of the goroutines at once.
+
+	start := time.Now()
+	close(fence)
+
+	// Now wait for all messages to be sent
+	agentWG.Wait()
+	duration = time.Since(start)
+	return
 }
 
 type ClientSubcommand struct {
-	fs       *flag.FlagSet
-	clients  int    // Number of clients which will be sending messages
-	ipAddr   string // IP Address of server
-	messages int    // Number of messages to send
-	port     int    // Port on which the server is listening
-	tlsDir   string // Directory to write TLS info
+	fs        *flag.FlagSet
+	clients   int    // Number of clients which will be sending messages
+	ipAddr    string // IP Address of server
+	warmUpCnt int    // Number of messages to send to "warm up"
+	messages  int    // Number of messages to send
+	port      int    // Port on which the server is listening
+	tlsDir    string // Directory to write TLS info
 }
 
 func NewClientCommand() *ClientSubcommand {
@@ -172,6 +215,7 @@ func NewClientCommand() *ClientSubcommand {
 	cs.fs.IntVar(&cs.clients, "clients", 0, "Number of clients which will be sending a subset of messages")
 	cs.fs.StringVar(&cs.ipAddr, "ipaddr", "", "IP Address of server")
 	cs.fs.IntVar(&cs.messages, "messages", 0, "Number of total messages to send")
+	cs.fs.IntVar(&cs.warmUpCnt, "warmupcnt", 0, "Number of total messages to send warm up client/server")
 	cs.fs.IntVar(&cs.port, "port", 0, "Port on which the server is listening")
 	cs.fs.StringVar(&cs.tlsDir, "tlsdir", "", "Directory to write TLS info")
 
@@ -220,6 +264,9 @@ func (cs *ClientSubcommand) Run() (err error) {
 	globals.useTLS = true // TODO - make option?
 	globals.tlsDir = cs.tlsDir
 
-	parallelClientSenders("RpcPerfPing")
+	// Run the performance test
+	duration := parallelClientSenders("RpcPerfPing")
+	fmt.Printf("\n===== PERFRPC - Clients: %v Messages per Client: %v Total Messages: %v ---- Test Duration: %v\n",
+		globals.cs.clients, globals.cs.messages, globals.cs.clients*globals.cs.messages, duration)
 	return nil
 }
