@@ -233,7 +233,7 @@ func TestStopwatch(t *testing.T) {
 	// Create another stopwatch
 	//
 	sw2 := NewStopwatch()
-	for now = time.Now(); sw1.StartTime.Equal(now); now = time.Now() {
+	for now = time.Now(); sw2.StartTime.Equal(now); now = time.Now() {
 	}
 
 	// check stuff
@@ -263,7 +263,9 @@ func TestStopwatch(t *testing.T) {
 	// Stop and then call Elapsed() again
 	//
 	elapsed3 := sw2.Stop()
-	for now = time.Now(); sw1.StartTime.Equal(now); now = time.Now() {
+
+	// wait for time to continue its march
+	for now = time.Now(); sw2.StopTime.Equal(now); now = time.Now() {
 	}
 
 	// check stuff
@@ -278,7 +280,7 @@ func TestStopwatch(t *testing.T) {
 	// restart a previously running stopwatch
 	//
 	sw2.Restart()
-	for now = time.Now(); sw1.StartTime.Equal(now); now = time.Now() {
+	for now = time.Now(); sw2.StartTime.Equal(now); now = time.Now() {
 	}
 
 	// check stuff
@@ -297,7 +299,7 @@ func TestStopwatch(t *testing.T) {
 	//
 	assert.True(sw2.IsRunning) // stopwatch is still running
 	elapsed4 := sw2.Stop()
-	for now = time.Now(); sw1.StartTime.Equal(now); now = time.Now() {
+	for now = time.Now(); sw2.StopTime.Equal(now); now = time.Now() {
 	}
 
 	// check stuff
@@ -322,7 +324,9 @@ func TestStopwatch(t *testing.T) {
 	// restart a non-previously running stopwatch
 	//
 	sw3 := NewStopwatch()
-	for now = time.Now(); sw1.StartTime.Equal(now); now = time.Now() {
+
+	// wait for time to continue its march
+	for now = time.Now(); sw3.StartTime.Equal(now); now = time.Now() {
 	}
 
 	// check stuff
