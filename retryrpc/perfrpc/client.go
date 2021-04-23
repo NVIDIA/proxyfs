@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"sync"
 	"time"
 
@@ -203,6 +206,7 @@ type ClientSubcommand struct {
 	warmUpCnt int    // Number of messages to send to "warm up"
 	messages  int    // Number of messages to send
 	port      int    // Port on which the server is listening
+	dbgport   string // Debug port for pprof webserver
 	tlsDir    string // Directory to write TLS info
 }
 
@@ -216,6 +220,7 @@ func NewClientCommand() *ClientSubcommand {
 	cs.fs.IntVar(&cs.messages, "messages", 0, "Number of total messages to send")
 	cs.fs.IntVar(&cs.warmUpCnt, "warmupcnt", 0, "Number of total messages to send warm up client/server")
 	cs.fs.IntVar(&cs.port, "port", 0, "Port on which the server is listening")
+	cs.fs.StringVar(&cs.dbgport, "dbgport", "", "Debug port for pprof webserver (optional)")
 	cs.fs.StringVar(&cs.tlsDir, "tlsdir", "", "Directory to write TLS info")
 
 	return cs
@@ -255,6 +260,11 @@ func (cs *ClientSubcommand) Run() (err error) {
 		cs.fs.PrintDefaults()
 		return
 	}
+	if cs.dbgport != "" {
+		hostPort := net.JoinHostPort("localhost", cs.dbgport)
+		go http.ListenAndServe(hostPort, nil)
+	}
+
 	fmt.Printf("clients: %v messages: %v\n", cs.clients, cs.messages)
 
 	// Use global structure to store settings and certificate instead of

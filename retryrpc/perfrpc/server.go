@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -93,10 +94,11 @@ func becomeAServer(ipAddr string, port int, tlsDir string, useTLS bool) error {
 }
 
 type ServerSubcommand struct {
-	fs     *flag.FlagSet
-	ipAddr string // IP Address server will use
-	port   int    // Port on which to listen
-	tlsDir string //  Directory to read for TLS info
+	fs      *flag.FlagSet
+	ipAddr  string // IP Address server will use
+	port    int    // Port on which to listen
+	tlsDir  string //  Directory to read for TLS info
+	dbgport string // Debug port for pprof webserver
 }
 
 func NewServerCommand() *ServerSubcommand {
@@ -106,6 +108,7 @@ func NewServerCommand() *ServerSubcommand {
 	s.fs.StringVar(&s.ipAddr, "ipaddr", "", "IP Address server will use")
 	s.fs.IntVar(&s.port, "port", 0, "Port on which to listen")
 	s.fs.StringVar(&s.tlsDir, "tlsdir", "", "Directory containing TLS info")
+	s.fs.StringVar(&s.dbgport, "dbgport", "", "Debug port for pprof webserver (optional)")
 
 	return s
 }
@@ -136,7 +139,10 @@ func (s *ServerSubcommand) Run() (err error) {
 		return
 	}
 
-	go http.ListenAndServe("localhost:12123", nil)
+	if s.dbgport != "" {
+		hostPort := net.JoinHostPort("localhost", s.dbgport)
+		go http.ListenAndServe(hostPort, nil)
+	}
 
 	err = becomeAServer(s.ipAddr, s.port, s.tlsDir, true)
 	return err
