@@ -311,7 +311,6 @@ func (dummy *RetryRPCServerStruct) AdjustInodeTableEntryOpenCount(adjustInodeTab
 //
 type FlushRequestStruct struct {
 	MountID string
-	// TODO
 }
 
 // FlushResponseStruct is the response object for Flush.

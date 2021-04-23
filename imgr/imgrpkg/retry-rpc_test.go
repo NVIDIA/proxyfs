@@ -19,11 +19,31 @@ func (retryrpcClientCallbacks *testRetryRPCClientCallbacksStruct) Interrupt(payl
 
 func TestRetryRPC(t *testing.T) {
 	var (
-		err                     error
-		fetchNonceRangeRequest  *FetchNonceRangeRequestStruct
-		fetchNonceRangeResponse *FetchNonceRangeResponseStruct
-		retryrpcClient          *retryrpc.Client
-		retryrpcClientCallbacks *testRetryRPCClientCallbacksStruct
+		adjustInodeTableEntryOpenCountRequest  *AdjustInodeTableEntryOpenCountRequestStruct
+		adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct
+		deleteInodeTableEntryRequest           *DeleteInodeTableEntryRequestStruct
+		deleteInodeTableEntryResponse          *DeleteInodeTableEntryResponseStruct
+		err                                    error
+		fetchNonceRangeRequest                 *FetchNonceRangeRequestStruct
+		fetchNonceRangeResponse                *FetchNonceRangeResponseStruct
+		fileInodeNumber                        uint64
+		fileInodeObjectA                       uint64
+		fileInodeObjectB                       uint64
+		fileInodeObjectC                       uint64
+		flushRequest                           *FlushRequestStruct
+		flushResponse                          *FlushResponseStruct
+		getInodeTableEntryRequest              *GetInodeTableEntryRequestStruct
+		getInodeTableEntryResponse             *GetInodeTableEntryResponseStruct
+		leaseRequest                           *LeaseRequestStruct
+		leaseResponse                          *LeaseResponseStruct
+		mountRequest                           *MountRequestStruct
+		mountResponse                          *MountResponseStruct
+		renewMountRequest                      *RenewMountRequestStruct
+		renewMountResponse                     *RenewMountResponseStruct
+		retryrpcClient                         *retryrpc.Client
+		retryrpcClientCallbacks                *testRetryRPCClientCallbacksStruct
+		unmountRequest                         *UnmountRequestStruct
+		unmountResponse                        *UnmountResponseStruct
 	)
 
 	retryrpcClientCallbacks = &testRetryRPCClientCallbacksStruct{
@@ -46,37 +66,307 @@ func TestRetryRPC(t *testing.T) {
 
 	err = retryrpcClient.Send("FetchNonceRange", fetchNonceRangeRequest, fetchNonceRangeResponse)
 	if nil == err {
-		t.Fatalf("retryrpcClient.Send(\"FetchNonceRange\",,) should have failed")
+		t.Fatalf("retryrpcClient.Send(\"FetchNonceRange()\",,) should have failed")
 	}
 
-	// TODO: Perform a Mount()
-	// TODO: Attempt a GetInodeTableEntry() for RootDirInode... which should fail (no Lease)
+	// TODO: Remove this early exit skipping of following TODOs
+
+	if nil != err {
+		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
+		return
+	}
+
+	// Perform a Mount()
+
+	mountRequest = &MountRequestStruct{
+		VolumeName: testVolume,
+		AuthToken:  testGlobals.authToken,
+	}
+	mountResponse = &MountResponseStruct{}
+
+	err = retryrpcClient.Send("Mount", mountRequest, mountResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Mount(,)\",,) failed: %v", err)
+	}
+
+	// Attempt a GetInodeTableEntry() for RootDirInode... which should fail (no Lease)
+
+	getInodeTableEntryRequest = &GetInodeTableEntryRequestStruct{
+		MountID:     mountResponse.MountID,
+		InodeNumber: 1,
+	}
+	getInodeTableEntryResponse = &GetInodeTableEntryResponseStruct{}
+
+	err = retryrpcClient.Send("GetInodeTableEntry", getInodeTableEntryRequest, getInodeTableEntryResponse)
+	if nil == err {
+		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,1)\",,) should have failed")
+	}
+
 	// TODO: Force a need for a re-auth
-	// TODO: Attempt a GetInodeTableEntry() for RootDirInode... which should fail (re-auth required)
-	// TODO: Perform a RenewMount()
-	// TODO: Fetch a Shared Lease on RootDirInode
-	// TODO: Perform a GetInodeTableEntry() for RootDirInode
+
+	// Attempt a GetInodeTableEntry() for RootDirInode... which should fail (re-auth required)
+
+	getInodeTableEntryRequest = &GetInodeTableEntryRequestStruct{
+		MountID:     mountResponse.MountID,
+		InodeNumber: 1,
+	}
+	getInodeTableEntryResponse = &GetInodeTableEntryResponseStruct{}
+
+	err = retryrpcClient.Send("GetInodeTableEntry", getInodeTableEntryRequest, getInodeTableEntryResponse)
+	if nil == err {
+		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,1)\",,) should have failed")
+	}
+
+	// Perform a RenewMount()
+
+	renewMountRequest = &RenewMountRequestStruct{
+		MountID:   mountResponse.MountID,
+		AuthToken: testGlobals.authToken,
+	}
+	renewMountResponse = &RenewMountResponseStruct{}
+
+	err = retryrpcClient.Send("RenewMount", renewMountRequest, renewMountResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"RenewMount(,)\",,) failed: %v", err)
+	}
+
+	// Fetch a Shared Lease on RootDirInode
+
+	leaseRequest = &LeaseRequestStruct{
+		MountID:          mountResponse.MountID,
+		InodeNumber:      1,
+		LeaseRequestType: LeaseRequestTypeShared,
+	}
+	leaseResponse = &LeaseResponseStruct{}
+
+	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Lease(,1,LeaseRequestTypeShared)\",,) failed: %v", err)
+	}
+
+	// Perform a GetInodeTableEntry() for RootDirInode
+
+	getInodeTableEntryRequest = &GetInodeTableEntryRequestStruct{
+		MountID:     mountResponse.MountID,
+		InodeNumber: 1,
+	}
+	getInodeTableEntryResponse = &GetInodeTableEntryResponseStruct{}
+
+	err = retryrpcClient.Send("GetInodeTableEntry", getInodeTableEntryRequest, getInodeTableEntryResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,1)\",,) failed: %v", err)
+	}
+
 	// TODO: Attempt a PutInodeTableEntries() for RootDirInode... which should fail (only Shared Lease)
-	// TODO: Perform a Lease Promote on RootDirInode
+
+	// Perform a Lease Promote on RootDirInode
+
+	leaseRequest = &LeaseRequestStruct{
+		MountID:          mountResponse.MountID,
+		InodeNumber:      1,
+		LeaseRequestType: LeaseRequestTypePromote,
+	}
+	leaseResponse = &LeaseResponseStruct{}
+
+	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Lease(,1,LeaseRequestTypePromote)\",,) failed: %v", err)
+	}
+
 	// TODO: Perform a PutInodeTableEntries() on RootDirInode
+
+	// Perform a FetchNonceRange()
+
+	fetchNonceRangeRequest = &FetchNonceRangeRequestStruct{
+		MountID: mountResponse.MountID,
+	}
+	fetchNonceRangeResponse = &FetchNonceRangeResponseStruct{}
+
+	err = retryrpcClient.Send("FetchNonceRange", fetchNonceRangeRequest, fetchNonceRangeResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"FetchNonceRange()\",,) failed: %v", err)
+	}
+
 	// TODO: Create a FileInode (set LinkCount to 0 & no dir entry)... with small amount of data
-	// TODO: Fetch an Exclusive Lease on FileInode
+
+	if 2 > fetchNonceRangeResponse.NumNoncesFetched {
+		t.Fatalf("fetchNonceRangeResponse contained insufficient NumNoncesFetched")
+	}
+
+	fileInodeNumber = fetchNonceRangeResponse.NextNonce
+	fileInodeObjectA = fileInodeNumber + 1
+
+	fetchNonceRangeResponse.NextNonce += 2
+	fetchNonceRangeResponse.NumNoncesFetched -= 2
+
+	t.Logf(" fileInodeNumber: %016X", fileInodeNumber)
+	t.Logf("fileInodeObjectA: %016X", fileInodeObjectA)
+
+	// Fetch an Exclusive Lease on FileInode
+
+	leaseRequest = &LeaseRequestStruct{
+		MountID:          mountResponse.MountID,
+		InodeNumber:      fileInodeNumber,
+		LeaseRequestType: LeaseRequestTypeExclusive,
+	}
+	leaseResponse = &LeaseResponseStruct{}
+
+	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Lease(,fileInodeNumber,LeaseRequestTypeExclusive)\",,) failed: %v", err)
+	}
+
 	// TODO: Perform a PutInodeTableEntries() for FileInode
+
 	// TODO: Append some data (to new Object) for FileInode... and new stat
+
+	if 1 > fetchNonceRangeResponse.NumNoncesFetched {
+		t.Fatalf("fetchNonceRangeResponse contained insufficient NumNoncesFetched")
+	}
+
+	fileInodeObjectB = fileInodeObjectA + 1
+
+	fetchNonceRangeResponse.NextNonce++
+	fetchNonceRangeResponse.NumNoncesFetched--
+
+	t.Logf("fileInodeObjectB: %016X", fileInodeObjectB)
+
 	// TODO: Perform a PutInodeTableEntries() for FileInode
-	// TODO: Perform a Flush()
+
+	// Perform a Flush()
+
+	flushRequest = &FlushRequestStruct{
+		MountID: mountResponse.MountID,
+	}
+	flushResponse = &FlushResponseStruct{}
+
+	err = retryrpcClient.Send("Flush", flushRequest, flushResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Flush()\",,) failed: %v", err)
+	}
+
 	// TODO: Overwrite the original data in FileInode (to new Object)... and new stat dereferencing 1st Object
-	// TODO: Perform a Flush()
+
+	if 1 > fetchNonceRangeResponse.NumNoncesFetched {
+		t.Fatalf("fetchNonceRangeResponse contained insufficient NumNoncesFetched")
+	}
+
+	fileInodeObjectC = fileInodeObjectB + 1
+
+	fetchNonceRangeResponse.NextNonce++
+	fetchNonceRangeResponse.NumNoncesFetched--
+
+	t.Logf("fileInodeObjectC: %016X", fileInodeObjectC)
+
+	// Perform a Flush()
+
+	flushRequest = &FlushRequestStruct{
+		MountID: mountResponse.MountID,
+	}
+	flushResponse = &FlushResponseStruct{}
+
+	err = retryrpcClient.Send("Flush", flushRequest, flushResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Flush()\",,) failed: %v", err)
+	}
+
 	// TODO: Verify that 1st Object for FileInode gets deleted... but not 2nd nor 3rd
-	// TODO: Perform a AdjustInodeTableEntryOpenCount(+1) for FileInode
-	// TODO: Perform a DeleteInodeTableEntry() on FileInode
-	// TODO: Perform a Flush()
+
+	// Perform a AdjustInodeTableEntryOpenCount(+1) for FileInode
+
+	adjustInodeTableEntryOpenCountRequest = &AdjustInodeTableEntryOpenCountRequestStruct{
+		MountID:     mountResponse.MountID,
+		InodeNumber: fileInodeNumber,
+		Adjustment:  +1,
+	}
+	adjustInodeTableEntryOpenCountResponse = &AdjustInodeTableEntryOpenCountResponseStruct{}
+
+	err = retryrpcClient.Send("AdjustInodeTableEntryOpenCount", adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"AdjustInodeTableEntryOpenCount(,fileInodeNumber,+1)\",,) failed: %v", err)
+	}
+
+	// Perform a DeleteInodeTableEntry() on FileInode
+
+	deleteInodeTableEntryRequest = &DeleteInodeTableEntryRequestStruct{
+		MountID:     mountResponse.MountID,
+		InodeNumber: fileInodeNumber,
+	}
+	deleteInodeTableEntryResponse = &DeleteInodeTableEntryResponseStruct{}
+
+	err = retryrpcClient.Send("DeleteInodeTableEntry", deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"DeleteInodeTableEntry(,fileInodeNumber)\",,) failed: %v", err)
+	}
+
+	// Perform a Flush()
+
+	flushRequest = &FlushRequestStruct{
+		MountID: mountResponse.MountID,
+	}
+	flushResponse = &FlushResponseStruct{}
+
+	err = retryrpcClient.Send("Flush", flushRequest, flushResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Flush()\",,) failed: %v", err)
+	}
+
 	// TODO: Verify that FileInode is still in InodeTable
-	// TODO: Perform a AdjustInodeTableEntryOpenCount(-1) for FileInode
-	// TODO: Perform a Flush()
+
+	// Perform a AdjustInodeTableEntryOpenCount(-1) for FileInode
+
+	adjustInodeTableEntryOpenCountRequest = &AdjustInodeTableEntryOpenCountRequestStruct{
+		MountID:     mountResponse.MountID,
+		InodeNumber: fileInodeNumber,
+		Adjustment:  -1,
+	}
+	adjustInodeTableEntryOpenCountResponse = &AdjustInodeTableEntryOpenCountResponseStruct{}
+
+	err = retryrpcClient.Send("AdjustInodeTableEntryOpenCount", adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"AdjustInodeTableEntryOpenCount(,fileInodeNumber,-1)\",,) failed: %v", err)
+	}
+
+	// Perform a Flush()
+
+	flushRequest = &FlushRequestStruct{
+		MountID: mountResponse.MountID,
+	}
+	flushResponse = &FlushResponseStruct{}
+
+	err = retryrpcClient.Send("Flush", flushRequest, flushResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Flush()\",,) failed: %v", err)
+	}
+
 	// TODO: Verify that FileInode is no longer in InodeTable and 2nd and 3rd Objects are deleted
-	// TODO: Perform a Lease Release on FileInode
-	// TODO: Perform a Unmount()... without first releasing Exclusive Lease on RootDirInode
+
+	// Perform a Lease Release on FileInode
+
+	leaseRequest = &LeaseRequestStruct{
+		MountID:          mountResponse.MountID,
+		InodeNumber:      fileInodeNumber,
+		LeaseRequestType: LeaseRequestTypeRelease,
+	}
+	leaseResponse = &LeaseResponseStruct{}
+
+	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Lease(,fileInodeNumber,LeaseRequestTypeRelease)\",,) failed: %v", err)
+	}
+
+	// Perform a Unmount()... without first releasing Exclusive Lease on RootDirInode
+
+	unmountRequest = &UnmountRequestStruct{
+		MountID: mountResponse.MountID,
+	}
+	unmountResponse = &UnmountResponseStruct{}
+
+	err = retryrpcClient.Send("Unmount", unmountRequest, unmountResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Unmount()\",,) failed: %v", err)
+	}
+
 	// TODO: Verify that Exclusive Lease on RootDirInode is implicitly released
 
 	retryrpcClient.Close()
