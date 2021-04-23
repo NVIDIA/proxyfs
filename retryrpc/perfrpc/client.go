@@ -14,7 +14,6 @@ import (
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
-// TODO - move to top
 type globalsStruct struct {
 	cs       *ClientSubcommand
 	tlsCerts *tlsCertsStruct
