@@ -26,3 +26,11 @@ perfrpc clients will print a message such as
   `===== PERFRPC - Clients: 10 Messages per Client: 10 Total Messages: 100 ---- Test Duration: 6.207882ms`
 
 illustrating how many clients and total messages were sent followed by the length of time to run the test
+## Tips for large number of clients
+
+It is important to have enough file descriptors for your clients and servers.
+
+We suggest running as `root` and setting the `ulimit` high such as
+
+  `ulimit -n 1000000`
+
