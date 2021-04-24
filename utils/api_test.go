@@ -23,10 +23,11 @@ func testTryLockMutexAsyncUnlock() {
 
 func TestTryLockMutex(t *testing.T) {
 	testTryLockMutex = NewTryLockMutex()
+
 	testTryLockMutex.Lock()
 	testTryLockMutex.Unlock()
 
-	shouldHaveGottonIt := testTryLockMutex.TryLock(100 * time.Millisecond)
+	shouldHaveGottonIt := testTryLockMutex.TryLock(10 * time.Second)
 	if !shouldHaveGottonIt {
 		t.Fatalf("1st TryLock() should have succeeded")
 	}
@@ -37,10 +38,12 @@ func TestTryLockMutex(t *testing.T) {
 	}
 
 	_ = time.AfterFunc(20*time.Millisecond, testTryLockMutexAsyncUnlock)
-	shouldHaveGottonIt = testTryLockMutex.TryLock(120 * time.Millisecond)
+
+	shouldHaveGottonIt = testTryLockMutex.TryLock(10 * time.Second)
 	if !shouldHaveGottonIt {
 		t.Fatalf("3rd TryLock() should have succeeded")
 	}
+
 	testTryLockMutex.Unlock()
 }
 
