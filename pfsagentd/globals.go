@@ -358,6 +358,7 @@ type globalsStruct struct {
 	unleasedFileInodeCacheLRU       *list.List           // Front() is oldest fileInodeStruct.leaseListElement
 	sharedLeaseFileInodeCacheLRU    *list.List           // Front() is oldest fileInodeStruct.leaseListElement
 	exclusiveLeaseFileInodeCacheLRU *list.List           // Front() is oldest fileInodeStruct.leaseListElement
+	fhToOpenRequestMap              map[uint64]uint32    // Key == FH; Value == {Create|Open}In.Flags
 	fhToInodeNumberMap              map[uint64]uint64    // Key == FH; Value == InodeNumber
 	inodeNumberToFHMap              map[uint64]fhSetType // Key == InodeNumber; Value == set of FH's
 	lastFH                          uint64               // Valid FH's start at 1
@@ -739,6 +740,7 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.sharedLeaseFileInodeCacheLRU = list.New()
 	globals.exclusiveLeaseFileInodeCacheLRU = list.New()
 
+	globals.fhToOpenRequestMap = make(map[uint64]uint32)
 	globals.fhToInodeNumberMap = make(map[uint64]uint64)
 	globals.inodeNumberToFHMap = make(map[uint64]fhSetType)
 
@@ -780,6 +782,7 @@ func uninitializeGlobals() {
 	globals.unleasedFileInodeCacheLRU = nil       // TODO: Obsolete this
 	globals.sharedLeaseFileInodeCacheLRU = nil    // TODO: Obsolete this
 	globals.exclusiveLeaseFileInodeCacheLRU = nil // TODO: Obsolete this
+	globals.fhToOpenRequestMap = nil
 	globals.fhToInodeNumberMap = nil
 	globals.inodeNumberToFHMap = nil
 	globals.lastFH = 0
