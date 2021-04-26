@@ -62,4 +62,4 @@ RUN cd meta_middleware && python3 setup.py develop
 RUN make clean minimal
 RUN ln -s $GOPATH/bin/proxyfsd /usr/bin/proxyfsd
 
-EXPOSE 15346
+EXPOSE [8090, 15346]
