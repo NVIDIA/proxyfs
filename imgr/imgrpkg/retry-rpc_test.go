@@ -298,7 +298,7 @@ func TestRetryRPC(t *testing.T) {
 
 	// TODO: Verify that 1st Object for FileInode gets deleted... but not 2nd nor 3rd
 
-	// Perform a AdjustInodeTableEntryOpenCount(+1) for FileInode
+	// Perform an AdjustInodeTableEntryOpenCount(+1) for FileInode
 
 	adjustInodeTableEntryOpenCountRequest = &AdjustInodeTableEntryOpenCountRequestStruct{
 		MountID:     mountResponse.MountID,
@@ -339,7 +339,7 @@ func TestRetryRPC(t *testing.T) {
 
 	// TODO: Verify that FileInode is still in InodeTable
 
-	// Perform a AdjustInodeTableEntryOpenCount(-1) for FileInode
+	// Perform an AdjustInodeTableEntryOpenCount(-1) for FileInode
 
 	adjustInodeTableEntryOpenCountRequest = &AdjustInodeTableEntryOpenCountRequestStruct{
 		MountID:     mountResponse.MountID,
@@ -381,7 +381,7 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"Lease(,fileInodeNumber,LeaseRequestTypeRelease)\",,) failed: %v", err)
 	}
 
-	// Perform a Unmount()... without first releasing Exclusive Lease on RootDirInode
+	// Perform an Unmount()... without first releasing Exclusive Lease on RootDirInode
 
 	unmountRequest = &UnmountRequestStruct{
 		MountID: mountResponse.MountID,

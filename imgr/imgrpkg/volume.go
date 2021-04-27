@@ -731,6 +731,7 @@ func putVolume(name string, storageURL string) (err error) {
 		superBlock:                nil,
 		inodeTable:                nil,
 		pendingObjectDeleteSet:    make(map[uint64]struct{}),
+		checkPointControlChan:     nil,
 	}
 
 	globals.Lock()
@@ -747,6 +748,60 @@ func putVolume(name string, storageURL string) (err error) {
 	} else {
 		err = fmt.Errorf("volume \"%s\" already exists", name)
 	}
+
+	return
+}
+
+func (volume *volumeStruct) checkPointDaemon(checkPointControlChan chan chan error) {
+	var (
+		checkPointIntervalTimer *time.Timer
+		checkPointResponseChan  chan error
+		err                     error
+		more                    bool
+	)
+
+	for {
+		checkPointIntervalTimer = time.NewTimer(globals.config.CheckPointInterval)
+
+		select {
+		case _ = <-checkPointIntervalTimer.C:
+			err = volume.doCheckPoint()
+			if nil != err {
+				logWarnf("checkPointIntervalTimer-triggered doCheckPoint() failed: %v", err)
+			}
+		case checkPointResponseChan, more = <-checkPointControlChan:
+			if !checkPointIntervalTimer.Stop() {
+				_ = <-checkPointIntervalTimer.C
+			}
+
+			if more {
+				err = volume.doCheckPoint()
+				if nil != err {
+					logWarnf("requested doCheckPoint() failed: %v", err)
+				}
+
+				checkPointResponseChan <- err
+			} else {
+				volume.checkPointControlWG.Done()
+			}
+		}
+	}
+}
+
+func (volume *volumeStruct) doCheckPoint() (err error) {
+	var (
+		startTime time.Time
+	)
+
+	volume.Lock()
+
+	startTime = time.Now()
+
+	err = nil // TODO: perform the actual doCheckPoint()
+
+	globals.stats.VolumeCheckPointUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+
+	volume.Unlock()
 
 	return
 }

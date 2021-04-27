@@ -24,6 +24,8 @@
 //  RetryRPCCertFilePath:                              # If both RetryRPC{Cert|Key}FilePath are missing or empty,
 //  RetryRPCKeyFilePath:                               #   non-TLS RetryRPC will be selected; otherwise TLS will be used
 //
+//  CheckPointInterval:                   10s
+//
 //  FetchNonceRangeToReturn:              100
 //
 //  MinLeaseDuration:                     250ms
@@ -147,9 +149,10 @@ func LogInfof(format string, args ...interface{}) {
 // E* specifies the prefix of an error string returned by any RetryRPC API
 //
 const (
-	EUnknownVolumeName  = "EUnknownVolumeName:"
-	EVolumeBeingDeleted = "EVolumeBeingDeleted:"
 	EAuthTokenRejected  = "EAuthTokenRejected:"
+	EVolumeBeingDeleted = "EVolumeBeingDeleted:"
+	EUnknownMountID     = "EUnknownMountID:"
+	EUnknownVolumeName  = "EUnknownVolumeName:"
 
 	ETODO = "ETODO:"
 )

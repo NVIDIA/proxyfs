@@ -67,7 +67,7 @@ const (
 	CheckPointHeaderName = "X-Container-Meta-Check-Point"
 )
 
-// CheckpointHeaderVersionV* specifies the format of the CheckPointHeader.
+// CheckPointHeaderVersionV* specifies the format of the CheckPointHeader.
 // The CheckPointHeaderVersion must always be fetched by scanning the entire
 // CheckPointHeader using a %016X format specifier. This value will then be
 // used to interpret the remaining characters of the CheckPointHeader string.

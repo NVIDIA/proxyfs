@@ -34,6 +34,8 @@ type configStruct struct {
 	RetryRPCCertFilePath string
 	RetryRPCKeyFilePath  string
 
+	CheckPointInterval time.Duration
+
 	FetchNonceRangeToReturn uint64
 
 	MinLeaseDuration       time.Duration
@@ -94,6 +96,8 @@ type statsStruct struct {
 	RenewMountUsecs                     bucketstats.BucketLog2Round // (*RetryRPCServerStruct).RenewMount()
 	UnmountUsecs                        bucketstats.BucketLog2Round // (*RetryRPCServerStruct).Unmount()
 
+	VolumeCheckPointUsecs bucketstats.BucketLog2Round
+
 	SharedLeaseRequestUsecs    bucketstats.BucketLog2Round
 	PromoteLeaseRequestUsecs   bucketstats.BucketLog2Round
 	ExclusiveLeaseRequestUsecs bucketstats.BucketLog2Round
@@ -103,8 +107,6 @@ type statsStruct struct {
 	UnmountInterrupts     bucketstats.Totaler
 	DemoteLeaseInterrupts bucketstats.Totaler
 	RevokeLeaseInterrupts bucketstats.Totaler
-
-	VolumeCheckpointUsecs bucketstats.BucketLog2Round
 
 	InodeTableCacheHits   bucketstats.Totaler
 	InodeTableCacheMisses bucketstats.Totaler
@@ -144,8 +146,9 @@ type volumeStruct struct {
 	checkPointHeader          *ilayout.CheckPointHeaderV1Struct // == nil if not currently mounted and/or checkpointing
 	superBlock                *ilayout.SuperBlockV1Struct       // == nil if not currently mounted and/or checkpointing
 	inodeTable                sortedmap.BPlusTree               // == nil if not currently mounted and/or checkpointing
-	lastCheckpointHeader      string                            // most recent (read or written) ilayout.CheckPointHeaderName value
 	pendingObjectDeleteSet    map[uint64]struct{}               // key == objectNumber
+	checkPointControlChan     chan chan error                   // send chan error to chan to request a CheckPoint; close it to terminate checkPointDaemon()
+	checkPointControlWG       sync.WaitGroup                    // checkPointDeamon() indicates it is done by calling .Done() on this WG
 }
 
 type globalsStruct struct {
@@ -261,6 +264,11 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		}
 	}
 
+	globals.config.CheckPointInterval, err = confMap.FetchOptionValueDuration("IMGR", "CheckPointInterval")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.FetchNonceRangeToReturn, err = confMap.FetchOptionValueUint64("IMGR", "FetchNonceRangeToReturn")
 	if nil != err {
 		logFatal(err)
@@ -362,6 +370,8 @@ func uninitializeGlobals() (err error) {
 
 	globals.config.RetryRPCCertFilePath = ""
 	globals.config.RetryRPCKeyFilePath = ""
+
+	globals.config.CheckPointInterval = time.Duration(0)
 
 	globals.config.FetchNonceRangeToReturn = 0
 

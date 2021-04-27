@@ -134,6 +134,8 @@ func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 		"IMGR.RetryRPCCertFilePath=" + testGlobals.endpointCertFile,
 		"IMGR.RetryRPCKeyFilePath=" + testGlobals.endpointKeyFile,
 
+		"IMGR.CheckPointInterval=10s",
+
 		"IMGR.FetchNonceRangeToReturn=100",
 
 		"IMGR.MinLeaseDuration=250ms",
