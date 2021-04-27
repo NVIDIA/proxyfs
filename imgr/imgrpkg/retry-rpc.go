@@ -74,6 +74,7 @@ func stopRetryRPCServer() (err error) {
 func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountResponse *MountResponseStruct) (err error) {
 	var (
 		alreadyInGlobalsMountMap bool
+		lastCheckpointHeader     string
 		mount                    *mountStruct
 		mountIDAsByteArray       []byte
 		mountIDAsString          string
@@ -97,7 +98,7 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 	}
 	if !ok {
 		globals.Unlock()
-		err = fmt.Errorf("Unknown VolumeName (\"%s\")", mountRequest.VolumeName)
+		err = fmt.Errorf("%s %s", EUnknownVolumeName, mountRequest.VolumeName)
 		return
 	}
 
@@ -111,15 +112,15 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 	if volume.deleting {
 		volume.Unlock()
 		globals.Unlock()
-		err = fmt.Errorf("Volume (\"%s\") being deleted", mountRequest.VolumeName)
+		err = fmt.Errorf("%s %s", EVolumeBeingDeleted, mountRequest.VolumeName)
 		return
 	}
 
-	_, err = swiftContainerHeaderGet(volume.storageURL, mountRequest.AuthToken, ilayout.CheckPointHeaderName)
+	lastCheckpointHeader, err = swiftContainerHeaderGet(volume.storageURL, mountRequest.AuthToken, ilayout.CheckPointHeaderName)
 	if nil != err {
 		volume.Unlock()
 		globals.Unlock()
-		err = fmt.Errorf("AuthToken (\"%s\") rejected", mountRequest.AuthToken)
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, mountRequest.AuthToken)
 		return
 	}
 
@@ -147,6 +148,7 @@ retryGenerateMountID:
 	globals.mountMap[mountIDAsString] = mount
 
 	// TODO: if first healthy mount, kick off checkpoint goroutine
+	fmt.Printf("UNDO: lastCheckpointHeader: %s\n", lastCheckpointHeader)
 
 	volume.Unlock()
 	globals.Unlock()
@@ -168,7 +170,7 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 		globals.stats.RenewMountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf("TODO")
+	return fmt.Errorf(ETODO + " renewMount")
 }
 
 func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountResponseStruct) (err error) {
@@ -182,7 +184,7 @@ func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountRespo
 		globals.stats.UnmountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf("TODO")
+	return fmt.Errorf(ETODO + " unmount")
 }
 
 func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeResponse *FetchNonceRangeResponseStruct) (err error) {
@@ -211,7 +213,7 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 
 	globals.RUnlock()
 
-	return fmt.Errorf("TODO")
+	return fmt.Errorf(ETODO + " fetchNonceRange")
 }
 
 func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryResponse *GetInodeTableEntryResponseStruct) (err error) {
@@ -225,7 +227,7 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 		globals.stats.GetInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf("TODO")
+	return fmt.Errorf(ETODO + " getInodeTableEntry")
 }
 
 func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesResponse *PutInodeTableEntriesResponseStruct) (err error) {
@@ -239,7 +241,7 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 		globals.stats.PutInodeTableEntriesUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf("TODO")
+	return fmt.Errorf(ETODO + " putInodeTableEntries")
 }
 
 func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *DeleteInodeTableEntryResponseStruct) (err error) {
@@ -253,7 +255,7 @@ func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRe
 		globals.stats.DeleteInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf("TODO")
+	return fmt.Errorf(ETODO + " deleteInodeTableEntry")
 }
 
 func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct) (err error) {
@@ -267,7 +269,7 @@ func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *Adjus
 		globals.stats.AdjustInodeTableEntryOpenCountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf("TODO")
+	return fmt.Errorf(ETODO + " adjustInodeTableEntryOpenCount")
 }
 
 func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct) (err error) {
@@ -281,7 +283,7 @@ func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct)
 		globals.stats.FlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf("TODO")
+	return fmt.Errorf(ETODO + " flush")
 }
 
 func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct) (err error) {
@@ -323,5 +325,5 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 		return
 	}
 
-	return fmt.Errorf("TODO")
+	return fmt.Errorf(ETODO + " lease")
 }

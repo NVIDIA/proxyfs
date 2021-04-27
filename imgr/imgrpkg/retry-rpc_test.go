@@ -115,6 +115,18 @@ func TestRetryRPC(t *testing.T) {
 		return
 	}
 
+	// Perform a FetchNonceRange()
+
+	fetchNonceRangeRequest = &FetchNonceRangeRequestStruct{
+		MountID: mountResponse.MountID,
+	}
+	fetchNonceRangeResponse = &FetchNonceRangeResponseStruct{}
+
+	err = retryrpcClient.Send("FetchNonceRange", fetchNonceRangeRequest, fetchNonceRangeResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"FetchNonceRange()\",,) failed: %v", err)
+	}
+
 	// Attempt a GetInodeTableEntry() for RootDirInode... which should fail (no Lease)
 
 	getInodeTableEntryRequest = &GetInodeTableEntryRequestStruct{
@@ -200,18 +212,6 @@ func TestRetryRPC(t *testing.T) {
 	}
 
 	// TODO: Perform a PutInodeTableEntries() on RootDirInode
-
-	// Perform a FetchNonceRange()
-
-	fetchNonceRangeRequest = &FetchNonceRangeRequestStruct{
-		MountID: mountResponse.MountID,
-	}
-	fetchNonceRangeResponse = &FetchNonceRangeResponseStruct{}
-
-	err = retryrpcClient.Send("FetchNonceRange", fetchNonceRangeRequest, fetchNonceRangeResponse)
-	if nil != err {
-		t.Fatalf("retryrpcClient.Send(\"FetchNonceRange()\",,) failed: %v", err)
-	}
 
 	// TODO: Create a FileInode (set LinkCount to 0 & no dir entry)... with small amount of data
 

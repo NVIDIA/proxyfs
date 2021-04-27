@@ -144,6 +144,16 @@ func LogInfof(format string, args ...interface{}) {
 	logInfof(format, args...)
 }
 
+// E* specifies the prefix of an error string returned by any RetryRPC API
+//
+const (
+	EUnknownVolumeName  = "EUnknownVolumeName:"
+	EVolumeBeingDeleted = "EVolumeBeingDeleted:"
+	EAuthTokenRejected  = "EAuthTokenRejected:"
+
+	ETODO = "ETODO:"
+)
+
 type RetryRPCServerStruct struct{}
 
 var retryRPCServer *RetryRPCServerStruct

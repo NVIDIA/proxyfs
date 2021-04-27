@@ -138,12 +138,13 @@ type volumeStruct struct {
 	storageURL                string                            //
 	mountMap                  map[string]*mountStruct           // key == mountStruct.mountID
 	healthyMountList          *list.List                        // LRU of mountStruct's with .{leases|authToken}Expired == false
-	leasesExpiredMountList    *list.List                        // List of mountStruct's with .leasesExpired == true (regardless of .authTokenExpired) value
-	authTokenExpiredMountList *list.List                        // List of mountStruct's with at .authTokenExpired == true (& .leasesExpired == false)
+	leasesExpiredMountList    *list.List                        // list of mountStruct's with .leasesExpired == true (regardless of .authTokenExpired) value
+	authTokenExpiredMountList *list.List                        // list of mountStruct's with at .authTokenExpired == true (& .leasesExpired == false)
 	deleting                  bool                              //
 	checkPointHeader          *ilayout.CheckPointHeaderV1Struct // == nil if not currently mounted and/or checkpointing
 	superBlock                *ilayout.SuperBlockV1Struct       // == nil if not currently mounted and/or checkpointing
 	inodeTable                sortedmap.BPlusTree               // == nil if not currently mounted and/or checkpointing
+	lastCheckpointHeader      string                            // most recent (read or written) ilayout.CheckPointHeaderName value
 	pendingObjectDeleteSet    map[uint64]struct{}               // key == objectNumber
 }
 
