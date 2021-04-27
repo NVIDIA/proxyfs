@@ -5,11 +5,16 @@ package imgrpkg
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"time"
 
+	"github.com/NVIDIA/sortedmap"
+
 	"github.com/NVIDIA/proxyfs/blunder"
+	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/proxyfs/retryrpc"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 func startRetryRPCServer() (err error) {
@@ -68,7 +73,14 @@ func stopRetryRPCServer() (err error) {
 
 func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountResponse *MountResponseStruct) (err error) {
 	var (
-		startTime time.Time
+		alreadyInGlobalsMountMap bool
+		mount                    *mountStruct
+		mountIDAsByteArray       []byte
+		mountIDAsString          string
+		ok                       bool
+		startTime                time.Time
+		volume                   *volumeStruct
+		volumeAsValue            sortedmap.Value
 	)
 
 	startTime = time.Now()
@@ -77,7 +89,72 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 		globals.stats.MountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf("TODO")
+	globals.Lock()
+
+	volumeAsValue, ok, err = globals.volumeMap.GetByKey(mountRequest.VolumeName)
+	if nil != err {
+		logFatalf("globals.volumeMap.GetByKey() failed: %v", err)
+	}
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("Unknown VolumeName (\"%s\")", mountRequest.VolumeName)
+		return
+	}
+
+	volume, ok = volumeAsValue.(*volumeStruct)
+	if !ok {
+		logFatalf("volumeAsValue.(*volumeStruct) returned !ok")
+	}
+
+	volume.Lock()
+
+	if volume.deleting {
+		volume.Unlock()
+		globals.Unlock()
+		err = fmt.Errorf("Volume (\"%s\") being deleted", mountRequest.VolumeName)
+		return
+	}
+
+	_, err = swiftContainerHeaderGet(volume.storageURL, mountRequest.AuthToken, ilayout.CheckPointHeaderName)
+	if nil != err {
+		volume.Unlock()
+		globals.Unlock()
+		err = fmt.Errorf("AuthToken (\"%s\") rejected", mountRequest.AuthToken)
+		return
+	}
+
+retryGenerateMountID:
+
+	mountIDAsByteArray = utils.FetchRandomByteSlice(mountIDByteArrayLen)
+	mountIDAsString = base64.StdEncoding.EncodeToString(mountIDAsByteArray[:])
+
+	_, alreadyInGlobalsMountMap = globals.mountMap[mountIDAsString]
+	if alreadyInGlobalsMountMap {
+		goto retryGenerateMountID
+	}
+
+	mount = &mountStruct{
+		volume:           volume,
+		mountID:          mountIDAsString,
+		leasesExpired:    false,
+		authTokenExpired: false,
+		authToken:        mountRequest.AuthToken,
+		lastAuthTime:     time.Now(),
+	}
+
+	volume.mountMap[mountIDAsString] = mount
+	mount.listElement = volume.healthyMountList.PushBack(mount)
+	globals.mountMap[mountIDAsString] = mount
+
+	// TODO: if first healthy mount, kick off checkpoint goroutine
+
+	volume.Unlock()
+	globals.Unlock()
+
+	mountResponse.MountID = mountIDAsString
+
+	err = nil
+	return
 }
 
 func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *RenewMountResponseStruct) (err error) {

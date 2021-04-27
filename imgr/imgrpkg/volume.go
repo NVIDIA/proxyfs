@@ -10,8 +10,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/sortedmap"
+
+	"github.com/NVIDIA/proxyfs/ilayout"
 )
 
 func startVolumeManagement() (err error) {
@@ -110,10 +111,11 @@ func deleteVolume(volumeName string) (err error) {
 }
 
 type volumeGETStruct struct {
-	Name          string
-	StorageURL    string
-	HealthyMounts uint64
-	ExpiredMounts uint64
+	Name                   string
+	StorageURL             string
+	HealthyMounts          uint64
+	LeasesExpiredMounts    uint64
+	AuthTokenExpiredMounts uint64
 }
 
 func getVolumeAsJSON(volumeName string) (volume []byte, err error) {
@@ -145,10 +147,11 @@ func getVolumeAsJSON(volumeName string) (volume []byte, err error) {
 	globals.RUnlock()
 
 	volumeToReturn = &volumeGETStruct{
-		Name:          volumeAsStruct.name,
-		StorageURL:    volumeAsStruct.storageURL,
-		HealthyMounts: uint64(volumeAsStruct.healthyMountList.Len()),
-		ExpiredMounts: uint64(volumeAsStruct.expiredMountList.Len()),
+		Name:                   volumeAsStruct.name,
+		StorageURL:             volumeAsStruct.storageURL,
+		HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
+		LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
+		AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
 	}
 
 	volumeAsStruct.RUnlock()
@@ -199,10 +202,11 @@ func getVolumeListAsJSON() (volumeList []byte) {
 		volumeAsStruct.RLock()
 
 		volumeListToReturn[volumeListIndex] = &volumeGETStruct{
-			Name:          volumeAsStruct.name,
-			StorageURL:    volumeAsStruct.storageURL,
-			HealthyMounts: uint64(volumeAsStruct.healthyMountList.Len()),
-			ExpiredMounts: uint64(volumeAsStruct.expiredMountList.Len()),
+			Name:                   volumeAsStruct.name,
+			StorageURL:             volumeAsStruct.storageURL,
+			HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
+			LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
+			AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
 		}
 
 		volumeAsStruct.RUnlock()
@@ -716,16 +720,17 @@ func putVolume(name string, storageURL string) (err error) {
 	)
 
 	volume = &volumeStruct{
-		name:                   name,
-		storageURL:             storageURL,
-		mountMap:               make(map[string]*mountStruct),
-		healthyMountList:       list.New(),
-		expiredMountList:       list.New(),
-		deleting:               false,
-		checkPointHeader:       nil,
-		superBlock:             nil,
-		inodeTable:             nil,
-		pendingObjectDeleteSet: make(map[uint64]struct{}),
+		name:                      name,
+		storageURL:                storageURL,
+		mountMap:                  make(map[string]*mountStruct),
+		healthyMountList:          list.New(),
+		leasesExpiredMountList:    list.New(),
+		authTokenExpiredMountList: list.New(),
+		deleting:                  false,
+		checkPointHeader:          nil,
+		superBlock:                nil,
+		inodeTable:                nil,
+		pendingObjectDeleteSet:    make(map[uint64]struct{}),
 	}
 
 	globals.Lock()
