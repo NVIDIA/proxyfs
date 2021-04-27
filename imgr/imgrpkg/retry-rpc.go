@@ -73,15 +73,16 @@ func stopRetryRPCServer() (err error) {
 
 func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountResponse *MountResponseStruct) (err error) {
 	var (
-		alreadyInGlobalsMountMap bool
-		lastCheckpointHeader     string
-		mount                    *mountStruct
-		mountIDAsByteArray       []byte
-		mountIDAsString          string
-		ok                       bool
-		startTime                time.Time
-		volume                   *volumeStruct
-		volumeAsValue            sortedmap.Value
+		alreadyInGlobalsMountMap     bool
+		lastCheckPointHeader         *ilayout.CheckPointHeaderV1Struct
+		lastCheckPointHeaderAsString string
+		mount                        *mountStruct
+		mountIDAsByteArray           []byte
+		mountIDAsString              string
+		ok                           bool
+		startTime                    time.Time
+		volume                       *volumeStruct
+		volumeAsValue                sortedmap.Value
 	)
 
 	startTime = time.Now()
@@ -116,7 +117,7 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 		return
 	}
 
-	lastCheckpointHeader, err = swiftContainerHeaderGet(volume.storageURL, mountRequest.AuthToken, ilayout.CheckPointHeaderName)
+	lastCheckPointHeaderAsString, err = swiftContainerHeaderGet(volume.storageURL, mountRequest.AuthToken, ilayout.CheckPointHeaderName)
 	if nil != err {
 		volume.Unlock()
 		globals.Unlock()
@@ -147,8 +148,20 @@ retryGenerateMountID:
 	mount.listElement = volume.healthyMountList.PushBack(mount)
 	globals.mountMap[mountIDAsString] = mount
 
-	// TODO: if first healthy mount, kick off checkpoint goroutine
-	fmt.Printf("UNDO: lastCheckpointHeader: %s\n", lastCheckpointHeader)
+	if nil == volume.checkPointControlChan {
+		lastCheckPointHeader, err = ilayout.UnmarshalCheckPointHeaderV1(lastCheckPointHeaderAsString)
+		if nil != err {
+			logFatalf("ilayout.UnmarshalCheckPointHeaderV1(lastCheckPointHeaderAsString==\"%s\") failed: %v", lastCheckPointHeaderAsString, err)
+		}
+
+		volume.checkPointHeader = lastCheckPointHeader
+
+		volume.checkPointControlChan = make(chan chan error)
+
+		volume.checkPointControlWG.Add(1)
+
+		go volume.checkPointDaemon(volume.checkPointControlChan)
+	}
 
 	volume.Unlock()
 	globals.Unlock()
@@ -274,7 +287,11 @@ func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *Adjus
 
 func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct) (err error) {
 	var (
-		startTime time.Time
+		checkPointResponseChan chan error
+		mount                  *mountStruct
+		ok                     bool
+		startTime              time.Time
+		volume                 *volumeStruct
 	)
 
 	startTime = time.Now()
@@ -283,7 +300,35 @@ func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct)
 		globals.stats.FlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf(ETODO + " flush")
+	checkPointResponseChan = make(chan error)
+
+	globals.RLock()
+
+	mount, ok = globals.mountMap[flushRequest.MountID]
+	if !ok {
+		globals.RUnlock()
+		err = fmt.Errorf("%s %s", EUnknownMountID, flushRequest.MountID)
+		return
+	}
+
+	volume = mount.volume
+
+	volume.RLock()
+	globals.RUnlock()
+
+	if nil == volume.checkPointControlChan {
+		volume.RUnlock()
+		err = nil
+		return
+	}
+
+	volume.checkPointControlChan <- checkPointResponseChan
+
+	volume.RUnlock()
+
+	err = <-checkPointResponseChan
+
+	return
 }
 
 func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct) (err error) {
