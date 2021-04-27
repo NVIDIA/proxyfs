@@ -4,6 +4,8 @@
 package imgrpkg
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/NVIDIA/proxyfs/retryrpc"
@@ -38,6 +40,8 @@ func TestRetryRPC(t *testing.T) {
 		leaseResponse                          *LeaseResponseStruct
 		mountRequest                           *MountRequestStruct
 		mountResponse                          *MountResponseStruct
+		postRequestBody                        string
+		putRequestBody                         string
 		renewMountRequest                      *RenewMountRequestStruct
 		renewMountResponse                     *RenewMountResponseStruct
 		retryrpcClient                         *retryrpc.Client
@@ -46,15 +50,37 @@ func TestRetryRPC(t *testing.T) {
 		unmountResponse                        *UnmountResponseStruct
 	)
 
+	// Setup RetryRPC Client
+
 	retryrpcClientCallbacks = &testRetryRPCClientCallbacksStruct{
 		interruptPayloadChan: make(chan []byte),
 	}
+
+	// Setup test environment
 
 	testSetup(t, retryrpcClientCallbacks)
 
 	retryrpcClient, err = retryrpc.NewClient(testGlobals.retryrpcClientConfig)
 	if nil != err {
 		t.Fatalf("retryrpc.NewClient() failed: %v", err)
+	}
+
+	// Format testVolume
+
+	postRequestBody = fmt.Sprintf("{\"StorageURL\":\"%s\",\"AuthToken\":\"%s\"}", testGlobals.containerURL, testGlobals.authToken)
+
+	_, _, err = testDoHTTPRequest("POST", testGlobals.httpServerURL+"/volume", nil, strings.NewReader(postRequestBody))
+	if nil != err {
+		t.Fatalf("testDoHTTPRequest(\"POST\", testGlobals.httpServerURL+\"/volume\", nil, strings.NewReader(postRequestBody)) failed: %v", err)
+	}
+
+	// Start serving testVolume
+
+	putRequestBody = fmt.Sprintf("{\"StorageURL\":\"%s\"}", testGlobals.containerURL)
+
+	_, _, err = testDoHTTPRequest("PUT", testGlobals.httpServerURL+"/volume/"+testVolume, nil, strings.NewReader(putRequestBody))
+	if nil != err {
+		t.Fatalf("testDoHTTPRequest(\"PUT\", testGlobals.httpServerURL+\"/volume\"+testVolume, nil, strings.NewReader(putRequestBody)) failed: %v", err)
 	}
 
 	// Attempt a FetchNonceRange() without a prior Mount()... which should fail (no Mount)
@@ -69,13 +95,6 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"FetchNonceRange()\",,) should have failed")
 	}
 
-	// TODO: Remove this early exit skipping of following TODOs
-
-	if nil != err {
-		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
-		return
-	}
-
 	// Perform a Mount()
 
 	mountRequest = &MountRequestStruct{
@@ -87,6 +106,13 @@ func TestRetryRPC(t *testing.T) {
 	err = retryrpcClient.Send("Mount", mountRequest, mountResponse)
 	if nil != err {
 		t.Fatalf("retryrpcClient.Send(\"Mount(,)\",,) failed: %v", err)
+	}
+
+	// TODO: Remove this early exit skipping of following TODOs
+
+	if nil == err {
+		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
+		return
 	}
 
 	// Attempt a GetInodeTableEntry() for RootDirInode... which should fail (no Lease)
@@ -369,7 +395,11 @@ func TestRetryRPC(t *testing.T) {
 
 	// TODO: Verify that Exclusive Lease on RootDirInode is implicitly released
 
+	// Teardown RetryRPC Client
+
 	retryrpcClient.Close()
+
+	// And teardown test environment
 
 	testTeardown(t)
 }

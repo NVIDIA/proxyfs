@@ -117,28 +117,34 @@ type statsStruct struct {
 	SwiftObjectPutUsecs          bucketstats.BucketLog2Round
 }
 
+const (
+	mountIDByteArrayLen = 15 // actual mountID will be Base64-encoded form
+)
+
 type mountStruct struct {
-	//                              reentrancy covered by volumeStruct's sync.RWMutex
-	volume         *volumeStruct // volume.{R|}Lock() also protects each mountStruct
-	mountID        string        //
-	authTokenValid bool          // if true, mount is "healthy"; if false, mount is "expired"
-	authToken      string        //
-	lastAuthTime   time.Time     // used to periodically check TTL of authToken
-	listElement    *list.Element // LRU element on either volumeStruct.{healthy|expired}MountList
+	//                                reentrancy covered by volumeStruct's sync.RWMutex
+	volume           *volumeStruct // volume.{R|}Lock() also protects each mountStruct
+	mountID          string        //
+	leasesExpired    bool          // if true, leases are being expired prior to auto-deletion of mountStruct
+	authTokenExpired bool          // if true, authToken has been rejected... needing a renewMount() to update
+	authToken        string        //
+	lastAuthTime     time.Time     // used to periodically check TTL of authToken
+	listElement      *list.Element // LRU element on either volumeStruct.{healthy|expired}MountList
 }
 
 type volumeStruct struct {
-	sync.RWMutex                                             // must globals.{R|}Lock() before volume.{R|}Lock()
-	name                   string                            //
-	storageURL             string                            //
-	mountMap               map[string]*mountStruct           // key == mountStruct.mountID
-	healthyMountList       *list.List                        // LRU of mountStruct's with .authTokenValid == true
-	expiredMountList       *list.List                        // LRU of mountStruct's with .authTokenValid == false
-	deleting               bool                              //
-	checkPointHeader       *ilayout.CheckPointHeaderV1Struct // == nil if not currently mounted and/or checkpointing
-	superBlock             *ilayout.SuperBlockV1Struct       // == nil if not currently mounted and/or checkpointing
-	inodeTable             sortedmap.BPlusTree               // == nil if not currently mounted and/or checkpointing
-	pendingObjectDeleteSet map[uint64]struct{}               // key == objectNumber
+	sync.RWMutex                                                // must globals.{R|}Lock() before volume.{R|}Lock()
+	name                      string                            //
+	storageURL                string                            //
+	mountMap                  map[string]*mountStruct           // key == mountStruct.mountID
+	healthyMountList          *list.List                        // LRU of mountStruct's with .{leases|authToken}Expired == false
+	leasesExpiredMountList    *list.List                        // List of mountStruct's with .leasesExpired == true (regardless of .authTokenExpired) value
+	authTokenExpiredMountList *list.List                        // List of mountStruct's with at .authTokenExpired == true (& .leasesExpired == false)
+	deleting                  bool                              //
+	checkPointHeader          *ilayout.CheckPointHeaderV1Struct // == nil if not currently mounted and/or checkpointing
+	superBlock                *ilayout.SuperBlockV1Struct       // == nil if not currently mounted and/or checkpointing
+	inodeTable                sortedmap.BPlusTree               // == nil if not currently mounted and/or checkpointing
+	pendingObjectDeleteSet    map[uint64]struct{}               // key == objectNumber
 }
 
 type globalsStruct struct {
