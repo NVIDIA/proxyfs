@@ -177,6 +177,8 @@ type MountResponseStruct struct {
 // Mount performs a mount of the specified Volume and returns a MountID to be used
 // in all subsequent RPCs to reference this Volume by this Client.
 //
+// Possible errors: EAuthTokenRejected EVolumeBeingDeleted EUnknownVolumeName
+//
 func (dummy *RetryRPCServerStruct) Mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountResponse *MountResponseStruct) (err error) {
 	return mount(retryRPCClientID, mountRequest, mountResponse)
 }
@@ -331,6 +333,8 @@ type FlushRequestStruct struct {
 type FlushResponseStruct struct{}
 
 // Flush that the results of prior PutInodeTableEntries requests be persisted.
+//
+// Possible errors: EUnknownMountID
 //
 func (dummy *RetryRPCServerStruct) Flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct) (err error) {
 	return flush(flushRequest, flushResponse)
