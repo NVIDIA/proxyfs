@@ -36,7 +36,7 @@ func tlsSetFileNames(tlsCerts *tlsCertsStruct, tlsDir string) {
 }
 
 // Utility function to initialize tlsCerts
-func tlsCertsAllocate(ipAddr string, tlsDir string) (tlsCerts *tlsCertsStruct) {
+func tlsCertsAllocate(ipAddr string, ttl time.Duration, tlsDir string) (tlsCerts *tlsCertsStruct) {
 	var (
 		err error
 	)
@@ -54,7 +54,7 @@ func tlsCertsAllocate(ipAddr string, tlsDir string) (tlsCerts *tlsCertsStruct) {
 			StreetAddress: []string{},
 			PostalCode:    []string{},
 		},
-		24*time.Hour,
+		ttl,
 		tlsCerts.caCertFile,
 		tlsCerts.caKeyFile)
 
@@ -75,7 +75,7 @@ func tlsCertsAllocate(ipAddr string, tlsDir string) (tlsCerts *tlsCertsStruct) {
 		},
 		[]string{},
 		[]net.IP{net.ParseIP(ipAddr)},
-		time.Hour,
+		ttl,
 		tlsCerts.caCertPEMBlock,
 		tlsCerts.caKeyPEMBlock,
 		tlsCerts.endpointCertFile,

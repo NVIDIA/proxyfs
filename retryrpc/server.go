@@ -238,6 +238,10 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		server.Lock()
 		lci, ok := server.perClientInfo[connUniqueID]
 		if !ok {
+			// This could happen if the TTL is set to low and then client has not really died.
+
+			// TODO - tell the client they need to panic since it is better for the client to
+			// panic then the server.
 			err = fmt.Errorf("Server - msgType PassID but can't find uniqueID in perClientInfo")
 			logger.PanicfWithError(err, "getClientIDAndWait() buf: %v connUniqueID: %v err: %+v", buf, connUniqueID, err)
 			server.Unlock()

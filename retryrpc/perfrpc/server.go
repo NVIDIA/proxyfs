@@ -23,7 +23,10 @@ func configNewServer(ipAddr string, port int, lt time.Duration, tlsDir string, d
 
 	if useTLS {
 		_ = os.Mkdir(tlsDir, os.ModePerm)
-		tlsCert := tlsCertsAllocate(ipAddr, tlsDir)
+
+		// Create certificate/CA that last for 30 days
+		tlsCert := tlsCertsAllocate(ipAddr, 30*24*time.Hour, tlsDir)
+
 		config = &retryrpc.ServerConfig{
 			LongTrim:        lt,
 			ShortTrim:       100 * time.Millisecond,
