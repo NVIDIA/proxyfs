@@ -8,7 +8,6 @@ import (
 	"strconv"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
-	"github.com/NVIDIA/proxyfs/logger"
 )
 
 // This file contains functions in the server which
@@ -55,12 +54,7 @@ func (ci *clientInfo) setMethodStats(method string, deltaTime uint64) {
 func (ci *clientInfo) unregsiterMethodStats(server *Server) {
 	idAsStr := strconv.FormatInt(int64(ci.myUniqueID), 10)
 
-	logger.Infof("bucketstats for myUniqueID: '%v' -  %s\n", ci.myUniqueID,
-		bucketstats.SprintStats(bucketstats.StatFormatParsable1, bucketStatsPkgName, "*"))
 	for m := range server.svrMap {
-		logger.Infof("bucketstats myUniqueID: '%v' method: '%v'-  %s\n", ci.myUniqueID, m,
-			bucketstats.SprintStats(bucketstats.StatFormatParsable1, bucketStatsPkgName,
-				methodAndName(strconv.FormatInt(int64(ci.myUniqueID), 10), m)))
 		bucketstats.UnRegister(bucketStatsPkgName, methodAndName(strconv.FormatInt(int64(ci.myUniqueID), 10), m))
 	}
 	bucketstats.UnRegister(bucketStatsPkgName, idAsStr)
