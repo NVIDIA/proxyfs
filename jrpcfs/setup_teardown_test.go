@@ -6,6 +6,7 @@ package jrpcfs
 import (
 	"crypto/tls"
 	"crypto/x509/pkix"
+	"encoding/gob"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -78,6 +79,10 @@ func testSetup() []func() {
 		tempDir                string
 		testConfMap            conf.ConfMap
 	)
+
+	// register some RPC types to gob so it can encode/decode them efficiently
+	gob.Register(&LeaseRequest{})
+	gob.Register(&LeaseReply{})
 
 	cleanupFuncs = make([]func(), 0)
 
