@@ -13,16 +13,16 @@ func TestAPI(t *testing.T) {
 	var (
 		err error
 
-		testCheckPointHeaderV1 = &CheckPointHeaderV1Struct{
-			Version:                CheckPointHeaderVersionV1,
+		testCheckPointV1 = &CheckPointV1Struct{
+			Version:                CheckPointVersionV1,
 			SuperBlockObjectNumber: 2,
 			SuperBlockLength:       3,
 			ReservedToNonce:        4,
 		}
 
-		marshaledCheckPointHeaderV1        string
-		unmarshaledCheckPointHeaderVersion uint64
-		unmarshaledCheckPointHeaderV1      *CheckPointHeaderV1Struct
+		marshaledCheckPointV1        string
+		unmarshaledCheckPointVersion uint64
+		unmarshaledCheckPointV1      *CheckPointV1Struct
 
 		testObjectTrailer = &ObjectTrailerStruct{
 			ObjType: 1,
@@ -145,25 +145,25 @@ func TestAPI(t *testing.T) {
 		unmarshaledExtentMapEntryValueV1 *ExtentMapEntryValueV1Struct
 	)
 
-	marshaledCheckPointHeaderV1, err = testCheckPointHeaderV1.MarshalCheckPointHeaderV1()
+	marshaledCheckPointV1, err = testCheckPointV1.MarshalCheckPointV1()
 	if nil != err {
 		t.Fatal(err)
 	}
 
-	unmarshaledCheckPointHeaderVersion, err = UnmarshalCheckPointHeaderVersion(marshaledCheckPointHeaderV1)
+	unmarshaledCheckPointVersion, err = UnmarshalCheckPointVersion(marshaledCheckPointV1)
 	if nil != err {
 		t.Fatal(err)
 	}
-	if CheckPointHeaderVersionV1 != unmarshaledCheckPointHeaderVersion {
-		t.Fatalf("Bad unmarshaledCheckPointHeaderVersion (%016X) - expected CheckPointHeaderVersionV1 (%016X)", unmarshaledCheckPointHeaderVersion, CheckPointHeaderVersionV1)
+	if CheckPointVersionV1 != unmarshaledCheckPointVersion {
+		t.Fatalf("Bad unmarshaledCheckPointVersion (%016X) - expected CheckPointVersionV1 (%016X)", unmarshaledCheckPointVersion, CheckPointVersionV1)
 	}
 
-	unmarshaledCheckPointHeaderV1, err = UnmarshalCheckPointHeaderV1(marshaledCheckPointHeaderV1)
+	unmarshaledCheckPointV1, err = UnmarshalCheckPointV1(marshaledCheckPointV1)
 	if nil != err {
 		t.Fatal(err)
 	}
-	if *testCheckPointHeaderV1 != *unmarshaledCheckPointHeaderV1 {
-		t.Fatalf("Bad unmarshaledCheckPointHeaderV1 (%+v) - expected testCheckPointHeaderV1 (%+v)", unmarshaledCheckPointHeaderV1, testCheckPointHeaderV1)
+	if *testCheckPointV1 != *unmarshaledCheckPointV1 {
+		t.Fatalf("Bad unmarshaledCheckPointV1 (%+v) - expected testCheckPointV1 (%+v)", unmarshaledCheckPointV1, testCheckPointV1)
 	}
 
 	marshaledObjectTrailer, err = testObjectTrailer.marshalObjectTrailer()

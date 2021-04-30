@@ -73,16 +73,17 @@ func stopRetryRPCServer() (err error) {
 
 func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountResponse *MountResponseStruct) (err error) {
 	var (
-		alreadyInGlobalsMountMap     bool
-		lastCheckPointHeader         *ilayout.CheckPointHeaderV1Struct
-		lastCheckPointHeaderAsString string
-		mount                        *mountStruct
-		mountIDAsByteArray           []byte
-		mountIDAsString              string
-		ok                           bool
-		startTime                    time.Time
-		volume                       *volumeStruct
-		volumeAsValue                sortedmap.Value
+		alreadyInGlobalsMountMap  bool
+		lastCheckPoint            *ilayout.CheckPointV1Struct
+		lastCheckPointAsByteSlice []byte
+		lastCheckPointAsString    string
+		mount                     *mountStruct
+		mountIDAsByteArray        []byte
+		mountIDAsString           string
+		ok                        bool
+		startTime                 time.Time
+		volume                    *volumeStruct
+		volumeAsValue             sortedmap.Value
 	)
 
 	startTime = time.Now()
@@ -117,13 +118,14 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 		return
 	}
 
-	lastCheckPointHeaderAsString, err = swiftContainerHeaderGet(volume.storageURL, mountRequest.AuthToken, ilayout.CheckPointHeaderName)
+	lastCheckPointAsByteSlice, err = swiftObjectGet(volume.storageURL, mountRequest.AuthToken, ilayout.CheckPointObjectNumber)
 	if nil != err {
 		volume.Unlock()
 		globals.Unlock()
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, mountRequest.AuthToken)
 		return
 	}
+	lastCheckPointAsString = string(lastCheckPointAsByteSlice[:])
 
 retryGenerateMountID:
 
@@ -149,12 +151,12 @@ retryGenerateMountID:
 	globals.mountMap[mountIDAsString] = mount
 
 	if nil == volume.checkPointControlChan {
-		lastCheckPointHeader, err = ilayout.UnmarshalCheckPointHeaderV1(lastCheckPointHeaderAsString)
+		lastCheckPoint, err = ilayout.UnmarshalCheckPointV1(lastCheckPointAsString)
 		if nil != err {
-			logFatalf("ilayout.UnmarshalCheckPointHeaderV1(lastCheckPointHeaderAsString==\"%s\") failed: %v", lastCheckPointHeaderAsString, err)
+			logFatalf("ilayout.UnmarshalCheckPointV1(lastCheckPointAsString==\"%s\") failed: %v", lastCheckPointAsString, err)
 		}
 
-		volume.checkPointHeader = lastCheckPointHeader
+		volume.checkPoint = lastCheckPoint
 
 		volume.checkPointControlChan = make(chan chan error)
 
