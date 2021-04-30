@@ -16,7 +16,6 @@ func TestHTTPServer(t *testing.T) {
 	var (
 		err                  error
 		getRequestHeaders    http.Header
-		getResponseHeaders   http.Header
 		postRequestBody      string
 		putRequestBody       string
 		responseBody         []byte
@@ -54,15 +53,20 @@ func TestHTTPServer(t *testing.T) {
 
 	getRequestHeaders["X-Auth-Token"] = []string{testGlobals.authToken}
 
-	getResponseHeaders, responseBody, err = testDoHTTPRequest("GET", testGlobals.containerURL, getRequestHeaders, nil)
+	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.containerURL, getRequestHeaders, nil)
 	if nil != err {
 		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL, getRequestHeaders, nil) failed: %v", err)
 	}
-	if getResponseHeaders.Get(ilayout.CheckPointHeaderName) != "0000000000000001 0000000000000003 0000000000000058 0000000000000003" {
-		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL, getRequestHeaders, nil) returned unexpected %s: \"%s\"", ilayout.CheckPointHeaderName, getResponseHeaders.Get(ilayout.CheckPointHeaderName))
-	}
-	if "0000000000000002\n0000000000000003\n" != string(responseBody[:]) {
+	if "0000000000000000\n0000000000000002\n0000000000000003\n" != string(responseBody[:]) {
 		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL, getRequestHeaders, nil) returned unexpected Object List: \"%s\"", string(responseBody[:]))
+	}
+
+	_, responseBody, err = testDoHTTPRequest("GET", fmt.Sprintf("%s/%016X", testGlobals.containerURL, ilayout.CheckPointObjectNumber), getRequestHeaders, nil)
+	if nil != err {
+		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL/ilayout.CheckPointObjectNumber, getRequestHeaders, nil) failed: %v", err)
+	}
+	if "0000000000000001 0000000000000003 0000000000000058 0000000000000003" != string(responseBody[:]) {
+		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL/ilayout.CheckPointObjectNumber, getRequestHeaders, nil) returned unexpected Object List: \"%s\"", string(responseBody[:]))
 	}
 
 	putRequestBody = fmt.Sprintf("{\"StorageURL\":\"%s\"}", testGlobals.containerURL)

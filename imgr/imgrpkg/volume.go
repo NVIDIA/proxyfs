@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/NVIDIA/sortedmap"
@@ -507,8 +508,8 @@ func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCal
 
 func postVolume(storageURL string, authToken string) (err error) {
 	var (
-		checkPointHeaderV1                      *ilayout.CheckPointHeaderV1Struct
-		checkPointHeaderV1String                string
+		checkPointV1                            *ilayout.CheckPointV1Struct
+		checkPointV1String                      string
 		inodeTable                              sortedmap.BPlusTree
 		ok                                      bool
 		postVolumeRootDirDirectoryCallbacks     *postVolumeRootDirDirectoryCallbacksStruct
@@ -690,21 +691,21 @@ func postVolume(storageURL string, authToken string) (err error) {
 		return
 	}
 
-	// Create CheckPointHeader
+	// Create CheckPoint
 
-	checkPointHeaderV1 = &ilayout.CheckPointHeaderV1Struct{
-		Version:                ilayout.CheckPointHeaderVersionV1,
+	checkPointV1 = &ilayout.CheckPointV1Struct{
+		Version:                ilayout.CheckPointVersionV1,
 		SuperBlockObjectNumber: superBlockObjectNumber,
 		SuperBlockLength:       uint64(len(superBlockV1Buf)),
 		ReservedToNonce:        reservedToNonce,
 	}
 
-	checkPointHeaderV1String, err = checkPointHeaderV1.MarshalCheckPointHeaderV1()
+	checkPointV1String, err = checkPointV1.MarshalCheckPointV1()
 	if nil != err {
 		return
 	}
 
-	err = swiftContainerHeaderSet(storageURL, authToken, ilayout.CheckPointHeaderName, checkPointHeaderV1String)
+	err = swiftObjectPut(storageURL, authToken, ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String))
 	if nil != err {
 		return
 	}
@@ -727,7 +728,7 @@ func putVolume(name string, storageURL string) (err error) {
 		leasesExpiredMountList:    list.New(),
 		authTokenExpiredMountList: list.New(),
 		deleting:                  false,
-		checkPointHeader:          nil,
+		checkPoint:                nil,
 		superBlock:                nil,
 		inodeTable:                nil,
 		pendingObjectDeleteSet:    make(map[uint64]struct{}),

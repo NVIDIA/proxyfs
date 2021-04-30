@@ -10,14 +10,19 @@
 // The structure of the file system assumes an underlying object store system
 // (e.g. an S3 Bucket or OpenStack Swift Container) that may or may not support
 // consistency. As such, no Object (or any other numerically identified entity
-// in the file system) is ever written twice. This means that the file system
-// operates in a write journaled mode.
+// in the file system) is ever written twice except for the CheckPoint described
+// below.
 //
 // At the top level, the file system periodically checkpoints. This enables the
 // file system to be complemented by the extreme scale of such Object Store
 // systems despite such often suffering long latencies and coarse granularity
-// of writes. The CheckPointHeader is the changing indication of the most
-// recent checkpoint performed.
+// of writes. The CheckPoint is the changing indication of the most recent
+// checkpoint performed. As a default, the CheckPoint is written to a specific
+// Object in the Bucket/Container. This practice violates the safe practice of
+// using an eventually consistent object store, but is provided for cases where
+// the object store can deliver consistency. For deployments where the object
+// store cannot guarantee consistency, the authoritative copy of the CheckPoint
+// should also be written to a consistent store alternative.
 //
 // From the latest checkpoint, the file system's SuperBlock is located. This
 // SuperBlock is responsible for tracking the location, in the Object Store,
@@ -60,53 +65,52 @@ import (
 	"time"
 )
 
-// CheckPointHeaderName specifies the name of the CheckPointHeader applied
-// to the Container to identify the SuperBlock.
+// CheckPointObjectNumber specifies the ObjectNumber of the Object to hold the
+// default/backup copy of the CheckPoint.
 //
 const (
-	CheckPointHeaderName = "X-Container-Meta-Check-Point"
+	CheckPointObjectNumber uint64 = 0
 )
 
-// CheckPointHeaderVersionV* specifies the format of the CheckPointHeader.
-// The CheckPointHeaderVersion must always be fetched by scanning the entire
-// CheckPointHeader using a %016X format specifier. This value will then be
-// used to interpret the remaining characters of the CheckPointHeader string.
+// CheckPointVersionV* specifies the format of the CheckPoint. The CheckPointVersion
+// must always be fetched by scanning the entire CheckPoint using a %016X format
+// specifier. This value will then be used to interpret the remaining characters of
+// the CheckPoint string.
 //
 const (
-	CheckPointHeaderVersionV1 uint64 = 1
+	CheckPointVersionV1 uint64 = 1
 )
 
-// UnmarshalCheckPointHeaderVersion extracts checkPointHeaderVersion from checkpointHeaderString.
+// UnmarshalCheckPointVersion extracts checkPointVersion from checkpointString.
 //
-func UnmarshalCheckPointHeaderVersion(checkpointHeaderString string) (checkPointHeaderVersion uint64, err error) {
-	checkPointHeaderVersion, err = unmarshalCheckPointHeaderVersion(checkpointHeaderString)
+func UnmarshalCheckPointVersion(checkpointString string) (checkPointVersion uint64, err error) {
+	checkPointVersion, err = unmarshalCheckPointVersion(checkpointString)
 	return
 }
 
-// CheckPointHeaderV1Struct specifies the format of the CheckPointHeader
-// as of V1.
+// CheckPointV1Struct specifies the format of the CheckPoint as of V1.
 //
 // The contents of the struct are serialized as space separated fields formatted
 // via %016X numbers.
 //
-type CheckPointHeaderV1Struct struct {
-	Version                uint64 // == CheckPointHeaderVersionV1
+type CheckPointV1Struct struct {
+	Version                uint64 // == CheckPointVersionV1
 	SuperBlockObjectNumber uint64 // Identifies the Object containing the SuperBlock at the end
 	SuperBlockLength       uint64 // Total length of the SuperBlock found at the end of the Object indicated by SuperBlockObjectNumber
 	ReservedToNonce        uint64 // Ensures all numbers requiring uniqueness (e.g. Object numbers, Inode numbers) are never reused
 }
 
-// MarshalCheckPointHeaderV1 encodes checkPointHeaderV1 to checkpointHeaderString.
+// MarshalCheckPointV1 encodes checkPointV1 to checkpointString.
 //
-func (checkPointHeaderV1 *CheckPointHeaderV1Struct) MarshalCheckPointHeaderV1() (checkPointHeaderV1String string, err error) {
-	checkPointHeaderV1String, err = checkPointHeaderV1.marshalCheckPointHeaderV1()
+func (checkPointV1 *CheckPointV1Struct) MarshalCheckPointV1() (checkPointV1String string, err error) {
+	checkPointV1String, err = checkPointV1.marshalCheckPointV1()
 	return
 }
 
-// UnmarshalCheckPointHeaderV1 decodes checkPointHeaderV1 from checkpointHeaderString.
+// UnmarshalCheckPointV1 decodes checkPointV1 from checkpointString.
 //
-func UnmarshalCheckPointHeaderV1(checkPointHeaderV1String string) (checkPointHeaderV1 *CheckPointHeaderV1Struct, err error) {
-	checkPointHeaderV1, err = unmarshalCheckPointHeaderV1(checkPointHeaderV1String)
+func UnmarshalCheckPointV1(checkPointV1String string) (checkPointV1 *CheckPointV1Struct, err error) {
+	checkPointV1, err = unmarshalCheckPointV1(checkPointV1String)
 	return
 }
 
@@ -167,21 +171,21 @@ type InodeTableLayoutEntryV1Struct struct {
 	BytesReferenced uint64 // Number of bytes currently referenced in the Object
 }
 
-// SuperBlockStruct specifies the format of the SuperBlock found at
-// the CheckPointHeaderV1Struct.SuperBlockLength trailing bytes of
-// the Object indicated by CheckPointHeaderV1Struct.SuperBlockObjectNumber.
+// SuperBlockStruct specifies the format of the SuperBlock found at the
+// CheckPointV1Struct.SuperBlockLength trailing bytes of the Object
+// indicated by CheckPointV1Struct.SuperBlockObjectNumber.
 //
-// The InodeTable is a B+Tree where the Key is the uint64 InodeNumber. The Value
-// is a InodeTableEntryValueV1Struct.
+// The InodeTable is a B+Tree where the Key is the uint64 InodeNumber.
+// The Value is a InodeTableEntryValueV1Struct.
 //
 // The struct is serialized as a sequence of LittleEndian formatted fields.
 // The InodeTableLayout slice is serialized by a preceeding LittleEndian
 // count of the number of InodeTableLayoutEntryV1Struct's followed by the
 // serialization of each one.
 //
-// Note that the CheckPointHeaderV1Struct.SuperBlockLength also includes the bytes for
-// holding the ObjectTrailerStruct{ObjType: SuperBlockType, Version: SuperBlockVersionV1}
-// that is appended.
+// Note that the CheckPointV1Struct.SuperBlockLength also includes the bytes for holding
+// the ObjectTrailerStruct{ObjType: SuperBlockType, Version: SuperBlockVersionV1} that is
+// appended.
 //
 type SuperBlockV1Struct struct {
 	InodeTableRootObjectNumber uint64                          // Identifies the Object containing the root of the InodeTable

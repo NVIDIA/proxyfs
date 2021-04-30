@@ -9,25 +9,25 @@ import (
 	"time"
 )
 
-func unmarshalCheckPointHeaderVersion(checkpointHeaderString string) (checkPointHeaderVersion uint64, err error) {
-	_, err = fmt.Sscanf(checkpointHeaderString, "%016X", &checkPointHeaderVersion)
+func unmarshalCheckPointVersion(checkpointString string) (checkPointVersion uint64, err error) {
+	_, err = fmt.Sscanf(checkpointString, "%016X", &checkPointVersion)
 
 	return
 }
 
-func (checkPointHeaderV1 *CheckPointHeaderV1Struct) marshalCheckPointHeaderV1() (checkPointHeaderV1String string, err error) {
-	checkPointHeaderV1String = fmt.Sprintf("%016X %016X %016X %016X", checkPointHeaderV1.Version, checkPointHeaderV1.SuperBlockObjectNumber, checkPointHeaderV1.SuperBlockLength, checkPointHeaderV1.ReservedToNonce)
+func (checkPointV1 *CheckPointV1Struct) marshalCheckPointV1() (checkPointV1String string, err error) {
+	checkPointV1String = fmt.Sprintf("%016X %016X %016X %016X", checkPointV1.Version, checkPointV1.SuperBlockObjectNumber, checkPointV1.SuperBlockLength, checkPointV1.ReservedToNonce)
 
 	err = nil
 	return
 }
 
-func unmarshalCheckPointHeaderV1(checkPointHeaderV1String string) (checkPointHeaderV1 *CheckPointHeaderV1Struct, err error) {
-	checkPointHeaderV1 = &CheckPointHeaderV1Struct{}
+func unmarshalCheckPointV1(checkPointV1String string) (checkPointV1 *CheckPointV1Struct, err error) {
+	checkPointV1 = &CheckPointV1Struct{}
 
-	_, err = fmt.Sscanf(checkPointHeaderV1String, "%016X %016X %016X %016X", &checkPointHeaderV1.Version, &checkPointHeaderV1.SuperBlockObjectNumber, &checkPointHeaderV1.SuperBlockLength, &checkPointHeaderV1.ReservedToNonce)
-	if (nil == err) && (CheckPointHeaderVersionV1 != checkPointHeaderV1.Version) {
-		err = fmt.Errorf("Version mismatch... found %016X... expected %016X", checkPointHeaderV1.Version, CheckPointHeaderVersionV1)
+	_, err = fmt.Sscanf(checkPointV1String, "%016X %016X %016X %016X", &checkPointV1.Version, &checkPointV1.SuperBlockObjectNumber, &checkPointV1.SuperBlockLength, &checkPointV1.ReservedToNonce)
+	if (nil == err) && (CheckPointVersionV1 != checkPointV1.Version) {
+		err = fmt.Errorf("Version mismatch... found %016X... expected %016X", checkPointV1.Version, CheckPointVersionV1)
 	}
 
 	return
