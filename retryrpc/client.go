@@ -289,7 +289,7 @@ func (client *Client) notifyReply(buf []byte, genNum uint64, recvResponse time.T
 //
 // As soon as it reads a complete response, it launches a goroutine to process
 // the response and notify the blocked Send().
-func (client *Client) readReplies(callingGenNum uint64) {
+func (client *Client) readReplies(nC net.Conn, callingGenNum uint64) {
 	defer client.goroutineWG.Done()
 	var localCnt int
 
@@ -300,7 +300,6 @@ func (client *Client) readReplies(callingGenNum uint64) {
 			client.Unlock()
 			return
 		}
-		nC := client.connection.castToNetConn()
 		client.Unlock()
 
 		if nC == nil {
@@ -554,8 +553,12 @@ func (client *Client) reDial() (err error) {
 	}
 
 	// Start readResponse goroutine to read responses from server
+	//
+	// Pass copy of connection used since a new readReplies() will be
+	// started with a new connection as needed.
+	nC := client.connection.castToNetConn()
 	client.goroutineWG.Add(1)
-	go client.readReplies(client.connection.genNum)
+	go client.readReplies(nC, client.connection.genNum)
 
 	return
 }
@@ -653,8 +656,12 @@ func (client *Client) initialDial() (err error) {
 	}
 
 	// Start readResponse goroutine to read responses from server
+	//
+	// Pass copy of connection used since a new readReplies() will be
+	// started with a new connection as needed.
+	nC := client.connection.castToNetConn()
 	client.goroutineWG.Add(1)
-	go client.readReplies(client.connection.genNum)
+	go client.readReplies(nC, client.connection.genNum)
 
 	return
 }
