@@ -345,7 +345,7 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 	client.outstandingRequest = make(map[requestID]*reqCtx)
 	client.bt = btree.New(2)
 
-	if nil == config.RootCAx509CertificatePEM {
+	if config.RootCAx509CertificatePEM == nil {
 		client.connection.useTLS = false
 		client.connection.tlsConn = nil
 		client.connection.x509CertPool = nil
@@ -395,7 +395,5 @@ func (client *Client) Close() {
 
 	// Wait for the goroutines to return
 	client.goroutineWG.Wait()
-	logger.Infof("bucketstats for myUniqueID: '%v' -  %s\n", client.myUniqueID,
-		bucketstats.SprintStats(bucketstats.StatFormatParsable1, bucketStatsPkgName, client.GetStatsGroupName()))
 	bucketstats.UnRegister(bucketStatsPkgName, client.GetStatsGroupName())
 }
