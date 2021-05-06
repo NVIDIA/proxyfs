@@ -269,6 +269,15 @@ func (client *Client) notifyReply(buf []byte, genNum uint64, recvResponse time.T
 	}
 
 	client.Lock()
+
+	// We dropped the lock above so we have to again check if we hit a retransmit case
+	// and the socket was closed.
+	//
+	// If this message is from an old socket - throw it away since the request was resent.
+	if client.connection.genNum != genNum {
+		client.Unlock()
+		return
+	}
 	delete(client.outstandingRequest, crID)
 	client.Unlock()
 
