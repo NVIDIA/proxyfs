@@ -278,6 +278,14 @@ func (client *Client) notifyReply(buf []byte, genNum uint64, recvResponse time.T
 		client.Unlock()
 		return
 	}
+
+	_, ok = client.outstandingRequest[crID]
+	if !ok {
+		// Saw reply for request which is no longer on outstandingRequest list
+		// Can happen if handling retransmit
+		client.Unlock()
+		return
+	}
 	delete(client.outstandingRequest, crID)
 	client.Unlock()
 
