@@ -1,5 +1,120 @@
 # ProxyFS Release Notes
 
+## 1.19.0 (May 12, 2021)
+
+### Bug Fixes:
+
+TOX fixes for WSGI middleware in support of move to Python3.
+
+Closed file state issues in PFSAgent when lookup(), readdirplus(),
+and stat() operations are performed alongside write() activity.
+Similar issues are resolved between lookup() and readdirplus()
+operations in the presence of parallel directory modifying operations.
+There was also a case where doing a simple file read() would lose
+stat() information when performed in the presence of write() operations.
+
+### Features:
+
+New support for TLS connections to etcd added.
+
+PFSAgent's connection to ProxyFS for metadata operations was
+previously transitioned to TLS. Now, TLS is optional (though,
+of course, highly recommended).
+
+Replaced the auth plugin model with a new/simpler Golang plugin
+mechanism. Previously, the auth plugin was actually a standalone
+process launched by PFSAgent. As such, it could be written in a
+variety of languages. With the new Golang plugin model, the plugin
+must, of course, be written in Golang (or, at least, provide a
+Golang-callable function that, perhaps, wraps an implementation
+in another language).
+
+A new implementation of Swift emulation, complete with Swift Auth
+support, has been added (`iswift`). The tool is implemented with the
+pattern of its implementation being in a package, `iswiftpkg`, below
+`iswift` in the repository source tree enabling easy integration
+with Golang code (e.g. tests) that need easy Swift emulation.
+
+For easy generation of CA and Endpoint certificates (along the lines
+of what openssl provides), a new `icert` tool has been added. Similar
+to that of `iswift`, the implementation of `icert` is in subdirectory
+package `icertpkg`.
+
+A new RpcLease benchmark has been added. It is anticipated that
+Lease Management becomes the scale out bottleneck in the move to
+PFSAgent usage. Hence, it is important to quantify Lease performance
+in the target environment in order to anticipate file system
+performance limits at least in metadata heavy workloads. Presumably,
+bandwidth limitations will be proportional to the scale out of
+PFSAgent instances as well as the underlying Swift Object Store
+solution.
+
+### Notes:
+
+Many changes relate to the migration of this and other repositories
+from the old github.com/swiftstack/ tree to github.com/NVIDIA/ tree.
+
+As the move to only support PFSAgent access to file systems (perhaps
+eventually restoring BiModal access as well), support for SMB and NFS
+is deprecated. This removes the tight linkage between ProxyFS and Samba
+necessitated by the former vfs submodule's support for now obsolete
+versions of Samba.
+
+To restore SMB & NFS support, simply deploy PFSAgent (perhaps adjacent
+to ProxyFS) and use your distribution's Samba and NFSd support to export
+the mount point presented by PFSAgent.
+
+This release introduces a lot of functionality development work targeted
+at the 2.0 version of ProxyFS. In short, with the move to supporting
+file systems only exposed by PFSAgent, the architecture of ProxyFS has
+proved inappriate in that it majorly supported data path operations that
+will no longer be used. Even metadata operations triggered by PFSAgent
+will now be moved to PFSAgent. All that remains in ProxyFS going forward
+is the centralized Lease Management functionality and the checkpoint
+operation. Further, the checkpoints only involve sync'ing the Inode Table
+that is, itself, greatly simplified (now only holding a "pointer" to
+where the state of an Inode can be found).
+
+These changes, set to become operational in the 2.0 version of ProxyFS,
+are being implemented in a parallel set of subdirectories. These mostly
+follow the patter described for `iswift` and `icert` above. Specifically,
+`imgr` is the upcoming implementation of the server side (replacing
+`proxyfsd`) while `iclient` is the upcoming implementation of the client
+side (replacing `pfsagentd`). The work is well underway and, indeed, the
+bulk of the commits since 1.18.0, cover that effort. At this time, only
+a small subset of the `imgr` work is operational. None of `iclient` has
+been implemented.
+
+One big switch in the 2.0 model is a move away from Swift Accounts as
+the top level of a ProxyFS file system. At the time of its adoption,
+the Swift Account was chosen so that ProxyFS could load balance its
+creation of Objects across many Swift Containers. At that time, Swift
+had modest limits on the number of Objects that could reside in a single
+Container, so this choice was then necessary. But Swift has dramatically
+improved support for very large numbers of Objects in a Container since
+that time. Making this move to a ProxyFS file system matching a Swift
+Container instead of a Swift Account adjusts to this new capability. It
+also avoids the unfortunate confusion over files and symlinks placed in
+the root of a ProxyFS file system were not visible via BiModal (Swift or
+S3 API) access. Finally, this move better aligns with supporting deployments
+where only S3 API access is used and, hence, the whole concept of a Swift
+Account is not involved (since S3 Buckets map to Swift Accounts).
+
+To get a good handle on how the 2.0 file system will "look" in terms
+of "on disk" representation, a new `ilayout` package is provided. It
+is believed to be complete. It describes how the *CheckPoint* Object
+(now Object Zero; previously a Header on the checkpoint container)
+points to the file system *SuperBlock*. From there, the *InodeTable*
+is described as well as the format of the metadata portion of each
+*Inode*. The `ilayout` package also introduces a new pattern of heavy
+use of Golang *godoc* mechanisms to make browsing of the data structures
+and APIs more convenient. This pattern will be applied across all of the
+new 2.0 components (see in particular `imgrpkg` underneath `imgr` for a
+full description of how to interact with the new server side of ProxyFS).
+
+In the meantime, the pre-2.0 functionality will be maintained in their
+usual subdirectories (i.e. `proxyfsd` and `pfsagentd`).
+
 ## 1.18.0 (January 21, 2021)
 
 ### Bug Fixes:
