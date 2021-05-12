@@ -1,8 +1,14 @@
 // Copyright (c) 2015-2021, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
+// Package icertpkg provides functions to generate certificates compatible
+// with standard TLS and HTTPS packages. Functions are provided to create
+// RootCA certificates that may then subsequently be used to generate
+// endpoint certificates signed by a RootCA. The functions are designed to
+// work with either on-disk PEM files and/or in-memory PEM blocks (byte slices).
+//
 // Inspired by https://shaneutt.com/blog/golang-ca-and-signed-cert-go/
-
+//
 package icertpkg
 
 import (
@@ -33,7 +39,7 @@ const (
 	// GeneratedFilePerm is the permission bits that, after the application
 	// of umask, will specify the mode of the created cert|key files.
 	//
-	GeneratedFilePerm = 0644
+	GeneratedFilePerm = 0400
 )
 
 // GenCACert is called to generate a Certificate Authority using the requested
