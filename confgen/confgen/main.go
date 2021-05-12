@@ -16,7 +16,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/swiftstack/ProxyFS/confgen"
+	"github.com/NVIDIA/proxyfs/confgen"
 )
 
 func usage() {

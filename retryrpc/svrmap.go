@@ -10,7 +10,9 @@ import (
 	"unicode/utf8"
 )
 
-var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
+var (
+	typeOfError = reflect.TypeOf((*error)(nil)).Elem()
+)
 
 // Find all methods for the type which can be exported.
 // Build svrMap listing methods available as well as their
@@ -18,8 +20,8 @@ var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
 func (server *Server) buildSvrMap(typ reflect.Type) {
 	for m := 0; m < typ.NumMethod(); m++ {
 		method := typ.Method(m)
-		mtype := method.Type
-		mname := method.Name
+		mType := method.Type
+		mName := method.Name
 
 		// Just like net/rpc, we have these requirements on methods:
 		// - must be exported
@@ -30,36 +32,63 @@ func (server *Server) buildSvrMap(typ reflect.Type) {
 			continue
 		}
 
-		if mtype.NumIn() != 3 {
-			continue
-		}
-		argType := mtype.In(1)
-		if !isExportedOrBuiltinType(argType) {
-			continue
-		}
-
-		replyType := mtype.In(2)
-		if replyType.Kind() != reflect.Ptr {
+		// Will have 3 arguments if pass request/reply
+		// Will have 4 arguments if expect clientID and request/reply
+		if (mType.NumIn() != 3) && (mType.NumIn() != 4) {
 			continue
 		}
 
-		if !isExportedOrBuiltinType(replyType) {
+		if mType.NumOut() != 1 {
 			continue
 		}
 
-		if mtype.NumOut() != 1 {
-			continue
-		}
-
-		returnType := mtype.Out(0)
+		returnType := mType.Out(0)
 		if returnType != typeOfError {
 			continue
 		}
 
 		// We save off the request type so we know how to unmarshal the request.
 		// We use the reply type to allocate the reply struct and marshal the response.
-		ma := methodArgs{methodPtr: &method, request: argType, reply: replyType}
-		server.svrMap[mname] = &ma
+		if mType.NumIn() == 3 {
+			argType := mType.In(1)
+			if !isExportedOrBuiltinType(argType) {
+				continue
+			}
+			replyType := mType.In(2)
+			if replyType.Kind() != reflect.Ptr {
+				continue
+			}
+
+			if !isExportedOrBuiltinType(replyType) {
+				continue
+			}
+
+			ma := methodArgs{methodPtr: &method, passClientID: false, request: argType, reply: replyType}
+			server.svrMap[mName] = &ma
+		} else if mType.NumIn() == 4 {
+			argType := mType.In(2)
+			if !isExportedOrBuiltinType(argType) {
+				continue
+			}
+
+			// Check if first argument is uint64 for clientID
+			clientIDType := mType.In(1)
+			if clientIDType.Kind() != reflect.Uint64 {
+				continue
+			}
+
+			replyType := mType.In(3)
+			if replyType.Kind() != reflect.Ptr {
+				continue
+			}
+
+			if !isExportedOrBuiltinType(replyType) {
+				continue
+			}
+
+			ma := methodArgs{methodPtr: &method, passClientID: true, request: argType, reply: replyType}
+			server.svrMap[mName] = &ma
+		}
 	}
 }
 
@@ -78,7 +107,6 @@ func isMethodExported(name string) bool {
 // Figure out what methods we can have as RPCs and build the
 // service map
 func (server *Server) register(retrySvr interface{}) (err error) {
-
 	// Find all the methods associated with retrySvr and put into serviceMap
 	typ := reflect.TypeOf(retrySvr)
 	rcvr := reflect.ValueOf(retrySvr)

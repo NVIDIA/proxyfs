@@ -8,5 +8,5 @@ end
 # install middleware in development mode
 execute 'pfs_middleware - setup.py develop' do
   command "python setup.py develop"
-  cwd "#{node['source_root']}/src/github.com/swiftstack/ProxyFS/pfs_middleware"
+  cwd "#{node['source_root']}/src/github.com/NVIDIA/proxyfs/pfs_middleware"
 end

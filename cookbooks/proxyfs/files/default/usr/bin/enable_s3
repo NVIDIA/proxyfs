@@ -36,4 +36,4 @@ sed -i '/^pipeline/ s/s3api tempauth/tempauth/' $PROXYSERVERCONF
 sed -i "/^pipeline/ s/tempauth/${LIBRARY} tempauth/" $PROXYSERVERCONF
 
 echo "${LIBRARY} was successfully enabled. Remember to restart Swift or just run:"
-echo "    start_and_mount_pfs keepmounts"
+echo "    start_and_mount_pfs"

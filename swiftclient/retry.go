@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/stats"
 )
 
 // Swift requests should be retried if they fail with a retriable error.

@@ -9,11 +9,11 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/NVIDIA/proxyfs/evtlog"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/swiftclient"
 )
 
 func (volume *volumeStruct) RegisterForEvents(listener VolumeEventListener) {

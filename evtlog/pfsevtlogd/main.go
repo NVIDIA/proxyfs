@@ -13,9 +13,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/evtlog"
+	"github.com/NVIDIA/proxyfs/transitions"
 )
 
 func usage() {

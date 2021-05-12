@@ -6,8 +6,8 @@
     pkg_ver:
       etcd: "3.4.7"
     golang_versions:
-      current: "go1.13.6"
-      candidate: "go1.15.5"
+      current: "go1.15.5"
+      candidate: "go1.16.2"
       latest: "{{ lookup('url', 'https://golang.org/VERSION?m=text', split_lines=False) }}"
     active_golang_version: "{{ golang_version | default('current') }}"
     golang_versions_file: "/etc/golang_versions.json"

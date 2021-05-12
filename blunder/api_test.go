@@ -9,9 +9,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/transitions"
 )
 
 var testConfMap conf.ConfMap

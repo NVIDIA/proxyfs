@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/blunder"
-	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/proxyfs/blunder"
+	"github.com/NVIDIA/proxyfs/evtlog"
+	"github.com/NVIDIA/proxyfs/inode"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/sortedmap"
 )
 
 // RpcLease is called to either request a Shared|Exclusive Lease or to
@@ -241,13 +241,13 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 			leaseRequestOperation.mount.leaseRequestMap[inodeLease.InodeNumber] = leaseRequest
 			switch inodeLease.leaseState {
 			case inodeLeaseStateNone:
-				leaseRequest.requestState = leaseRequestStateExclusiveGranted
-				inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
-				inodeLease.exclusiveHolder = leaseRequest
+				leaseRequest.requestState = leaseRequestStateSharedGranted
+				inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
+				leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
 				inodeLease.lastGrantTime = time.Now()
 				inodeLease.longAgoTimer = time.NewTimer(globals.minLeaseDuration)
 				leaseReply = &LeaseReply{
-					LeaseReplyType: LeaseReplyTypeExclusive,
+					LeaseReplyType: LeaseReplyTypeShared,
 				}
 				leaseRequest.replyChan <- leaseReply
 			case inodeLeaseStateSharedGrantedRecently:
@@ -298,7 +298,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 					logger.Fatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 1]", rpcInterrupt, err)
 				}
 				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(inodeLease.demotingHolder.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
-				globals.retryrpcSvr.SendCallback(string(inodeLease.demotingHolder.mount.mountIDAsString), rpcInterruptBuf)
+				globals.retryrpcSvr.SendCallback(inodeLease.demotingHolder.mount.retryRpcUniqueID, rpcInterruptBuf)
 				inodeLease.lastInterruptTime = time.Now()
 				inodeLease.interruptsSent = 1
 				inodeLease.interruptTimer = time.NewTimer(globals.leaseInterruptInterval)
@@ -375,7 +375,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 							leaseRequest.listElement = inodeLease.releasingHoldersList.PushBack(leaseRequest)
 							leaseRequest.requestState = leaseRequestStateSharedReleasing
 							evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
-							globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+							globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 						}
 						inodeLease.lastInterruptTime = time.Now()
 						inodeLease.interruptsSent = 1
@@ -458,7 +458,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 						logger.Fatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 3]", rpcInterrupt, err)
 					}
 					evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(sharedHolderLeaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
-					globals.retryrpcSvr.SendCallback(string(sharedHolderLeaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+					globals.retryrpcSvr.SendCallback(sharedHolderLeaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 				}
 				inodeLease.lastInterruptTime = time.Now()
 				inodeLease.interruptsSent = 1
@@ -485,7 +485,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 					logger.Fatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 4]", rpcInterrupt, err)
 				}
 				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(inodeLease.exclusiveHolder.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
-				globals.retryrpcSvr.SendCallback(string(inodeLease.exclusiveHolder.mount.mountIDAsString), rpcInterruptBuf)
+				globals.retryrpcSvr.SendCallback(inodeLease.exclusiveHolder.mount.retryRpcUniqueID, rpcInterruptBuf)
 				inodeLease.exclusiveHolder = nil
 				inodeLease.lastInterruptTime = time.Now()
 				inodeLease.interruptsSent = 1
@@ -850,32 +850,23 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 						_ = inodeLease.requestedList.Remove(leaseRequestElement)
 						if leaseRequestStateSharedRequested == leaseRequest.requestState {
 							leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-							if 0 == inodeLease.requestedList.Len() {
-								inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
-								leaseRequest.requestState = leaseRequestStateExclusiveGranted
-								leaseReply = &LeaseReply{
-									LeaseReplyType: LeaseReplyTypeExclusive,
-								}
-								leaseRequest.replyChan <- leaseReply
-							} else { // 0 < inodeLease.requestedList.Len()
-								inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
-								leaseRequest.requestState = leaseRequestStateSharedGranted
-								leaseReply = &LeaseReply{
-									LeaseReplyType: LeaseReplyTypeShared,
-								}
-								leaseRequest.replyChan <- leaseReply
-								leaseRequestElement = inodeLease.requestedList.Front()
-								for nil != leaseRequestElement {
-									leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
-									if leaseRequestStateSharedRequested == leaseRequest.requestState {
-										_ = inodeLease.requestedList.Remove(leaseRequestElement)
-										leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-										leaseRequest.requestState = leaseRequestStateSharedGranted
-										leaseRequest.replyChan <- leaseReply
-										leaseRequestElement = inodeLease.requestedList.Front()
-									} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
-										leaseRequestElement = nil
-									}
+							inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
+							leaseRequest.requestState = leaseRequestStateSharedGranted
+							leaseReply = &LeaseReply{
+								LeaseReplyType: LeaseReplyTypeShared,
+							}
+							leaseRequest.replyChan <- leaseReply
+							leaseRequestElement = inodeLease.requestedList.Front()
+							for nil != leaseRequestElement {
+								leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
+								if leaseRequestStateSharedRequested == leaseRequest.requestState {
+									_ = inodeLease.requestedList.Remove(leaseRequestElement)
+									leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+									leaseRequest.requestState = leaseRequestStateSharedGranted
+									leaseRequest.replyChan <- leaseReply
+									leaseRequestElement = inodeLease.requestedList.Front()
+								} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
+									leaseRequestElement = nil
 								}
 							}
 						} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
@@ -1065,7 +1056,7 @@ func (inodeLease *inodeLeaseStruct) handleLongAgoTimerPop() {
 
 				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-				globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+				globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 
 				leaseRequestElement = inodeLease.sharedHoldersList.Front()
 			}
@@ -1101,7 +1092,7 @@ func (inodeLease *inodeLeaseStruct) handleLongAgoTimerPop() {
 
 				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(inodeLease.demotingHolder.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-				globals.retryrpcSvr.SendCallback(string(inodeLease.demotingHolder.mount.mountIDAsString), rpcInterruptBuf)
+				globals.retryrpcSvr.SendCallback(inodeLease.demotingHolder.mount.retryRpcUniqueID, rpcInterruptBuf)
 			case leaseRequestStateExclusiveRequested:
 				inodeLease.leaseState = inodeLeaseStateExclusiveReleasing
 
@@ -1120,7 +1111,7 @@ func (inodeLease *inodeLeaseStruct) handleLongAgoTimerPop() {
 
 				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(inodeLease.exclusiveHolder.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-				globals.retryrpcSvr.SendCallback(string(inodeLease.exclusiveHolder.mount.mountIDAsString), rpcInterruptBuf)
+				globals.retryrpcSvr.SendCallback(inodeLease.exclusiveHolder.mount.retryRpcUniqueID, rpcInterruptBuf)
 
 				inodeLease.exclusiveHolder = nil
 			default:
@@ -1366,7 +1357,7 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-				globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+				globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 
 				leaseRequestElement = leaseRequestElement.Next()
 			}
@@ -1390,7 +1381,7 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-				globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+				globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 
 				leaseRequestElement = leaseRequestElement.Next()
 			}
@@ -1414,7 +1405,7 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 			evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-			globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+			globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 		case inodeLeaseStateExclusiveDemoting:
 			if nil == inodeLease.demotingHolder {
 				logger.Fatalf("(*inodeLeaseStruct).handleInterruptTimerPop() found empty demotingHolder [case 2]")
@@ -1432,7 +1423,7 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 			evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(inodeLease.demotingHolder.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-			globals.retryrpcSvr.SendCallback(string(inodeLease.demotingHolder.mount.mountIDAsString), rpcInterruptBuf)
+			globals.retryrpcSvr.SendCallback(inodeLease.demotingHolder.mount.retryRpcUniqueID, rpcInterruptBuf)
 		default:
 			logger.Fatalf("(*inodeLeaseStruct).handleInterruptTimerPop() found unexpected leaseState: %v [case 2]", inodeLease.leaseState)
 		}
@@ -1504,7 +1495,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 
 		evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-		globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+		globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 
 		inodeLease.leaseState = inodeLeaseStateSharedReleasing
 	}
@@ -1559,7 +1550,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 
 			evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-			globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+			globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 		}
 
 		inodeLease.leaseState = inodeLeaseStateSharedReleasing
@@ -1588,7 +1579,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 
 		evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-		globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+		globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 
 		inodeLease.leaseState = inodeLeaseStateExclusiveReleasing
 
@@ -1657,7 +1648,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 
 								evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-								globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+								globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 
 								inodeLease.leaseState = inodeLeaseStateExclusiveReleasing
 
@@ -1842,7 +1833,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 
 						evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-						globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+						globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 
 						leaseRequestElement = leaseRequestElement.Next()
 					}
@@ -1883,7 +1874,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 
 					evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-					globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+					globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 
 					inodeLease.lastInterruptTime = time.Now()
 					inodeLease.interruptsSent++
@@ -1922,7 +1913,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 
 					evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
-					globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
+					globals.retryrpcSvr.SendCallback(leaseRequest.mount.retryRpcUniqueID, rpcInterruptBuf)
 
 					inodeLease.lastInterruptTime = time.Now()
 					inodeLease.interruptsSent++

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/blunder"
-	"github.com/swiftstack/ProxyFS/trackedlock"
+	"github.com/NVIDIA/proxyfs/blunder"
+	"github.com/NVIDIA/proxyfs/trackedlock"
 )
 
 // This struct is used by LLM to track a lock.

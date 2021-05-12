@@ -19,10 +19,10 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/version"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/version"
 )
 
 type leaseReportStruct struct {

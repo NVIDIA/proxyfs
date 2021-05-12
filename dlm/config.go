@@ -6,9 +6,9 @@ package dlm
 // Configuration variables for DLM
 
 import (
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/trackedlock"
-	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/trackedlock"
+	"github.com/NVIDIA/proxyfs/transitions"
 )
 
 type globalsStruct struct {

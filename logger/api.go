@@ -26,7 +26,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 type Level int

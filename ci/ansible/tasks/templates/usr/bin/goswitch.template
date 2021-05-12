@@ -14,9 +14,9 @@ GO_DIR_NAME = "{{ go_dir_name }}"
 GO_DIR_PATH = os.path.join(GO_DIR_PARENT_PATH, GO_DIR_NAME)
 SOURCE_ROOT = "{{ source_root }}"
 REPO_CLONE_PARENT_DIR = os.path.join(
-    SOURCE_ROOT, "src", "github.com", "swiftstack"
+    SOURCE_ROOT, "src", "github.com", "NVIDIA"
 )
-PROXYFS_SRC_DIR = os.path.join(REPO_CLONE_PARENT_DIR, "ProxyFS")
+PROXYFS_SRC_DIR = os.path.join(REPO_CLONE_PARENT_DIR, "proxyfs")
 
 
 class GoDirNotLinkError(Exception):

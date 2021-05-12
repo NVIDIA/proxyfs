@@ -79,7 +79,7 @@ echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
 # Patch Golang's GDB runtime plug-in
 
 mv /usr/local/go/src/runtime/runtime-gdb.py /usr/local/go/src/runtime/runtime-gdb.py_ORIGINAL
-cp /vagrant/src/github.com/swiftstack/ProxyFS/sait/usr/local/go/src/runtime/runtime-gdb.py /usr/local/go/src/runtime/.
+cp /vagrant/src/github.com/NVIDIA/proxyfs/sait/usr/local/go/src/runtime/runtime-gdb.py /usr/local/go/src/runtime/.
 
 # Install GDB and enable above Golang GDB runtime plug-in as well as other niceties
 
@@ -105,7 +105,7 @@ ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
 
 yum -y install epel-release
 yum -y install python-pip
-pip install --upgrade pip
+pip install --upgrade 'pip<21.0'
 
 # Setup ProxyFS build environment
 
@@ -114,7 +114,7 @@ yum -y install json-c-devel
 yum -y install fuse
 echo "export GOPATH=/vagrant" >> ~vagrant/.bash_profile
 echo "export PATH=\$PATH:\$GOPATH/bin" >> ~vagrant/.bash_profile
-echo "alias cdpfs=\"cd \$GOPATH/src/github.com/swiftstack/ProxyFS\"" >> ~vagrant/.bash_profile
+echo "alias cdpfs=\"cd \$GOPATH/src/github.com/NVIDIA/proxyfs\"" >> ~vagrant/.bash_profile
 echo "alias goclean=\"go clean;go clean --cache;go clean --testcache\"" >> ~vagrant/.bash_profile
 echo "alias gogetdlv=\"go get -u github.com/go-delve/delve/cmd/dlv\"" >> ~vagrant/.bash_profile
 echo "user_allow_other" >> /etc/fuse.conf
@@ -228,9 +228,10 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 # Now we can actually install Swift from source
 
 cd ~swift
-git clone https://github.com/swiftstack/swift.git
+git clone https://github.com/NVIDIA/swift.git
 cd swift
-git checkout ss-release-2.26.0.10
+export SWIFT_TAG="$( git describe --tags --abbrev=0 $(git rev-list --tags --max-count=1) )"
+git checkout $SWIFT_TAG
 pip install wheel
 python setup.py bdist_wheel
 yum remove -y python-greenlet
@@ -265,8 +266,8 @@ systemctl start memcached.service
 # [Setup Swift] Configuring each node
 
 rm -rf /etc/swift
-cp -R /vagrant/src/github.com/swiftstack/ProxyFS/sait/etc/swift /etc/.
-cp -R /vagrant/src/github.com/swiftstack/ProxyFS/sait/sait$SAIT_INSTANCE/etc/swift /etc/.
+cp -R /vagrant/src/github.com/NVIDIA/proxyfs/sait/etc/swift /etc/.
+cp -R /vagrant/src/github.com/NVIDIA/proxyfs/sait/sait$SAIT_INSTANCE/etc/swift /etc/.
 chown -R swift:swift /etc/swift
 
 # [Setup Swift] Setting up scripts for running Swift
@@ -274,19 +275,19 @@ chown -R swift:swift /etc/swift
 mkdir -p ~swift/bin
 
 cd ~swift/bin
-cp /vagrant/src/github.com/swiftstack/ProxyFS/sait/home/swift/bin/* .
+cp /vagrant/src/github.com/NVIDIA/proxyfs/sait/home/swift/bin/* .
 echo "export PATH=\$PATH:~swift/bin" >> ~vagrant/.bash_profile
 
 ~swift/bin/remakerings
 
 # Install ProxyFS's pfs_middleware into the "normal" Swift Proxy pipeline
 
-cd /vagrant/src/github.com/swiftstack/ProxyFS/pfs_middleware
+cd /vagrant/src/github.com/NVIDIA/proxyfs/pfs_middleware
 python setup.py develop
 
 # Install ProxyFS's meta_middleware into the "NoAuth" Swift Proxy pipeline
 
-cd /vagrant/src/github.com/swiftstack/ProxyFS/meta_middleware
+cd /vagrant/src/github.com/NVIDIA/proxyfs/meta_middleware
 python setup.py develop
 
 # Setup AWS access for local vagrant user
@@ -324,7 +325,7 @@ chmod 777 /var/log
 chmod 777 /var/log/proxyfsd
 chmod 666 /var/log/proxyfsd/proxyfsd.log
 
-# Create Mount Points for ProxyFS (FUSE, NFS, & SMB)
+# Create Mount Points for ProxyFS (embedded FUSE)
 
 if [ "$SAIT_INSTANCE" == "1" ]
 then
@@ -333,65 +334,13 @@ then
     chmod 777 /CommonMountPoint
 fi
 
-# Install Kerberos Client to SDOM{1|2|3|4}.LOCAL hosted by sdc{1|2|3|4}.sdom{1|2|3|4}.local
-
-yum -y install krb5-workstation
-
-cat >> /etc/hosts << EOF
-172.28.128.11 sdc1 sdc1.sdom1.local
-172.28.128.12 sdc2 sdc2.sdom2.local
-172.28.128.13 sdc3 sdc3.sdom3.local
-172.28.128.14 sdc4 sdc4.sdom4.local
-172.28.128.21 saio1 saio1.sdom1.local
-172.28.128.22 saio2 saio2.sdom2.local
-172.28.128.23 saio3 saio3.sdom3.local
-172.28.128.24 saio4 saio4.sdom4.local
-EOF
-
-cat > /etc/krb5.conf.d/SambaDCs << EOF
-[libdefaults]
-dns_lookup_kdc = false
-
-[realms]
-SDOM1.LOCAL = {
- admin_server = sdc1.sdom1.local
- kdc = sdc1.sdom1.local
- default_domain = SDOM1
-}
-SDOM2.LOCAL = {
- admin_server = sdc2.sdom2.local
- kdc=sdc2.sdom2.local
- default_domain = SDOM2
-}
-SDOM3.LOCAL = {
- admin_server = sdc3.sdom3.local
- kdc=sdc3.sdom3.local
- default_domain = SDOM3
-}
-SDOM4.LOCAL = {
- admin_server = sdc4.sdom4.local
- kdc=sdc4.sdom4.local
- default_domain = SDOM4
-}
-
-[domain_realm]
-.sdom1.local = SDOM1.LOCAL
-sdom1.local = SDOM1.LOCAL
-.sdom2.local = SDOM2.LOCAL
-sdom2.local = SDOM2.LOCAL
-.sdom3.local = SDOM3.LOCAL
-sdom3.local = SDOM3.LOCAL
-.sdom4.local = SDOM4.LOCAL
-sdom4.local = SDOM4.LOCAL
-EOF
-
 # Install systemd .service files for ProxyFS
 
-cp /vagrant/src/github.com/swiftstack/ProxyFS/sait/sait$SAIT_INSTANCE/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
+cp /vagrant/src/github.com/NVIDIA/proxyfs/sait/sait$SAIT_INSTANCE/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
 
 # Enable start/stop tools
 
-echo "export PATH=\$PATH:/vagrant/src/github.com/swiftstack/ProxyFS/sait/bin" >> ~vagrant/.bash_profile
+echo "export PATH=\$PATH:/vagrant/src/github.com/NVIDIA/proxyfs/sait/bin" >> ~vagrant/.bash_profile
 
 # Install wireshark
 

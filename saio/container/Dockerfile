@@ -3,7 +3,7 @@
 
 FROM centos:7.4.1708
 
-ARG SwiftVersion=ss-release-2.26.0.10
+ARG SwiftVersion
 ARG GolangVersion=1.15.5
 ARG ProxyFS_Version=stable
 
@@ -88,7 +88,7 @@ RUN ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
 
 RUN yum install -y epel-release
 RUN yum install -y python-pip
-RUN pip install --upgrade pip
+RUN pip install --upgrade 'pip<21.0'
 RUN pip install --upgrade setuptools
 
 WORKDIR /home/swift
@@ -109,9 +109,9 @@ RUN pip install -e .
 RUN pip install -r test-requirements.txt
 
 WORKDIR /home/swift
-RUN git clone https://github.com/swiftstack/swift.git
+RUN git clone https://github.com/NVIDIA/swift.git
 WORKDIR /home/swift/swift
-RUN git checkout $SwiftVersion
+RUN if [[ -n "$SwiftVersion" ]] ; then git checkout $SwiftVersion ; else git checkout $( git describe --tags --abbrev=0 $(git rev-list --tags --max-count=1) ) ; fi
 RUN pip install wheel
 RUN python setup.py bdist_wheel
 RUN yum remove -y python-greenlet
@@ -167,10 +167,10 @@ ENV PATH   $PATH:/usr/local/go/bin:$GOPATH/bin
 
 RUN yum install -y make fuse
 
-RUN mkdir -p $GOPATH/src/github.com/swiftstack
-WORKDIR $GOPATH/src/github.com/swiftstack
-RUN git clone https://github.com/swiftstack/ProxyFS.git
-WORKDIR $GOPATH/src/github.com/swiftstack/ProxyFS
+RUN mkdir -p $GOPATH/src/github.com/NVIDIA
+WORKDIR $GOPATH/src/github.com/NVIDIA
+RUN git clone https://github.com/NVIDIA/proxyfs.git
+WORKDIR $GOPATH/src/github.com/NVIDIA/proxyfs
 RUN git checkout $ProxyFS_Version
 
 RUN cd pfs_middleware  && python setup.py develop

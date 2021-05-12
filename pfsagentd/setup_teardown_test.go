@@ -14,9 +14,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/proxyfsd"
-	"github.com/swiftstack/ProxyFS/ramswift"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/proxyfsd"
+	"github.com/NVIDIA/proxyfs/ramswift"
 )
 
 const (
@@ -29,6 +29,7 @@ const (
 	testSwiftNoAuthIPAddr       = "127.0.0.1"
 	testSwiftNoAuthPort         = "38090"
 	testSwiftProxyAddr          = "localhost:38080"
+	testRetryRPCPort            = "54328"
 )
 
 type testDaemonGlobalsStruct struct {
@@ -119,13 +120,15 @@ func testSetup(t *testing.T) {
 		"Agent.XAttrEnabled=false",
 		"Agent.EntryDuration=10s",
 		"Agent.AttrDuration=10s",
-		"Agent.AttrBlockSize=65536",
 		"Agent.ReaddirMaxEntries=1024",
 		"Agent.FUSEMaxBackground=100",
 		"Agent.FUSECongestionThreshhold=0",
 		"Agent.FUSEMaxWrite=131072", // Linux max... 128KiB is good enough for testing
+		"Agent.RetryRPCPublicIPAddr=" + testProxyFSDaemonIPAddr,
+		"Agent.RetryRPCPort=" + testRetryRPCPort,
 		"Agent.RetryRPCDeadlineIO=60s",
 		"Agent.RetryRPCKeepAlivePeriod=60s",
+		"Agent.RetryRPCCACertFilePath=",
 
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=54324",
@@ -237,9 +240,11 @@ func testSetup(t *testing.T) {
 
 		"JSONRPCServer.TCPPort=54326",
 		"JSONRPCServer.FastTCPPort=54327",
-		"JSONRPCServer.RetryRPCPort=54328",
+		"JSONRPCServer.RetryRPCPort=" + testRetryRPCPort,
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.RetryRPCAckTrim=10ms",
+		"JSONRPCServer.RetryRPCCertFilePath=",
+		"JSONRPCServer.RetryRPCKeyFilePath=",
 		"JSONRPCServer.DataPathLogging=false",
 		"JSONRPCServer.MinLeaseDuration=250ms",
 		"JSONRPCServer.LeaseInterruptInterval=250ms",

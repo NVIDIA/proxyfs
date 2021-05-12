@@ -13,9 +13,9 @@
     GOROOT: "/usr/local/go"
     HOME_DIR: "/home/{{ proxyfs_user }}"
     BASH_DOT_PROFILE: "{{ ansible_env.HOME }}/.bash_profile"
-    REPO_CLONE_PARENT_DIR: "{{ source_root }}/src/github.com/swiftstack"
+    REPO_CLONE_PARENT_DIR: "{{ source_root }}/src/github.com/NVIDIA"
     SAMBA_SRC_DIR: "{{ REPO_CLONE_PARENT_DIR }}/samba"
-    PROXYFS_SRC_DIR: "{{ REPO_CLONE_PARENT_DIR }}/ProxyFS"
+    PROXYFS_SRC_DIR: "{{ REPO_CLONE_PARENT_DIR }}/proxyfs"
     dot_bashrc: "{{ HOME_DIR }}/.bashrc"
     is_dev: False
     rhel_packages:
@@ -50,14 +50,14 @@
   tasks:
   - name: Clone ProxyFS repo
     git:
-      repo: https://github.com/swiftstack/ProxyFS.git
+      repo: https://github.com/NVIDIA/proxyfs.git
       dest: "{{ PROXYFS_SRC_DIR }}/"
       version: "{{ ansible_env.proxyfs_branch }}"
 
   - name: Install pfs_middleware in development mode
     shell: "python setup.py develop"
     args:
-      chdir: "{{ ansible_env.HOME }}/provisioning/github.com/swiftstack/ProxyFS/pfs_middleware"
+      chdir: "{{ ansible_env.HOME }}/provisioning/github.com/NVIDIA/proxyfs/pfs_middleware"
 
   - stat: path={{GOROOT}}
     register: go_installed
@@ -105,7 +105,7 @@
       create: True
       owner: {{proxyfs_user}}
     with_items:
-      - {regexp: "/cdpfs/",   line: "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'"}
+      - {regexp: "/cdpfs/",   line: "alias cdpfs='cd $GOPATH/src/github.com/NVIDIA/proxyfs'"}
       - {regexp: "/cdsamba/", line: "alias cdsamba='cd {{SAMBA_SRC_DIR}}'"}
 
   - name: "Disable SELinux"
@@ -154,7 +154,7 @@
 
   - name: "Link to proxyfsd"
     file:
-      src: "{{source_root}}/src/github.com/swiftstack/ProxyFS/proxyfsd/"
+      src: "{{source_root}}/src/github.com/NVIDIA/proxyfs/proxyfsd/"
       dest: "/etc/proxyfsd"
       state: link
       owner: {{proxyfs_user}}
@@ -168,7 +168,7 @@
       mode: 0755
 
   - name: "Provision pfs_stat"
-    shell: "install -m 0755 {{source_root}}/src/github.com/swiftstack/ProxyFS/bin/pfs_stat /usr/bin"
+    shell: "install -m 0755 {{source_root}}/src/github.com/NVIDIA/proxyfs/bin/pfs_stat /usr/bin"
 
   - stat: path=/usr/lib/systemd/system/
     register: system_exists

@@ -77,7 +77,7 @@ echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
 # Patch Golang's GDB runtime plug-in
 
 mv /usr/local/go/src/runtime/runtime-gdb.py /usr/local/go/src/runtime/runtime-gdb.py_ORIGINAL
-cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/local/go/src/runtime/runtime-gdb.py /usr/local/go/src/runtime/.
+cp /vagrant/src/github.com/NVIDIA/proxyfs/saio/usr/local/go/src/runtime/runtime-gdb.py /usr/local/go/src/runtime/.
 
 # Install GDB and enable above Golang GDB runtime plug-in as well as other niceties
 
@@ -103,7 +103,7 @@ ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
 
 yum -y install epel-release
 yum -y install python-pip
-pip install --upgrade pip
+pip install --upgrade 'pip<21.0'
 
 # Setup ProxyFS build environment
 
@@ -112,81 +112,10 @@ yum -y install json-c-devel
 yum -y install fuse
 echo "export GOPATH=/vagrant" >> ~vagrant/.bash_profile
 echo "export PATH=\$PATH:\$GOPATH/bin" >> ~vagrant/.bash_profile
-echo "alias cdpfs=\"cd \$GOPATH/src/github.com/swiftstack/ProxyFS\"" >> ~vagrant/.bash_profile
+echo "alias cdpfs=\"cd \$GOPATH/src/github.com/NVIDIA/proxyfs\"" >> ~vagrant/.bash_profile
 echo "alias goclean=\"go clean;go clean --cache;go clean --testcache\"" >> ~vagrant/.bash_profile
 echo "alias gogetdlv=\"go get -u github.com/go-delve/delve/cmd/dlv\"" >> ~vagrant/.bash_profile
 echo "user_allow_other" >> /etc/fuse.conf
-
-# Setup Samba
-
-yum -y install gcc-c++-4.8.5-16.el7_4.2 \
-               python-devel-2.7.5-58.el7 \
-               gnutls-devel-3.3.26-9.el7 \
-               libacl-devel-2.2.51-12.el7 \
-               openldap-devel-2.4.44-5.el7 \
-               samba-4.6.2-12.el7_4 \
-               samba-client-4.6.2-12.el7_4 \
-               cifs-utils-6.2-10.el7
-cd /vagrant/src/github.com/swiftstack/ProxyFS/vfs
-OS_DISTRO=centos
-OS_DISTRO_VERSION=7.4
-SAMBA_VERSION=4.6.12
-SAMBA_DIR=build-samba-`echo $SAMBA_VERSION | tr . -`-${OS_DISTRO}-`echo $OS_DISTRO_VERSION | tr . -`
-if [[ -d $SAMBA_DIR ]]
-then
-    if [[ -L $SAMBA_DIR ]]
-    then
-        echo "directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/$SAMBA_DIR cannot pre-exist"
-        exit 1
-    else
-        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/$SAMBA_DIR assumed to be as desired"
-    fi
-else
-    if [[ -L $SAMBA_DIR ]]
-    then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/$SAMBA_DIR cannot pre-exist"
-        exit 1
-    else
-        git clone -b samba-$SAMBA_VERSION --single-branch --depth 1 https://github.com/samba-team/samba.git $SAMBA_DIR
-    fi
-fi
-if [[ -L samba ]]
-then
-    samba_symlink_target=`readlink "samba"`
-    if [[ "$SAMBA_DIR" == "$samba_symlink_target" ]]
-    then
-        echo "symlink samba -> $SAMBA_DIR already"
-    else
-        echo "redirecting samba -> $SAMBA_DIR"
-        rm samba
-        ln -s $SAMBA_DIR samba
-    fi
-else
-    if [[ -e samba ]]
-    then
-        echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba cannot pre-exist"
-        exit 1
-    else
-        echo "establishing samba -> $SAMBA_DIR"
-        ln -s $SAMBA_DIR samba
-    fi
-fi
-cd samba
-if [[ -d bin ]]
-then
-    echo "./configure has already been run"
-else
-    ./configure
-    make clean
-fi
-if [[ -f bin/default/librpc/gen_ndr/ndr_smb_acl.h ]]
-then
-    echo "make GEN_NDR_TABLES has already been run"
-else
-    make clean
-    make GEN_NDR_TABLES
-fi
-echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba" >> ~vagrant/.bash_profile
 
 # Install Python tox
 
@@ -297,9 +226,10 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 # Now we can actually install Swift from source
 
 cd ~swift
-git clone https://github.com/swiftstack/swift.git
+git clone https://github.com/NVIDIA/swift.git
 cd swift
-git checkout ss-release-2.26.0.10
+export SWIFT_TAG="$( git describe --tags --abbrev=0 $(git rev-list --tags --max-count=1) )"
+git checkout $SWIFT_TAG
 pip install wheel
 python setup.py bdist_wheel
 yum remove -y python-greenlet
@@ -334,7 +264,7 @@ systemctl start memcached.service
 # [Setup Swift] Configuring each node
 
 rm -rf /etc/swift
-cp -R /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/swift /etc/swift
+cp -R /vagrant/src/github.com/NVIDIA/proxyfs/saio/etc/swift /etc/swift
 chown -R swift:swift /etc/swift
 
 # [Setup Swift] Setting up scripts for running Swift
@@ -342,19 +272,19 @@ chown -R swift:swift /etc/swift
 mkdir -p ~swift/bin
 
 cd ~swift/bin
-cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/home/swift/bin/* .
+cp /vagrant/src/github.com/NVIDIA/proxyfs/saio/home/swift/bin/* .
 echo "export PATH=\$PATH:~swift/bin" >> ~vagrant/.bash_profile
 
 ~swift/bin/remakerings
 
 # Install ProxyFS's pfs_middleware into the "normal" Swift Proxy pipeline
 
-cd /vagrant/src/github.com/swiftstack/ProxyFS/pfs_middleware
+cd /vagrant/src/github.com/NVIDIA/proxyfs/pfs_middleware
 python setup.py develop
 
 # Install ProxyFS's meta_middleware into the "NoAuth" Swift Proxy pipeline
 
-cd /vagrant/src/github.com/swiftstack/ProxyFS/meta_middleware
+cd /vagrant/src/github.com/NVIDIA/proxyfs/meta_middleware
 python setup.py develop
 
 # Setup AWS access for local vagrant user
@@ -392,86 +322,16 @@ chmod 777 /var/log
 chmod 777 /var/log/proxyfsd
 chmod 666 /var/log/proxyfsd/proxyfsd.log
 
-# Create Mount Points for ProxyFS (FUSE, NFS, & SMB)
+# Create Mount Points for ProxyFS (embedded FUSE)
 
 rm -rf /CommonMountPoint
 mkdir /CommonMountPoint
 chmod 777 /CommonMountPoint
 
-rm -rf /AgentMountPoint
-mkdir /AgentMountPoint
-chmod 777 /AgentMountPoint
-
-rm -rf /mnt/nfs_proxyfs_mount
-mkdir /mnt/nfs_proxyfs_mount
-chmod 777 /mnt/nfs_proxyfs_mount
-
-rm -rf /mnt/smb_proxyfs_mount
-mkdir /mnt/smb_proxyfs_mount
-chmod 777 /mnt/smb_proxyfs_mount
-
-# Configure exports (NFS) / shares (SMB)
-
-cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/exports /etc/exports
-cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/samba/smb.conf /etc/samba/smb.conf
-echo -e "swift\nswift" | smbpasswd -a swift
-
-# Install Kerberos Client to SDOM{1|2|3|4}.LOCAL hosted by sdc{1|2|3|4}.sdom{1|2|3|4}.local
-
-yum -y install krb5-workstation
-
-cat >> /etc/hosts << EOF
-172.28.128.11 sdc1 sdc1.sdom1.local
-172.28.128.12 sdc2 sdc2.sdom2.local
-172.28.128.13 sdc3 sdc3.sdom3.local
-172.28.128.14 sdc4 sdc4.sdom4.local
-172.28.128.21 saio1 saio1.sdom1.local
-172.28.128.22 saio2 saio2.sdom2.local
-172.28.128.23 saio3 saio3.sdom3.local
-172.28.128.24 saio4 saio4.sdom4.local
-EOF
-
-cat > /etc/krb5.conf.d/SambaDCs << EOF
-[libdefaults]
-dns_lookup_kdc = false
-
-[realms]
-SDOM1.LOCAL = {
- admin_server = sdc1.sdom1.local
- kdc = sdc1.sdom1.local
- default_domain = SDOM1
-}
-SDOM2.LOCAL = {
- admin_server = sdc2.sdom2.local
- kdc=sdc2.sdom2.local
- default_domain = SDOM2
-}
-SDOM3.LOCAL = {
- admin_server = sdc3.sdom3.local
- kdc=sdc3.sdom3.local
- default_domain = SDOM3
-}
-SDOM4.LOCAL = {
- admin_server = sdc4.sdom4.local
- kdc=sdc4.sdom4.local
- default_domain = SDOM4
-}
-
-[domain_realm]
-.sdom1.local = SDOM1.LOCAL
-sdom1.local = SDOM1.LOCAL
-.sdom2.local = SDOM2.LOCAL
-sdom2.local = SDOM2.LOCAL
-.sdom3.local = SDOM3.LOCAL
-sdom3.local = SDOM3.LOCAL
-.sdom4.local = SDOM4.LOCAL
-sdom4.local = SDOM4.LOCAL
-EOF
-
 # Install systemd .service files for ProxyFS
 
-cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
-cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/pfsagentd.service /usr/lib/systemd/system/.
+cp /vagrant/src/github.com/NVIDIA/proxyfs/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
+cp /vagrant/src/github.com/NVIDIA/proxyfs/saio/usr/lib/systemd/system/pfsagentd.service /usr/lib/systemd/system/.
 
 # Place symlink in root's $PATH to locate pfsagentd-swift-auth-plugin referenced without a path
 
@@ -485,7 +345,7 @@ semanage port -a -t smbd_port_t -p tcp 32345
 
 # Enable start/stop tools
 
-echo "export PATH=\$PATH:/vagrant/src/github.com/swiftstack/ProxyFS/saio/bin" >> ~vagrant/.bash_profile
+echo "export PATH=\$PATH:/vagrant/src/github.com/NVIDIA/proxyfs/saio/bin" >> ~vagrant/.bash_profile
 
 # Install wireshark
 
@@ -549,13 +409,6 @@ EOF
 # Inform systemd that we've updated .service files
 
 systemctl daemon-reload
-
-# Add some VIPs
-
-ip addr add dev enp0s8 172.28.128.21/24
-ip addr add dev enp0s8 172.28.128.22/24
-ip addr add dev enp0s8 172.28.128.23/24
-ip addr add dev enp0s8 172.28.128.24/24
 
 # All done
 

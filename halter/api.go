@@ -8,7 +8,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/swiftstack/ProxyFS/evtlog"
+	"github.com/NVIDIA/proxyfs/evtlog"
 )
 
 // Note 1: Following const block and HaltLabelStrings should be kept in sync

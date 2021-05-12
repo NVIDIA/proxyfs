@@ -2,5 +2,5 @@
 proxyfs_user: "swiftstack"
 proxyfs_group: "swiftsatck"
 source_root: "/home/{{ proxyfs_user }}/provisioning"
-REPO_CLONE_PARENT_DIR: "{{ source_root }}/src/github.com/swiftstack"
-PROXYFS_SRC_DIR: "{{ REPO_CLONE_PARENT_DIR }}/ProxyFS"
+REPO_CLONE_PARENT_DIR: "{{ source_root }}/src/github.com/NVIDIA"
+PROXYFS_SRC_DIR: "{{ REPO_CLONE_PARENT_DIR }}/proxyfs"

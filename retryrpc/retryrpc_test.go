@@ -4,73 +4,178 @@
 package retryrpc
 
 import (
+	"crypto/tls"
+	"crypto/x509/pkix"
+	"fmt"
+	"net"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/retryrpc/rpctest"
+
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/icert/icertpkg"
 )
+
+const (
+	testIPAddr = "127.0.0.1"
+	testPort   = 24456
+)
+
+type testTLSCertsStruct struct {
+	caCertPEMBlock       []byte
+	caKeyPEMBlock        []byte
+	endpointCertPEMBlock []byte
+	endpointKeyPEMBlock  []byte
+	endpointTLSCert      tls.Certificate
+}
+
+var testTLSCerts *testTLSCertsStruct
+
+// Utility function to initialize testTLSCerts
+func testTLSCertsAllocate(t *testing.T) {
+	var (
+		err error
+	)
+
+	testTLSCerts = &testTLSCertsStruct{}
+
+	testTLSCerts.caCertPEMBlock, testTLSCerts.caKeyPEMBlock, err = icertpkg.GenCACert(
+		icertpkg.GenerateKeyAlgorithmEd25519,
+		pkix.Name{
+			Organization:  []string{"Test Organization CA"},
+			Country:       []string{},
+			Province:      []string{},
+			Locality:      []string{},
+			StreetAddress: []string{},
+			PostalCode:    []string{},
+		},
+		time.Hour,
+		"",
+		"")
+	if nil != err {
+		t.Fatalf("icertpkg.GenCACert() failed: %v", err)
+	}
+
+	testTLSCerts.endpointCertPEMBlock, testTLSCerts.endpointKeyPEMBlock, err = icertpkg.GenEndpointCert(
+		icertpkg.GenerateKeyAlgorithmEd25519,
+		pkix.Name{
+			Organization:  []string{"Test Organization Endpoint"},
+			Country:       []string{},
+			Province:      []string{},
+			Locality:      []string{},
+			StreetAddress: []string{},
+			PostalCode:    []string{},
+		},
+		[]string{},
+		[]net.IP{net.ParseIP("127.0.0.1")},
+		time.Hour,
+		testTLSCerts.caCertPEMBlock,
+		testTLSCerts.caKeyPEMBlock,
+		"",
+		"")
+	if nil != err {
+		t.Fatalf("icertpkg.genEndpointCert() failed: %v", err)
+	}
+
+	testTLSCerts.endpointTLSCert, err = tls.X509KeyPair(testTLSCerts.endpointCertPEMBlock, testTLSCerts.endpointKeyPEMBlock)
+	if nil != err {
+		t.Fatalf("tls.LoadX509KeyPair() failed: %v", err)
+	}
+}
 
 // Test basic retryrpc primitives
 //
 // This unit test exists here since it uses jrpcfs which would be a
 // circular dependency if the test was in retryrpc.
-func TestRetryRPC(t *testing.T) {
-
-	testServer(t)
-	testBtree(t)
+func TestTCPRetryRPC(t *testing.T) {
+	testTLSCerts = nil
+	testRegister(t, false)
+	testServer(t, false)
+	testBtree(t, false)
 	testStatsAndBucketstats(t)
 }
 
-type MyType struct {
-	field1 int
+func TestTLSRetryRPC(t *testing.T) {
+	testTLSCertsAllocate(t) // Must be first - initializes certificate
+	testRegister(t, true)
+	testServer(t, true)
+	testBtree(t, true)
+	testStatsAndBucketstats(t)
 }
 
-type MyRequest struct {
-	Field1 int
-}
-
-type MyResponse struct {
-	Error error
-}
-
-func (m *MyType) ExportedFunction(request MyRequest, response *MyResponse) (err error) {
-	request.Field1 = 1
-	return
-}
-
-func (m *MyType) unexportedFunction(i int) {
-	m.field1 = i
-}
-
-func getNewServer(lt time.Duration, dontStartTrimmers bool) (rrSvr *Server, ip string, p int) {
+func getNewServer(lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr *Server) {
 	var (
-		ipaddr = "127.0.0.1"
-		port   = 24456
+		config *ServerConfig
 	)
-	config := &ServerConfig{LongTrim: lt, ShortTrim: 100 * time.Millisecond, IPAddr: "127.0.0.1",
-		Port: 24456, DeadlineIO: 5 * time.Second, dontStartTrimmers: dontStartTrimmers}
+
+	if useTLS {
+		config = &ServerConfig{
+			LongTrim:          lt,
+			ShortTrim:         100 * time.Millisecond,
+			IPAddr:            testIPAddr,
+			Port:              testPort,
+			DeadlineIO:        60 * time.Second,
+			KeepAlivePeriod:   60 * time.Second,
+			TLSCertificate:    testTLSCerts.endpointTLSCert,
+			dontStartTrimmers: dontStartTrimmers,
+		}
+	} else {
+		config = &ServerConfig{
+			LongTrim:          lt,
+			ShortTrim:         100 * time.Millisecond,
+			IPAddr:            testIPAddr,
+			Port:              testPort,
+			DeadlineIO:        60 * time.Second,
+			KeepAlivePeriod:   60 * time.Second,
+			TLSCertificate:    tls.Certificate{},
+			dontStartTrimmers: dontStartTrimmers,
+		}
+	}
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 10 seconds.
 	rrSvr = NewServer(config)
-	ip = ipaddr
-	p = port
+
 	return
 }
 
-// Test basic Server creation and deletion
-func testServer(t *testing.T) {
+// Test register function finds all expected functions
+func testRegister(t *testing.T, useTLS bool) {
 	assert := assert.New(t)
 	zero := 0
 	assert.Equal(0, zero)
 
-	// Create new rpctest server - needed for calling
-	// RPCs
-	myJrpcfs := rpctest.NewServer()
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &TestPingServer{}
 
-	rrSvr, ipaddr, port := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false, useTLS)
+	assert.NotNil(rrSvr)
+
+	// Register the Server - sets up the methods supported by the
+	// server
+	err := rrSvr.Register(myJrpcfs)
+	assert.Nil(err)
+
+	// Make sure we discovered the correct functions
+	assert.Equal(4, len(rrSvr.svrMap))
+}
+
+// Test basic Server creation and deletion
+func testServer(t *testing.T, useTLS bool) {
+	var (
+		clientConfig *ClientConfig
+	)
+
+	assert := assert.New(t)
+	zero := 0
+	assert.Equal(0, zero)
+
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &TestPingServer{}
+
+	rrSvr := getNewServer(10*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -86,35 +191,60 @@ func testServer(t *testing.T) {
 	rrSvr.Run()
 
 	// Now - setup a client to send requests to the server
-	clientConfig := &ClientConfig{MyUniqueID: "client 1", IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
-		Callbacks: nil, DeadlineIO: 5 * time.Second}
+	if useTLS {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+			Callbacks:                nil,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
+	} else {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: nil,
+			Callbacks:                nil,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
+	}
 	rrClnt, newErr := NewClient(clientConfig)
 	assert.NotNil(rrClnt)
 	assert.Nil(newErr)
 
 	// Send an RPC which should return success
-	pingRequest := &rpctest.PingReq{Message: "Ping Me!"}
-	pingReply := &rpctest.PingReply{}
-	sendErr := rrClnt.Send("RpcPing", pingRequest, pingReply)
+	pingRequest := &TestPingReq{Message: "Ping Me!"}
+	pingReply := &TestPingReply{}
+	sendErr := rrClnt.Send("RpcTestPing", pingRequest, pingReply)
 	assert.Nil(sendErr)
 	assert.Equal("pong 8 bytes", pingReply.Message)
 	assert.Equal(1, rrSvr.CompletedCnt())
 
-	// Send an RPC which should return an error
-	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
-	pingReply = &rpctest.PingReply{}
-	sendErr = rrClnt.Send("RpcPingWithError", pingRequest, pingReply)
-	assert.NotNil(sendErr)
-
+	// Send an RPC which expects the client ID and which should return success
+	pingRequest = &TestPingReq{Message: "Ping Me!"}
+	pingReply = &TestPingReply{}
+	sendErr = rrClnt.Send("RpcTestPingWithClientID", pingRequest, pingReply)
+	assert.Nil(sendErr)
+	assert.Equal("Client ID: 1 pong 8 bytes", pingReply.Message)
 	assert.Equal(2, rrSvr.CompletedCnt())
 
 	// Send an RPC which should return an error
-	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
-	pingReply = &rpctest.PingReply{}
-	sendErr = rrClnt.Send("RpcInvalidMethod", pingRequest, pingReply)
+	pingRequest = &TestPingReq{Message: "Ping Me!"}
+	pingReply = &TestPingReply{}
+	sendErr = rrClnt.Send("RpcTestPingWithError", pingRequest, pingReply)
 	assert.NotNil(sendErr)
 
 	assert.Equal(3, rrSvr.CompletedCnt())
+
+	// Send an RPC which should return an error
+	pingRequest = &TestPingReq{Message: "Ping Me!"}
+	pingReply = &TestPingReply{}
+	sendErr = rrClnt.Send("RpcTestInvalidMethod", pingRequest, pingReply)
+	assert.NotNil(sendErr)
+
+	assert.Equal(4, rrSvr.CompletedCnt())
 
 	// Stop the client before exiting
 	rrClnt.Close()
@@ -123,15 +253,36 @@ func testServer(t *testing.T) {
 	rrSvr.Close()
 }
 
-func testBtree(t *testing.T) {
+func testBtree(t *testing.T, useTLS bool) {
+	var (
+		clientConfig *ClientConfig
+	)
+
 	assert := assert.New(t)
 
-	rrSvr, ipaddr, port := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Setup a client - we only will be targeting the btree
-	clientConfig := &ClientConfig{MyUniqueID: "client 1", IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
-		Callbacks: nil, DeadlineIO: 5 * time.Second}
+	if useTLS {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+			Callbacks:                nil,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
+	} else {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: nil,
+			Callbacks:                nil,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
+	}
 	client, newErr := NewClient(clientConfig)
 	assert.NotNil(client)
 	assert.Nil(newErr)
@@ -171,7 +322,7 @@ func testBtree(t *testing.T) {
 type clientStats struct {
 	AddCompleted           bucketstats.Total           // Number added to completed list
 	RmCompleted            bucketstats.Total           // Number removed from completed list
-	RPCLenUsec             bucketstats.BucketLog2Round // Average times of RPCs
+	TimeOfRPCUsec          bucketstats.BucketLog2Round // Average times of RPCs
 	LongestRPCMethod       string                      // Method of longest RPC
 	ReplySize              bucketstats.BucketLog2Round // Largest RPC reply size completed
 	LargestReplySizeMethod string                      // Method of largest RPC reply size completed
@@ -210,7 +361,7 @@ func testStatsAndBucketstats(t *testing.T) {
 	// Track duration of all RPCs in a graph
 	start := time.Now()
 	time.Sleep(10 * time.Millisecond)
-	myClient1.RPCLenUsec.Add(uint64(time.Since(start) / time.Microsecond))
+	myClient1.TimeOfRPCUsec.Add(uint64(time.Since(start).Microseconds()))
 	myClient1.ReplySize.Add(8192)
 
 	// Example of pfsagent #2
@@ -228,4 +379,69 @@ func testStatsAndBucketstats(t *testing.T) {
 	// Unregister clients from bucketstats
 	bucketstats.UnRegister("proxyfs.retryrpc", myUniqueClient1)
 	bucketstats.UnRegister("proxyfs.retryrpc", myUniqueClient2)
+}
+
+// Unit test to show per method bucketstats
+// bucketstats does not automatically register stats in a map, etc.
+type methodStatsDemo struct {
+	Method        string                      // Name of method
+	Count         bucketstats.Total           // Number of times this method called
+	TimeOfRPCCall bucketstats.BucketLog2Round // Length of time of this method of RPC
+}
+
+type methodClientStats struct {
+	AddCompleted   bucketstats.Total           // Number added to completed list
+	PerMethodStats map[string]*methodStatsDemo // Example of per method stats
+}
+
+func mAndN(name string, method string) string {
+	return name + "-" + method
+}
+
+func TestMethodStatsAndBucketstats(t *testing.T) {
+	var (
+		myClient1       methodClientStats
+		myUniqueClient1 = "1111111"
+		method          = "method"
+	)
+
+	// Register from bucketstats from pfsagent #1
+	bucketstats.Register("proxyfs.retryrpc", myUniqueClient1, &myClient1)
+
+	// Register per method stats
+	myClient1.PerMethodStats = make(map[string]*methodStatsDemo)
+	for i := 0; i < 10; i++ {
+		msd := &methodStatsDemo{}
+		ms := method + strconv.Itoa(i)
+		myClient1.PerMethodStats[ms] = msd
+		bucketstats.Register("proxyfs.retryrpc", mAndN(myUniqueClient1, ms), msd)
+	}
+
+	// Completed list stats
+	myClient1.AddCompleted.Add(1)
+
+	// Per method stats
+	start := time.Now()
+	time.Sleep(10 * time.Millisecond)
+	for i := 0; i < 10; i++ {
+		ms := method + strconv.Itoa(i)
+		msd, _ := myClient1.PerMethodStats[ms]
+		msd.Count.Add(uint64(i))
+		msd.TimeOfRPCCall.Add(uint64(time.Since(start).Microseconds()))
+		myClient1.PerMethodStats[ms] = msd
+	}
+
+	// Dump stats
+	fmt.Printf("pfsagent #1: %s\n", bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", myUniqueClient1))
+	for i := 0; i < 10; i++ {
+		ms := method + strconv.Itoa(i)
+		fmt.Printf("method: %s\n", bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", mAndN(myUniqueClient1, ms)))
+	}
+
+	// Unregister clients from bucketstats
+	bucketstats.UnRegister("proxyfs.retryrpc", myUniqueClient1)
+	for i := 0; i < 10; i++ {
+		ms := method + strconv.Itoa(i)
+		bucketstats.UnRegister("proxyfs.retryrpc", mAndN(myUniqueClient1, ms))
+	}
 }

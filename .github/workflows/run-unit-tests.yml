@@ -1,0 +1,19 @@
+name: Unit Tests
+on: [push]
+jobs:
+  Build-and-unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          submodules: false
+      - name: Build, run unit tests, and get coverage
+        run: docker run -e "COVERALLS_TOKEN=${{ secrets.COVERALLS_TOKEN }}" -e "GIT_BRANCH=${{ github.ref }}" --cap-add SYS_ADMIN --device /dev/fuse -i -v `pwd`:/gopathroot/src/github.com/NVIDIA/proxyfs swiftstack/proxyfs_unit_tests
+      - name: Slack Notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_MESSAGE: 'Unit tests status: ${{ job.status }}'
+        if: always()

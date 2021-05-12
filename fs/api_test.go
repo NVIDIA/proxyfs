@@ -13,8 +13,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/ProxyFS/blunder"
-	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/NVIDIA/proxyfs/blunder"
+	"github.com/NVIDIA/proxyfs/inode"
 )
 
 // TODO: Enhance this to do a stat() as well and check number of files

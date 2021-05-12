@@ -17,12 +17,14 @@ import (
 	"time"
 
 	etcd "go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/pkg/transport"
 
-	"github.com/swiftstack/cstruct"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/cstruct"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/headhunter"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/etcdclient"
+	"github.com/NVIDIA/proxyfs/headhunter"
 )
 
 const (
@@ -49,6 +51,7 @@ type globalsStruct struct {
 	etcdClient                         *etcd.Client
 	etcdDialTimeout                    time.Duration
 	etcdEnabled                        bool
+	etcdCertDir                        string
 	etcdEndpoints                      []string
 	etcdKV                             etcd.KV
 	etcdOpTimeout                      time.Duration
@@ -363,6 +366,10 @@ func setup() {
 		if nil != err {
 			log.Fatal(err)
 		}
+		globals.etcdCertDir, err = confMap.FetchOptionValueString("FSGlobals", "EtcdCertDir")
+		if nil != err {
+			return
+		}
 		globals.etcdDialTimeout, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdDialTimeout")
 		if nil != err {
 			log.Fatal(err)
@@ -376,11 +383,14 @@ func setup() {
 			log.Fatal(err)
 		}
 
-		globals.etcdClient, err = etcd.New(etcd.Config{
-			Endpoints:        globals.etcdEndpoints,
-			AutoSyncInterval: globals.etcdAutoSyncInterval,
-			DialTimeout:      globals.etcdDialTimeout,
-		})
+		tlsInfo := transport.TLSInfo{
+			CertFile:      etcdclient.GetCertFilePath(globals.etcdCertDir),
+			KeyFile:       etcdclient.GetKeyFilePath(globals.etcdCertDir),
+			TrustedCAFile: etcdclient.GetCA(globals.etcdCertDir),
+		}
+
+		globals.etcdClient, err = etcdclient.New(&tlsInfo, globals.etcdEndpoints,
+			globals.etcdAutoSyncInterval, globals.etcdDialTimeout)
 		if nil != err {
 			log.Fatalf("unable to create etcdClient: %v\n", err)
 		}

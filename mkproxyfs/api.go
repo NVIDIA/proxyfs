@@ -12,14 +12,16 @@ import (
 	"time"
 
 	etcd "go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/pkg/transport"
 
-	"github.com/swiftstack/ProxyFS/blunder"
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/headhunter"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/transitions"
-	"github.com/swiftstack/ProxyFS/version"
+	"github.com/NVIDIA/proxyfs/blunder"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/etcdclient"
+	"github.com/NVIDIA/proxyfs/headhunter"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/swiftclient"
+	"github.com/NVIDIA/proxyfs/transitions"
+	"github.com/NVIDIA/proxyfs/version"
 )
 
 type Mode int
@@ -43,6 +45,7 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		etcdClient            *etcd.Client
 		etcdDialTimeout       time.Duration
 		etcdEnabled           bool
+		etcdCertDir           string
 		etcdEndpoints         []string
 		etcdKV                etcd.KV
 		etcdOpTimeout         time.Duration
@@ -109,6 +112,10 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 	}
 
 	if etcdEnabled {
+		etcdCertDir, err = confMap.FetchOptionValueString("FSGlobals", "EtcdCertDir")
+		if nil != err {
+			return
+		}
 		etcdEndpoints, err = confMap.FetchOptionValueStringSlice("FSGlobals", "EtcdEndpoints")
 		if nil != err {
 			return
@@ -131,13 +138,15 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 			return
 		}
 
-		// Initialize etcd Client & KV objects
+		tlsInfo := transport.TLSInfo{
+			CertFile:      etcdclient.GetCertFilePath(etcdCertDir),
+			KeyFile:       etcdclient.GetKeyFilePath(etcdCertDir),
+			TrustedCAFile: etcdclient.GetCA(etcdCertDir),
+		}
 
-		etcdClient, err = etcd.New(etcd.Config{
-			Endpoints:        etcdEndpoints,
-			AutoSyncInterval: etcdAutoSyncInterval,
-			DialTimeout:      etcdDialTimeout,
-		})
+		// Initialize etcd Client & KV objects
+		etcdClient, err = etcdclient.New(&tlsInfo, etcdEndpoints,
+			etcdAutoSyncInterval, etcdDialTimeout)
 		if nil != err {
 			return
 		}

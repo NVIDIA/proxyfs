@@ -12,7 +12,7 @@ Bimodal access
 A primary of the motivation for ProxyFS was to have the ability to read and
 write the same data in the same account whether accessing it via the object
 API or file system API. Such access is possible via the ``pfs`` `proxy middleware
-<https://github.com/swiftstack/ProxyFS/tree/development/pfs_middleware/>`__,
+<https://github.com/NVIDIA/proxyfs/tree/development/pfs_middleware/>`__,
 but there are numerous caveats.
 
 Writing via object API

@@ -5,17 +5,19 @@ package jrpcfs
 
 import (
 	"container/list"
+	"crypto/tls"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"sync"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/fs"
-	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/retryrpc"
-	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/fs"
+	"github.com/NVIDIA/proxyfs/inode"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/retryrpc"
+	"github.com/NVIDIA/proxyfs/transitions"
 )
 
 type leaseRequestOperationStruct struct {
@@ -95,6 +97,8 @@ type mountStruct struct {
 	volume                 *volumeStruct
 	mountIDAsByteArray     MountIDAsByteArray
 	mountIDAsString        MountIDAsString
+	authToken              string
+	retryRpcUniqueID       uint64
 	acceptingLeaseRequests bool                                      // also an indicator (when false) that mount is being unmounted
 	leaseRequestMap        map[inode.InodeNumber]*leaseRequestStruct // if     present, there is an ongoing Lease Request for this inode.InodeNumber
 	//                                                                  if not present, there is no ongoing Lease Request for this inode.InodeNumber
@@ -133,18 +137,24 @@ type globalsStruct struct {
 	retryRPCAckTrim         time.Duration
 	retryRPCDeadlineIO      time.Duration
 	retryRPCKeepAlivePeriod time.Duration
+	retryRPCCertFilePath    string
+	retryRPCKeyFilePath     string
 	minLeaseDuration        time.Duration
 	leaseInterruptInterval  time.Duration
 	leaseInterruptLimit     uint32
 	dataPathLogging         bool
+
+	retryRPCCertPEM []byte
+	retryRPCKeyPEM  []byte
+
+	retryRPCCertificate tls.Certificate
 
 	volumeMap                    map[string]*volumeStruct            // key == volumeStruct.volumeName
 	mountMapByMountIDAsByteArray map[MountIDAsByteArray]*mountStruct // key == mountStruct.mountIDAsByteArray
 	mountMapByMountIDAsString    map[MountIDAsString]*mountStruct    // key == mountStruct.mountIDAsString
 
 	// RetryRPC server
-	retryrpcSvr              *retryrpc.Server
-	rootCAx509CertificatePEM []byte
+	retryrpcSvr *retryrpc.Server
 
 	// Connection list and listener list to close during shutdown:
 	halting     bool
@@ -219,6 +229,41 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 			logger.Infof("failed to get JSONRPCServer.RetryRPCKeepAlivePeriod from config file - defaulting to 60s")
 			globals.retryRPCKeepAlivePeriod = 60 * time.Second
 		}
+		globals.retryRPCCertFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCCertFilePath")
+		if (nil == err) && ("" != globals.retryRPCCertFilePath) {
+			globals.retryRPCKeyFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCKeyFilePath")
+			if (nil != err) || ("" == globals.retryRPCKeyFilePath) {
+				logger.Error("if [JSOPNRPCServer]RetryRPCCertFilePath is specified, [JSOPNRPCServer]RetryRPCKeyFilePath must be specified as well")
+				return
+			}
+			globals.retryRPCCertPEM, err = ioutil.ReadFile(globals.retryRPCCertFilePath)
+			if nil != err {
+				logger.ErrorfWithError(err, "failed to load PEM-formatted [JSONRPCServer]RetryRPCCertFilePath [\"%s\"]", globals.retryRPCCertFilePath)
+				return
+			}
+			globals.retryRPCKeyPEM, err = ioutil.ReadFile(globals.retryRPCKeyFilePath)
+			if nil != err {
+				logger.ErrorfWithError(err, "failed to load PEM-formatted [JSONRPCServer]retryRPCKeyFilePath [\"%s\"]", globals.retryRPCKeyFilePath)
+				return
+			}
+			globals.retryRPCCertificate, err = tls.X509KeyPair(globals.retryRPCCertPEM, globals.retryRPCKeyPEM)
+			if nil != err {
+				logger.ErrorfWithError(err, "tls.LoadX509KeyPair(\"%s\", \"%s\") failed", globals.retryRPCCertFilePath, globals.retryRPCKeyFilePath)
+				return
+			}
+		} else {
+			globals.retryRPCKeyFilePath, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCKeyFilePath")
+			if (nil == err) && ("" != globals.retryRPCKeyFilePath) {
+				logger.Error("if [JSOPNRPCServer]RetryRPCKeyFilePath is specified, [JSOPNRPCServer]RetryRPCCertFilePath must be specified as well")
+				return
+			}
+			logger.Infof("failed to get JSONRPCServer.RetryRPC{Cert|Key}FilePath from config file - defaulting to \"\"")
+			globals.retryRPCCertFilePath = ""
+			globals.retryRPCKeyFilePath = ""
+			globals.retryRPCCertPEM = nil
+			globals.retryRPCKeyPEM = nil
+			globals.retryRPCCertificate = tls.Certificate{}
+		}
 	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
 		globals.retryRPCPort = 0
@@ -226,6 +271,11 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		globals.retryRPCAckTrim = time.Duration(0)
 		globals.retryRPCDeadlineIO = time.Duration(0)
 		globals.retryRPCKeepAlivePeriod = time.Duration(0)
+		globals.retryRPCCertFilePath = ""
+		globals.retryRPCKeyFilePath = ""
+		globals.retryRPCCertPEM = nil
+		globals.retryRPCKeyPEM = nil
+		globals.retryRPCCertificate = tls.Certificate{}
 	}
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings
@@ -269,8 +319,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	ioServerUp(globals.privateIPAddr, globals.fastPortString)
 
 	// Init Retry RPC server
-	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted, globals.retryRPCAckTrim,
-		globals.retryRPCDeadlineIO, globals.retryRPCKeepAlivePeriod)
+	retryRPCServerUp(jserver)
 
 	err = nil
 	return
@@ -332,12 +381,12 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	volume.activeLeaseEvictLowLimit, err = confMap.FetchOptionValueUint64("Volume:"+volumeName, "ActiveLeaseEvictLowLimit")
 	if nil != err {
 		logger.Infof("failed to get Volume:" + volumeName + ".ActiveLeaseEvictLowLimit from config file - defaulting to 5000")
-		volume.activeLeaseEvictLowLimit = 5000
+		volume.activeLeaseEvictLowLimit = 500000
 	}
 	volume.activeLeaseEvictHighLimit, err = confMap.FetchOptionValueUint64("Volume:"+volumeName, "ActiveLeaseEvictHighLimit")
 	if nil != err {
 		logger.Infof("failed to get Volume:" + volumeName + ".ActiveLeaseEvictHighLimit from config file - defaulting to 5010")
-		volume.activeLeaseEvictHighLimit = 5010
+		volume.activeLeaseEvictHighLimit = 500010
 	}
 
 	globals.volumeMap[volumeName] = volume

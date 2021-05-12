@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.com/swiftstack/ProxyFS.svg?branch=development)](https://travis-ci.com/swiftstack/ProxyFS)
+[![Build Status](https://github.com/NVIDIA/proxyfs/actions/workflows/run-unit-tests.yml/badge.svg)](https://github.com/NVIDIA/proxyfs/actions/workflows/run-unit-tests.yml?query=branch%3Adevelopment)
 [![Coverage Status](https://coveralls.io/repos/github/swiftstack/ProxyFS/badge.svg?branch=development)](https://coveralls.io/github/swiftstack/ProxyFS?branch=development)
 
 # ProxyFS
@@ -18,7 +18,7 @@ to object API clients.
 
 All code contributions for ProxyFS go through GitHub.
 
-https://github.com/swiftstack/ProxyFS
+https://github.com/NVIDIA/proxyfs
 
 Please feel free to contribute by opening a pull request to the
 `development` branch. If you see an open pull request, feel free to
@@ -32,35 +32,22 @@ in the [ProxyFS dev mailing list](https://lists.proxyfs.org/mailman/listinfo)
 or the [ProxyFS Slack group](https://proxyfs.slack.com), which you can join through
 [this inivitation](https://join.slack.com/t/proxyfs/shared_invite/enQtMzA2NTQwMDU4NTkyLWM4ZjhkYmE0NWEzMTYzZGZkNThkNzcxMzg0NWIzMmQ4MTU5MGQyMDRlY2UzMDU0YjBlNGZkMzk4N2NkNTRjNjY).
 
-## Development Environment
-
-The officially supported development environment for ProxyFS is
-[Runway](https://github.com/swiftstack/runway). Please read Runway's
-documentation and make sure to use the ProxyFS manifest instead of the default
-one.
-
-## How to get the code (if not using Runway)
+## How to get the code
 
 * Define your GOPATH as desired (where your bin/, /pkg, and /src/
   directory trees will appear)
 * cd $GOPATH
-* mkdir -p src/github.com/swiftstack
-* cd src/github.com/swiftstack
-* git clone git@github.com:swiftstack/ProxyFS.git
+* mkdir -p src/github.com/NVIDIA
+* cd src/github.com/NVIDIA
+* git clone git@github.com:NVIDIA/proxyfs.git
 * cd ProxyFS
-* git submodule update --init --recursive
 
 ## How to run unit tests (in your Development Environment)
 
-* Install/update to at least Go 1.8.3 (if not using Runway)
+* Install/update to at least Go 1.8.3
 * Ensure $GOPATH/bin is in your $PATH
-* cd $GOPATH/src/github.com/swiftstack/ProxyFS
-* ./regression_test.py
-
-## Commercial Deployment
-
-ProxyFS powers File Access for the SwiftStack product.
-See: http://swiftstack.com
+* cd $GOPATH/src/github.com/NVIDIA/proxyfs
+* make
 
 ## License
 

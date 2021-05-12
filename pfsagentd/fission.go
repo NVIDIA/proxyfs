@@ -12,15 +12,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/swiftstack/fission"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/fission"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/fs"
-	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/jrpcfs"
+	"github.com/NVIDIA/proxyfs/fs"
+	"github.com/NVIDIA/proxyfs/inode"
+	"github.com/NVIDIA/proxyfs/jrpcfs"
 )
 
 const (
+	attrBlockSize = uint32(512)
+
 	initOutFlagsMaskReadDirPlusDisabled = uint32(0) |
 		fission.InitFlagsAsyncRead |
 		fission.InitFlagsFileOps |
@@ -87,9 +89,9 @@ func convertErrToErrno(err error, defaultErrno syscall.Errno) (errno syscall.Err
 
 func fixAttrSizes(attr *fission.Attr) {
 	if syscall.S_IFREG == (attr.Mode & syscall.S_IFMT) {
-		attr.Blocks = attr.Size + (globals.config.AttrBlockSize - 1)
-		attr.Blocks /= globals.config.AttrBlockSize
-		attr.BlkSize = uint32(globals.config.AttrBlockSize)
+		attr.Blocks = attr.Size + (uint64(attrBlockSize) - 1)
+		attr.Blocks /= uint64(attrBlockSize)
+		attr.BlkSize = attrBlockSize
 	} else {
 		attr.Size = 0
 		attr.Blocks = 0
@@ -105,6 +107,34 @@ func nsToUnixTime(ns uint64) (sec uint64, nsec uint32) {
 
 func unixTimeToNs(sec uint64, nsec uint32) (ns uint64) {
 	ns = (sec * 1e9) + uint64(nsec)
+	return
+}
+
+func (fileInode *fileInodeStruct) ensureCachedStatPopulatedWhileLocked() (err error) {
+	var (
+		getStatReply   *jrpcfs.StatStruct
+		getStatRequest *jrpcfs.GetStatRequest
+	)
+
+	if nil == fileInode.cachedStat {
+		getStatRequest = &jrpcfs.GetStatRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(fileInode.InodeNumber),
+			},
+		}
+
+		getStatReply = &jrpcfs.StatStruct{}
+
+		err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
+		if nil != err {
+			return
+		}
+
+		fileInode.cachedStat = getStatReply
+	}
+
+	err = nil
 	return
 }
 
@@ -1142,6 +1172,7 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 
 	globals.lastFH++
 
+	globals.fhToOpenRequestMap[globals.lastFH] = openIn.Flags
 	globals.fhToInodeNumberMap[globals.lastFH] = inHeader.NodeID
 
 	fhSet, ok = globals.inodeNumberToFHMap[inHeader.NodeID]
@@ -1179,6 +1210,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		err                                       error
 		fhInodeNumber                             uint64
 		fileInode                                 *fileInodeStruct
+		fOpenRequestFlags                         uint32
 		getStatReply                              *jrpcfs.StatStruct
 		getStatRequest                            *jrpcfs.GetStatRequest
 		logSegmentCacheElement                    *logSegmentCacheElementStruct
@@ -1222,9 +1254,14 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 
 	globals.Lock()
 
+	fOpenRequestFlags, ok = globals.fhToOpenRequestMap[readIn.FH]
+	if !ok {
+		logFatalf("DoRead(NodeID=%v,FH=%v) called for unknown FH (in fhToOpenRequestMap)", inHeader.NodeID, readIn.FH)
+	}
+
 	fhInodeNumber, ok = globals.fhToInodeNumberMap[readIn.FH]
 	if !ok {
-		logFatalf("DoRead(NodeID=%v,FH=%v) called for unknown FH", inHeader.NodeID, readIn.FH)
+		logFatalf("DoRead(NodeID=%v,FH=%v) called for unknown FH (in fhToInodeNumberMap)", inHeader.NodeID, readIn.FH)
 	}
 	if fhInodeNumber != inHeader.NodeID {
 		logFatalf("DoRead(NodeID=%v,FH=%v) called for FH associated with NodeID=%v", inHeader.NodeID, readIn.FH, fhInodeNumber)
@@ -1232,17 +1269,31 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 
 	globals.Unlock()
 
+	if 0 != (fOpenRequestFlags & fission.FOpenRequestWRONLY) {
+		fileInode.unlock(true)
+		errno = syscall.EINVAL
+		return
+	}
+
 	// fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	if nil == fileInode {
 		logFatalf("DoRead(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, readIn.FH)
 	}
 	// defer fileInode.dereference()
 
+	err = fileInode.ensureCachedStatPopulatedWhileLocked()
+	if nil != err {
+		fileInode.unlock(true)
+		errno = convertErrToErrno(err, syscall.EIO)
+		return
+	}
+
 	// grantedLock = fileInode.getSharedLock()
 	// defer grantedLock.release()
 
 	err = fileInode.populateExtentMap(uint64(readIn.Offset), uint64(readIn.Size))
 	if nil != err {
+		fileInode.unlock(true)
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
 	}
@@ -1277,6 +1328,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 						logSegmentCacheElement = fetchLogSegmentCacheLine(readPlanStepAsMultiObjectExtentStruct.containerName, readPlanStepAsMultiObjectExtentStruct.objectName, curObjectOffset)
 
 						if logSegmentCacheElementStateGetFailed == logSegmentCacheElement.state {
+							fileInode.unlock(true)
 							errno = syscall.EIO
 							return
 						}
@@ -1318,6 +1370,8 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		}
 	}
 
+	fileInode.unlock(false)
+
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRead_bytes, uint64(len(readOut.Data)))
 
 	errno = 0
@@ -1326,10 +1380,13 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 
 func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission.WriteIn) (writeOut *fission.WriteOut, errno syscall.Errno) {
 	var (
+		actualOffset             uint64
 		chunkedPutContext        *chunkedPutContextStruct
 		chunkedPutContextElement *list.Element
+		err                      error
 		fhInodeNumber            uint64
 		fileInode                *fileInodeStruct
+		fOpenRequestFlags        uint32
 		ok                       bool
 		singleObjectExtent       *singleObjectExtentStruct
 	)
@@ -1340,9 +1397,14 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 	globals.Lock()
 
+	fOpenRequestFlags, ok = globals.fhToOpenRequestMap[writeIn.FH]
+	if !ok {
+		logFatalf("DoRead(NodeID=%v,FH=%v) called for unknown FH (in fhToOpenRequestMap)", inHeader.NodeID, writeIn.FH)
+	}
+
 	fhInodeNumber, ok = globals.fhToInodeNumberMap[writeIn.FH]
 	if !ok {
-		logFatalf("DoWrite(NodeID=%v,FH=%v) called for unknown FH", inHeader.NodeID, writeIn.FH)
+		logFatalf("DoWrite(NodeID=%v,FH=%v) called for unknown FH (in fhToInodeNumberMap)", inHeader.NodeID, writeIn.FH)
 	}
 	if fhInodeNumber != inHeader.NodeID {
 		logFatalf("DoWrite(NodeID=%v,FH=%v) called for FH associated with NodeID=%v", inHeader.NodeID, writeIn.FH, fhInodeNumber)
@@ -1350,9 +1412,27 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 	globals.Unlock()
 
+	if 0 != (fOpenRequestFlags & fission.FOpenRequestRDONLY) {
+		fileInode.unlock(true)
+		errno = syscall.EINVAL
+		return
+	}
+
 	// fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	if nil == fileInode {
 		logFatalf("DoWrite(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, writeIn.FH)
+	}
+
+	err = fileInode.ensureCachedStatPopulatedWhileLocked()
+	if nil != err {
+		errno = convertErrToErrno(err, syscall.EIO)
+		return
+	}
+
+	if 0 == (fOpenRequestFlags & fission.FOpenRequestAPPEND) {
+		actualOffset = writeIn.Offset
+	} else {
+		actualOffset = fileInode.cachedStat.Size
 	}
 
 	// Grab quota to start a fresh chunkedPutContext before calling fileInode.getExclusiveLock()
@@ -1428,7 +1508,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 	}
 
 	singleObjectExtent = &singleObjectExtentStruct{
-		fileOffset:   uint64(writeIn.Offset),
+		fileOffset:   actualOffset,
 		objectOffset: uint64(len(chunkedPutContext.buf)),
 		length:       uint64(len(writeIn.Data)),
 	}
@@ -1523,9 +1603,16 @@ func (dummy *globalsStruct) DoRelease(inHeader *fission.InHeader, releaseIn *fis
 
 	globals.Lock()
 
+	_, ok = globals.fhToOpenRequestMap[releaseIn.FH]
+	if !ok {
+		logFatalf("DoRelease(NodeID=%v,FH=%v) called for unknown FH (fhToOpenRequestMap)", inHeader.NodeID, releaseIn.FH)
+	}
+
+	delete(globals.fhToOpenRequestMap, releaseIn.FH)
+
 	fhInodeNumber, ok = globals.fhToInodeNumberMap[releaseIn.FH]
 	if !ok {
-		logFatalf("DoRelease(NodeID=%v,FH=%v) called for unknown FH", inHeader.NodeID, releaseIn.FH)
+		logFatalf("DoRelease(NodeID=%v,FH=%v) called for unknown FH (fhToInodeNumberMap)", inHeader.NodeID, releaseIn.FH)
 	}
 	if fhInodeNumber != inHeader.NodeID {
 		logFatalf("DoRelease(NodeID=%v,FH=%v) called for FH associated with NodeID=%v", inHeader.NodeID, releaseIn.FH, fhInodeNumber)
@@ -1568,9 +1655,14 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 
 	globals.Lock()
 
+	_, ok = globals.fhToOpenRequestMap[fSyncIn.FH]
+	if !ok {
+		logFatalf("DoRead(NodeID=%v,FH=%v) called for unknown FH (in fhToOpenRequestMap)", inHeader.NodeID, fSyncIn.FH)
+	}
+
 	fhInodeNumber, ok = globals.fhToInodeNumberMap[fSyncIn.FH]
 	if !ok {
-		logFatalf("DoFSync(NodeID=%v,FH=%v) called for unknown FH", inHeader.NodeID, fSyncIn.FH)
+		logFatalf("DoFSync(NodeID=%v,FH=%v) called for unknown FH (in fhToInodeNumberMap)", inHeader.NodeID, fSyncIn.FH)
 	}
 	if fhInodeNumber != inHeader.NodeID {
 		logFatalf("DoFSync(NodeID=%v,FH=%v) called for FH associated with NodeID=%v", inHeader.NodeID, fSyncIn.FH, fhInodeNumber)
@@ -1578,6 +1670,7 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 
 	globals.Unlock()
 
+	fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(inHeader.NodeID))
 	// fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	if nil == fileInode {
 		logFatalf("DoFSync(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, fSyncIn.FH)
@@ -1586,6 +1679,7 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 	fileInode.doFlushIfNecessary()
 
 	// fileInode.dereference()
+	fileInode.unlock(false)
 
 	errno = 0
 	return
@@ -1794,9 +1888,14 @@ func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission
 
 	globals.Lock()
 
+	_, ok = globals.fhToOpenRequestMap[flushIn.FH]
+	if !ok {
+		logFatalf("DoRead(NodeID=%v,FH=%v) called for unknown FH (in fhToOpenRequestMap)", inHeader.NodeID, flushIn.FH)
+	}
+
 	fhInodeNumber, ok = globals.fhToInodeNumberMap[flushIn.FH]
 	if !ok {
-		logFatalf("DoFlush(NodeID=%v,FH=%v) called for unknown FH", inHeader.NodeID, flushIn.FH)
+		logFatalf("DoFlush(NodeID=%v,FH=%v) called for unknown FH (in fhToInodeNumberMap)", inHeader.NodeID, flushIn.FH)
 	}
 	if fhInodeNumber != inHeader.NodeID {
 		logFatalf("DoFlush(NodeID=%v,FH=%v) called for FH associated with NodeID=%v", inHeader.NodeID, flushIn.FH, fhInodeNumber)
@@ -2155,6 +2254,7 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 
 	globals.lastFH++
 
+	globals.fhToOpenRequestMap[globals.lastFH] = createIn.Flags
 	globals.fhToInodeNumberMap[globals.lastFH] = uint64(createReply.InodeNumber)
 
 	fhSet, ok = globals.inodeNumberToFHMap[uint64(createReply.InodeNumber)]

@@ -4,7 +4,7 @@
 package transitions
 
 import (
-	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/NVIDIA/proxyfs/conf"
 )
 
 // Callbacks is the interface implemented by each package desiring notification of
@@ -57,8 +57,8 @@ type Callbacks interface {
 //
 //   package foo
 //
-//   import "github.com/swiftstack/ProxyFS/conf"
-//   import "github.com/swiftstack/ProxyFS/transitions"
+//   import "github.com/NVIDIA/proxyfs/conf"
+//   import "github.com/NVIDIA/proxyfs/transitions"
 //
 //   type transitionsCallbackInterfaceStruct struct {
 //   }

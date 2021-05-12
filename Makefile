@@ -10,12 +10,15 @@ gopkgsubdirs = \
 	conf \
 	confgen \
 	dlm \
+	etcdclient \
 	evtlog \
 	fs \
 	fuse \
 	halter \
 	headhunter \
 	httpserver \
+	iauth \
+	ilayout \
 	inode \
 	jrpcfs \
 	liveness \
@@ -31,15 +34,27 @@ gopkgsubdirs = \
 	transitions \
 	trackedlock \
 	utils \
-	version
+	version \
+	emswift/emswiftpkg \
+	icert/icertpkg \
+	iclient/iclientpkg \
+	imgr/imgrpkg \
+	iswift/iswiftpkg
+
+goplugindirs = \
+	iauth/iauth-swift
 
 gobinsubdirs = \
 	cleanproxyfs \
+	emswift \
 	fsworkout \
+	icert \
+	iclient \
+	imgr \
 	inodeworkout \
+	iswift \
 	pfs-crash \
 	pfs-fsck \
-	pfs-jrpc \
 	pfs-restart-test \
 	pfs-stress \
 	pfs-swift-load \
@@ -58,6 +73,8 @@ gobinsubdirs = \
 	ramswift/ramswift
 
 gobinsubdirsforci = \
+	emswift \
+	imgr \
 	pfsconfjson \
 	pfsconfjsonpacked \
 	confgen/confgen \
@@ -65,29 +82,18 @@ gobinsubdirsforci = \
 	proxyfsd/proxyfsd
 
 gosubdirsforci = $(gopkgsubdirs) $(gobinsubdirsforci);
-gosubdirspathsforci = $(addprefix github.com/swiftstack/ProxyFS/,$(gosubdirsforci))
+gosubdirspathsforci = $(addprefix github.com/NVIDIA/proxyfs/,$(gosubdirsforci))
 
 uname = $(shell uname)
-machine = $(shell uname -m)
 
 ifeq ($(uname),Linux)
-    ifeq ($(machine),armv7l)
-        all: version fmt pre-generate generate install test
+    all: version fmt pre-generate generate install test python-test
 
-        ci: version fmt pre-generate generate install test cover
+    ci: version fmt pre-generate generate install test cover python-test
 
-        minimal: pre-generate generate install
-    else
-        distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
+    all-deb-builder: version fmt pre-generate generate install
 
-        all: version fmt pre-generate generate install test python-test c-clean c-build c-install c-test
-
-        ci: version fmt pre-generate generate install test cover python-test c-clean c-build c-install c-test
-
-        all-deb-builder: version fmt pre-generate generate install c-clean c-build c-install-deb-builder
-
-        minimal: pre-generate generate install c-clean c-build c-install
-    endif
+    minimal: pre-generate generate install
 else
     all: version fmt pre-generate generate install test
 
@@ -98,7 +104,7 @@ endif
 
 pfsagent: pre-generate generate pfsagent-install
 
-.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test ci clean cover fmt generate install pfsagent pfsagent-install pre-generate python-test test version
+.PHONY: all all-deb-builder bench ci clean cover fmt generate install pfsagent pfsagent-install pre-generate python-test test version
 
 bench:
 	@set -e; \
@@ -109,35 +115,6 @@ bench:
 		$(MAKE) --no-print-directory -C $$gosubdir bench; \
 	done
 
-c-build:
-	$(MAKE) -w -C jrpcclient all
-	$(MAKE) -w -C vfs
-
-c-clean:
-	$(MAKE) -w -C jrpcclient clean
-	$(MAKE) -w -C vfs clean
-
-c-install:
-ifeq ($(distro),CentOS Linux)
-	sudo -E $(MAKE) -w -C jrpcclient installcentos
-	sudo -E $(MAKE) -w -C vfs installcentos
-else
-	sudo -E $(MAKE) -w -C jrpcclient install
-	sudo -E $(MAKE) -w -C vfs install
-endif
-
-c-install-deb-builder:
-ifeq ($(distro),CentOS Linux)
-	$(MAKE) -w -C jrpcclient installcentos
-	$(MAKE) -w -C vfs installcentos
-else
-	$(MAKE) -w -C jrpcclient install
-	$(MAKE) -w -C vfs install
-endif
-
-c-test:
-	cd jrpcclient ; ./regression_test.py --just-test-libs
-
 clean:
 	@set -e; \
 	rm -f $(GOPATH)/bin/stringer; \
@@ -145,6 +122,9 @@ clean:
 		$(MAKE) --no-print-directory -C $$gosubdir clean; \
 	done; \
 	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir clean; \
+	done; \
+	for gosubdir in $(goplugindirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir clean; \
 	done; \
 	for gosubdir in $(gobinsubdirs); do \
@@ -162,6 +142,9 @@ fmt:
 	for gosubdir in $(gopkgsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir fmt; \
 	done; \
+	for gosubdir in $(goplugindirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir fmt; \
+	done; \
 	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir fmt; \
 	done
@@ -171,6 +154,9 @@ generate:
 	for gosubdir in $(gopkgsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir generate; \
 	done; \
+	for gosubdir in $(goplugindirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir generate; \
+	done; \
 	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir generate; \
 	done
@@ -178,6 +164,9 @@ generate:
 install:
 	@set -e; \
 	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir install; \
+	done; \
+	for gosubdir in $(goplugindirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
 	done; \
 	for gosubdir in $(gobinsubdirs); do \
@@ -198,11 +187,14 @@ pre-generate:
 
 python-test:
 	cd meta_middleware && tox -e lint
-	cd pfs_middleware && tox -e py27-release,py27-minver,py36-release,lint
+	cd pfs_middleware && LATEST_SWIFT_TAG=` git ls-remote --refs --tags https://github.com/NVIDIA/swift.git | cut -d '/' -f 3 | grep ^ss-release- | sort --version-sort | tail -n 1 ` tox -e py27-release,py27-minver,py36-release,lint
 
 test:
 	@set -e; \
 	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir test; \
+	done; \
+	for gosubdir in $(goplugindirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir test; \
 	done; \
 	for gosubdir in $(gobinsubdirs); do \

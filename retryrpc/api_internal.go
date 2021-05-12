@@ -7,24 +7,17 @@ package retryrpc
 
 import (
 	"container/list"
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/binary"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"reflect"
 	"sync"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/logger"
 )
 
 // PayloadProtocols defines the supported protocols for the payload
@@ -37,15 +30,23 @@ const (
 
 const (
 	currentRetryVersion = 1
+	bucketStatsPkgName  = "proxyfs.retryrpc"
 )
 
 type requestID uint64
 
+// methodStats tracks per method stats
+type methodStats struct {
+	Method        string                      // Name of method
+	Count         bucketstats.Total           // Number of times this method called
+	TimeOfRPCCall bucketstats.BucketLog2Round // Length of time of this method of RPC
+}
+
 // Useful stats for the clientInfo instance
 type statsInfo struct {
-	AddCompleted           bucketstats.Total           // Number added to completed list
-	RmCompleted            bucketstats.Total           // Number removed from completed list
-	RPCLenUsec             bucketstats.BucketLog2Round // Tracks length of RPCs
+	TrimAddCompleted       bucketstats.Total           // Number added to completed list
+	TrimRmCompleted        bucketstats.Total           // Number removed from completed list
+	CallWrapRPCUsec        bucketstats.BucketLog2Round // Tracks time to unmarshal request before actual RPC
 	ReplySize              bucketstats.BucketLog2Round // Tracks completed RPC reply size
 	longestRPC             time.Duration               // Time of longest RPC
 	longestRPCMethod       string                      // Method of longest RPC
@@ -54,6 +55,7 @@ type statsInfo struct {
 	RPCattempted           bucketstats.Total           // Number of RPCs attempted - may be completed or in process
 	RPCcompleted           bucketstats.Total           // Number of RPCs which completed - incremented after call returns
 	RPCretried             bucketstats.Total           // Number of RPCs which were just pulled from completed list
+	PerMethodStats         map[string]*methodStats     // Per method bucketstats
 }
 
 // Server side data structure storing per client information
@@ -61,7 +63,7 @@ type statsInfo struct {
 type clientInfo struct {
 	sync.Mutex
 	cCtx                     *connCtx                      // Current connCtx for client
-	myUniqueID               string                        // Unique ID of this client
+	myUniqueID               uint64                        // Unique ID of this client
 	completedRequest         map[requestID]*completedEntry // Key: "RequestID"
 	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
 	highestReplySeen         requestID                     // Highest consectutive requestID client has seen
@@ -87,19 +89,13 @@ type connCtx struct {
 	ci                  *clientInfo // Back pointer to the CI
 }
 
-// pendingCtx tracks an individual request from a client
-type pendingCtx struct {
-	lock sync.Mutex
-	buf  []byte   // Request
-	cCtx *connCtx // Most recent connection to return results
-}
-
 // methodArgs defines the method provided by the RPC server
 // as well as the request type and reply type arguments
 type methodArgs struct {
-	methodPtr *reflect.Method
-	request   reflect.Type
-	reply     reflect.Type
+	methodPtr    *reflect.Method
+	passClientID bool
+	request      reflect.Type
+	reply        reflect.Type
 }
 
 // completedLRUEntry tracks time entry was completed for
@@ -121,7 +117,14 @@ const (
 	RPC MsgType = iota + 1
 	// Upcall represents an upcall from server to client
 	Upcall
-	// PassID is the message sent by the client to identify itself to server
+	// AskMyUniqueID is the message sent by the client during it's initial connection
+	// to get it's unique client ID.
+	AskMyUniqueID
+	// ReturnUniqueID is the message sent by the server to client after initial connection.
+	// The server is returning the unique ID created for this client.
+	ReturnUniqueID
+	// PassID is the message sent by the client to identify itself to server.
+	// This is used when we are retransmitting.
 	PassID
 )
 
@@ -147,11 +150,20 @@ type ioReply struct {
 }
 
 // internalSetIDRequest is the structure sent over the wire
-// when the connection is first made.   This is how the server
-// learns the client ID
+// when the connection existed, was broken and is being recreated
+// by the client as a result of reDial().   This is how the server
+// learns existing client ID.
 type internalSetIDRequest struct {
 	Hdr        ioHeader
 	MyUniqueID []byte // Client unique ID as byte
+}
+
+// internalINeedIDRequest is the structure sent over the wire
+// when the connection is first made.   This is how the client
+// learns its client ID
+type internalINeedIDRequest struct {
+	Hdr      ioHeader
+	UniqueID []byte // Client unique ID as byte
 }
 
 type replyCtx struct {
@@ -160,15 +172,16 @@ type replyCtx struct {
 
 // reqCtx exists on the client and tracks a request passed to Send()
 type reqCtx struct {
-	ioreq    ioRequest // Wrapped request passed to Send()
-	rpcReply interface{}
-	answer   chan replyCtx
-	genNum   uint64 // Generation number of socket when request sent
+	ioreq     *ioRequest // Wrapped request passed to Send()
+	rpcReply  interface{}
+	answer    chan replyCtx
+	genNum    uint64    // Generation number of socket when request sent
+	startTime time.Time // Time Send() called sendToServer()
 }
 
 // jsonRequest is used to marshal an RPC request in/out of JSON
 type jsonRequest struct {
-	MyUniqueID       string         `json:"myuniqueid"`       // ID of client
+	MyUniqueID       uint64         `json:"myuniqueid"`       // ID of client
 	RequestID        requestID      `json:"requestid"`        // ID of this request
 	HighestReplySeen requestID      `json:"highestReplySeen"` // Used to trim completedRequests on server
 	Method           string         `json:"method"`
@@ -177,7 +190,7 @@ type jsonRequest struct {
 
 // jsonReply is used to marshal an RPC response in/out of JSON
 type jsonReply struct {
-	MyUniqueID string      `json:"myuniqueid"` // ID of client
+	MyUniqueID uint64      `json:"myuniqueid"` // ID of client
 	RequestID  requestID   `json:"requestid"`  // ID of this request
 	ErrStr     string      `json:"errstr"`
 	Result     interface{} `json:"result"`
@@ -195,9 +208,9 @@ type svrResponse struct {
 	Result interface{} `json:"result"`
 }
 
-func buildIoRequest(jReq jsonRequest) (ioreq *ioRequest, err error) {
+func buildIoRequest(jReq *jsonRequest) (ioreq *ioRequest, err error) {
 	ioreq = &ioRequest{}
-	ioreq.JReq, err = json.Marshal(jReq)
+	ioreq.JReq, err = json.Marshal(*jReq)
 	if err != nil {
 		return nil, err
 	}
@@ -215,10 +228,9 @@ func setupHdrReply(ioreply *ioReply, t MsgType) {
 	ioreply.Hdr.Version = currentRetryVersion
 	ioreply.Hdr.Type = t
 	ioreply.Hdr.Magic = headerMagic
-	return
 }
 
-func buildSetIDRequest(myUniqueID string) (isreq *internalSetIDRequest, err error) {
+func buildSetIDRequest(myUniqueID uint64) (isreq *internalSetIDRequest, err error) {
 	isreq = &internalSetIDRequest{}
 	isreq.MyUniqueID, err = json.Marshal(myUniqueID)
 	if err != nil {
@@ -232,6 +244,19 @@ func buildSetIDRequest(myUniqueID string) (isreq *internalSetIDRequest, err erro
 	return
 }
 
+func buildINeedIDRequest() (iinreq *internalINeedIDRequest, err error) {
+	iinreq = &internalINeedIDRequest{}
+	if err != nil {
+		return nil, err
+	}
+	iinreq.Hdr.Len = uint32(0)
+	iinreq.Hdr.Protocol = uint16(JSON)
+	iinreq.Hdr.Version = currentRetryVersion
+	iinreq.Hdr.Type = AskMyUniqueID
+	iinreq.Hdr.Magic = headerMagic
+	return
+}
+
 func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, msgType MsgType, err error) {
 	if printDebugLogs {
 		logger.Infof("conn: %v", conn)
@@ -240,7 +265,11 @@ func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, 
 	// Read in the header of the request first
 	var hdr ioHeader
 
-	conn.SetDeadline(time.Now().Add(deadlineIO))
+	err = conn.SetDeadline(time.Now().Add(deadlineIO))
+	if err != nil {
+		return
+	}
+
 	err = binary.Read(conn, binary.BigEndian, &hdr)
 	if err != nil {
 		return
@@ -251,10 +280,6 @@ func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, 
 		return
 	}
 
-	if hdr.Len == 0 {
-		err = fmt.Errorf("hdr.Len == 0")
-		return
-	}
 	msgType = hdr.Type
 
 	// Now read the rest of the structure off the wire.
@@ -271,127 +296,6 @@ func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, 
 		err = fmt.Errorf("Incomplete read of body")
 		return
 	}
-
-	return
-}
-
-// constructServerCreds will generate root CA cert and server cert
-//
-// It is assumed that this is called on the "server" process and
-// the caller will provide a mechanism to pass
-// serverCreds.rootCAx509CertificatePEMkeys to the "clients".
-func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds, err error) {
-	var (
-		commonX509NotAfter            time.Time
-		commonX509NotBefore           time.Time
-		rootCAEd25519PrivateKey       ed25519.PrivateKey
-		rootCAEd25519PublicKey        ed25519.PublicKey
-		rootCAx509CertificateDER      []byte
-		rootCAx509CertificateTemplate *x509.Certificate
-		rootCAx509SerialNumber        *big.Int
-		serverEd25519PrivateKey       ed25519.PrivateKey
-		serverEd25519PrivateKeyDER    []byte
-		serverEd25519PrivateKeyPEM    []byte
-		serverEd25519PublicKey        ed25519.PublicKey
-		serverX509CertificateDER      []byte
-		serverX509CertificatePEM      []byte
-		serverX509CertificateTemplate *x509.Certificate
-		serverX509SerialNumber        *big.Int
-		timeNow                       time.Time
-	)
-
-	serverCreds = &ServerCreds{}
-
-	timeNow = time.Now()
-
-	// TODO - what should the length of this be?  What if we want to eject a client
-	// from the server?  How would that work?
-	//
-	// Do we even want the root CA at all?
-	commonX509NotBefore = time.Date(timeNow.Year()-1, time.January, 1, 0, 0, 0, 0, timeNow.Location())
-	commonX509NotAfter = time.Date(timeNow.Year()+99, time.January, 1, 0, 0, 0, 0, timeNow.Location())
-
-	rootCAx509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		err = fmt.Errorf("rand.Int() [1] failed: %v", err)
-		return
-	}
-
-	rootCAx509CertificateTemplate = &x509.Certificate{
-		SerialNumber: rootCAx509SerialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"CA Organization"},
-			CommonName:   "Root CA",
-		},
-		NotBefore:             commonX509NotBefore,
-		NotAfter:              commonX509NotAfter,
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-	}
-
-	// Generate public and private key
-	rootCAEd25519PublicKey, rootCAEd25519PrivateKey, err = ed25519.GenerateKey(nil)
-	if err != nil {
-		err = fmt.Errorf("ed25519.GenerateKey() [1] failed: %v", err)
-		return
-	}
-
-	// Create the certificate with the keys
-	rootCAx509CertificateDER, err = x509.CreateCertificate(rand.Reader,
-		rootCAx509CertificateTemplate, rootCAx509CertificateTemplate, rootCAEd25519PublicKey, rootCAEd25519PrivateKey)
-	if err != nil {
-		err = fmt.Errorf("x509.CreateCertificate() [1] failed: %v", err)
-		return
-	}
-
-	serverCreds.RootCAx509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootCAx509CertificateDER})
-
-	serverX509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		err = fmt.Errorf("rand.Int() [2] failed: %v", err)
-		return
-	}
-
-	serverX509CertificateTemplate = &x509.Certificate{
-		SerialNumber: serverX509SerialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"Server Organization"},
-			CommonName:   "Server",
-		},
-		NotBefore:   commonX509NotBefore,
-		NotAfter:    commonX509NotAfter,
-		KeyUsage:    x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses: []net.IP{net.ParseIP(serverIPAddrAsString)},
-	}
-
-	// Generate the server public/private keys
-	serverEd25519PublicKey, serverEd25519PrivateKey, err = ed25519.GenerateKey(nil)
-	if err != nil {
-		err = fmt.Errorf("ed25519.GenerateKey() [2] failed: %v", err)
-		return
-	}
-
-	// Create the server certificate with the server public/private keys
-	serverX509CertificateDER, err = x509.CreateCertificate(rand.Reader, serverX509CertificateTemplate, rootCAx509CertificateTemplate, serverEd25519PublicKey, rootCAEd25519PrivateKey)
-	if err != nil {
-		err = fmt.Errorf("x509.CreateCertificate() [2] failed: %v", err)
-		return
-	}
-
-	serverX509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverX509CertificateDER})
-
-	serverEd25519PrivateKeyDER, err = x509.MarshalPKCS8PrivateKey(serverEd25519PrivateKey)
-	if err != nil {
-		err = fmt.Errorf("x509.MarshalPKCS8PrivateKey() failed: %v", err)
-		return
-	}
-
-	serverEd25519PrivateKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: serverEd25519PrivateKeyDER})
-
-	serverCreds.serverTLSCertificate, err = tls.X509KeyPair(serverX509CertificatePEM, serverEd25519PrivateKeyPEM)
 
 	return
 }

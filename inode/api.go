@@ -10,10 +10,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/dlm"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/dlm"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 type InodeNumber uint64

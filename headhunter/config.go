@@ -12,16 +12,18 @@ import (
 	"time"
 
 	etcd "go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/pkg/transport"
 
-	"github.com/swiftstack/cstruct"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/cstruct"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/trackedlock"
-	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/etcdclient"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/swiftclient"
+	"github.com/NVIDIA/proxyfs/trackedlock"
+	"github.com/NVIDIA/proxyfs/transitions"
 )
 
 const (
@@ -198,6 +200,7 @@ type globalsStruct struct {
 	etcdEnabled          bool
 	etcdEndpoints        []string
 	etcdAutoSyncInterval time.Duration
+	etcdCertDir          string
 	etcdDialTimeout      time.Duration
 	etcdOpTimeout        time.Duration
 
@@ -458,6 +461,10 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		if nil != err {
 			return
 		}
+		globals.etcdCertDir, err = confMap.FetchOptionValueString("FSGlobals", "EtcdCertDir")
+		if nil != err {
+			return
+		}
 		globals.etcdDialTimeout, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdDialTimeout")
 		if nil != err {
 			return
@@ -469,11 +476,14 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 		// Initialize etcd Client & KV objects
 
-		globals.etcdClient, err = etcd.New(etcd.Config{
-			Endpoints:        globals.etcdEndpoints,
-			AutoSyncInterval: globals.etcdAutoSyncInterval,
-			DialTimeout:      globals.etcdDialTimeout,
-		})
+		tlsInfo := transport.TLSInfo{
+			CertFile:      etcdclient.GetCertFilePath(globals.etcdCertDir),
+			KeyFile:       etcdclient.GetKeyFilePath(globals.etcdCertDir),
+			TrustedCAFile: etcdclient.GetCA(globals.etcdCertDir),
+		}
+
+		globals.etcdClient, err = etcdclient.New(&tlsInfo, globals.etcdEndpoints,
+			globals.etcdAutoSyncInterval, globals.etcdDialTimeout)
 		if nil != err {
 			return
 		}

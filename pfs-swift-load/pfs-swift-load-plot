@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import argparse
 import itertools
@@ -32,25 +32,31 @@ def plot(plot_position, x_axis_data, x_axis_label, warning_msg=None):
         ax.plot(
             x_axis_data,
             data_frame[worker][OBJECTS_PER_SECOND_COL],
-            color=color_iterator.next(), label=worker)
+            color=next(color_iterator),
+            label=worker,
+        )
     ax.set_xlabel(x_axis_label, color="k")
     ax.set_ylabel(OBJECTS_PER_SECOND_TEXT, color="k")
-    ax.grid(color="tab:gray", linestyle="dashdot", linewidth=.4)
+    ax.grid(color="tab:gray", linestyle="dashdot", linewidth=0.4)
     plt.legend()
     if warning_msg:
-        plt.title(warning_msg, bbox=dict(facecolor='red', alpha=0.5))
+        plt.title(warning_msg, bbox=dict(facecolor="red", alpha=0.5))
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Plot results from "
-                                                 "pfs-swift-load")
-    parser.add_argument("-i", "--input", type=str, required=True,
-                        help="Input CSV file")
-    parser.add_argument("-o", "--output", type=str, required=True,
-                        help="Output PNG file")
-    parser.add_argument("-w", "--warning", type=str, required=False,
-                        default=None, help="Warning message to print on the "
-                                           "PNG file")
+    parser = argparse.ArgumentParser(description="Plot results from " "pfs-swift-load")
+    parser.add_argument("-i", "--input", type=str, required=True, help="Input CSV file")
+    parser.add_argument(
+        "-o", "--output", type=str, required=True, help="Output PNG file"
+    )
+    parser.add_argument(
+        "-w",
+        "--warning",
+        type=str,
+        required=False,
+        default=None,
+        help="Warning message to print on the " "PNG file",
+    )
     args = parser.parse_args()
     options = {
         "input": args.input,
@@ -68,8 +74,7 @@ if __name__ == "__main__":
     # We only have len(PLOT_COLORS) colors to use, and we don't want 2 workers
     # to be plotted with the same color...
     if len(workers) > len(PLOT_COLORS):
-        print("Too many workers: {}, max: {}".format(len(workers),
-                                                     len(PLOT_COLORS)))
+        print("Too many workers: {}, max: {}".format(len(workers), len(PLOT_COLORS)))
         sys.exit(1)
 
     # Check how long are the intervals between samples
@@ -78,13 +83,13 @@ if __name__ == "__main__":
     # account the fact that several threads could have been working in
     # parallel. Maybe we could add an option?
     for worker in workers:
-        data_frame[worker, OBJECTS_PER_SECOND_COL] = \
+        data_frame[worker, OBJECTS_PER_SECOND_COL] = (
             data_frame[worker][DELTA_COL] / interval
+        )
     data_frame = data_frame.sort_index(axis=1)
 
     # Draw the chart(s)
     fig = plt.figure(figsize=FIG_SIZE)
-    plot(1, data_frame[worker][ELAPSED_TIME_COL], ELAPSED_TIME_TEXT,
-         options["warning"])
+    plot(1, data_frame[worker][ELAPSED_TIME_COL], ELAPSED_TIME_TEXT, options["warning"])
     plot(2, data_frame[worker][COMPLETED_COL], COMPLETED_TEXT)
     plt.savefig(options["output"])

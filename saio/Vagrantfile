@@ -6,11 +6,10 @@
 #  1) vboxnet0 is assumed to be a host-only network @ address 172.28.128.1 (DHCP disabled)
 #  2) Though not required, GOPATH is assumed to be the ../../../../../ directory
 #  3) The directory on the VM Host will be /vagrant on the VM and be the path in GOPATH
-#  4) ProxyFS repo git clone'd to $GOPATH/src/github.com/swiftstack/
-#  5) samba repo automatically staged in $GOPATH/src/github.com/swiftstack/ProxyFS/saio/
-#  6) Swift repos et. al. git clone'd to $GOPATH/src/github.com/swiftstack/ProxyFS/saio/
-#  7) ../Makefile will be ready to be executed after `cdpfs` inside the VM
-#  8) As GOPATH is effectively shared between Host and VM, builds in the two environments
+#  4) ProxyFS repo git clone'd to $GOPATH/src/github.com/NVIDIA/
+#  5) Swift repos et. al. git clone'd to $GOPATH/src/github.com/NVIDIA/proxyfs/saio/
+#  6) ../Makefile will be ready to be executed after `cdpfs` inside the VM
+#  7) As GOPATH is effectively shared between Host and VM, builds in the two environments
 #     will collide in the contents of the $GOPATH/bin (only executables, not libraries)
 
 Vagrant.configure(2) do |config|

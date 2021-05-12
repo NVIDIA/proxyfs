@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/headhunter"
-	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/trackedlock"
-	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/headhunter"
+	"github.com/NVIDIA/proxyfs/inode"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/trackedlock"
+	"github.com/NVIDIA/proxyfs/transitions"
 )
 
 type inFlightFileInodeDataStruct struct {

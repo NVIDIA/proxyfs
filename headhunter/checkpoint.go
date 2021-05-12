@@ -19,15 +19,15 @@ import (
 
 	etcd "go.etcd.io/etcd/clientv3"
 
-	"github.com/swiftstack/cstruct"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/cstruct"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/platform"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/evtlog"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/platform"
+	"github.com/NVIDIA/proxyfs/stats"
+	"github.com/NVIDIA/proxyfs/swiftclient"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 var (
@@ -3059,6 +3059,7 @@ func (volume *volumeStruct) checkpointDaemon() {
 		bPlusTreeObjectCacheStats = globals.bPlusTreeObjectCache.Stats()
 		createdDeletedObjectsCacheStats = globals.createdDeletedObjectsCache.Stats()
 
+		globals.Lock()
 		inodeRecCacheHitsDelta = inodeRecCacheStats.CacheHits - globals.inodeRecCachePriorCacheHits
 		inodeRecCacheMissesDelta = inodeRecCacheStats.CacheMisses - globals.inodeRecCachePriorCacheMisses
 
@@ -3070,8 +3071,6 @@ func (volume *volumeStruct) checkpointDaemon() {
 
 		createdDeletedObjectsCacheHitsDelta = createdDeletedObjectsCacheStats.CacheHits - globals.createdDeletedObjectsCachePriorCacheHits
 		createdDeletedObjectsCacheMissesDelta = createdDeletedObjectsCacheStats.CacheMisses - globals.createdDeletedObjectsCachePriorCacheMisses
-
-		globals.Lock()
 
 		if 0 != inodeRecCacheHitsDelta {
 			stats.IncrementOperationsBy(&stats.InodeRecCacheHits, inodeRecCacheHitsDelta)

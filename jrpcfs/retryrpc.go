@@ -4,25 +4,29 @@
 package jrpcfs
 
 import (
-	"time"
-
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/retryrpc"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
-func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
-	retryRPCTTLCompleted time.Duration, retryRPCAckTrim time.Duration,
-	retryRPCDeadlineIO time.Duration, retryRPCKeepAlivePeriod time.Duration) {
-
-	var err error
+func retryRPCServerUp(jserver *Server) {
+	var (
+		err error
+	)
 
 	if globals.retryRPCPort == 0 {
 		return
 	}
 
 	// Create a new RetryRPC Server.
-	retryConfig := &retryrpc.ServerConfig{LongTrim: retryRPCTTLCompleted, ShortTrim: retryRPCAckTrim, IPAddr: publicIPAddr,
-		Port: int(retryRPCPort), DeadlineIO: retryRPCDeadlineIO, KeepAlivePeriod: retryRPCKeepAlivePeriod}
+	retryConfig := &retryrpc.ServerConfig{
+		LongTrim:        globals.retryRPCTTLCompleted,
+		ShortTrim:       globals.retryRPCAckTrim,
+		IPAddr:          globals.publicIPAddr,
+		Port:            int(globals.retryRPCPort),
+		DeadlineIO:      globals.retryRPCDeadlineIO,
+		KeepAlivePeriod: globals.retryRPCKeepAlivePeriod,
+		TLSCertificate:  globals.retryRPCCertificate,
+	}
 
 	rrSvr := retryrpc.NewServer(retryConfig)
 
@@ -42,7 +46,6 @@ func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
 
 	globals.connLock.Lock()
 	globals.retryrpcSvr = rrSvr
-	globals.rootCAx509CertificatePEM = rrSvr.Creds.RootCAx509CertificatePEM
 	globals.connLock.Unlock()
 
 	// Tell retryrpc server to start accepting requests

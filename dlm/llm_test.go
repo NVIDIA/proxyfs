@@ -13,11 +13,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/swiftstack/ProxyFS/blunder"
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/trackedlock"
-	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/NVIDIA/proxyfs/blunder"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/logger"
+	"github.com/NVIDIA/proxyfs/trackedlock"
+	"github.com/NVIDIA/proxyfs/transitions"
 )
 
 // Test string for passing inode 1

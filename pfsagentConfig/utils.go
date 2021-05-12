@@ -11,7 +11,7 @@ import (
 	"os"
 	"os/user"
 
-	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/NVIDIA/proxyfs/conf"
 )
 
 const (

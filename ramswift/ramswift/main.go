@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/ProxyFS/ramswift"
+	"github.com/NVIDIA/proxyfs/ramswift"
 )
 
 func main() {

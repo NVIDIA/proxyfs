@@ -18,20 +18,14 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/logger"
 	"github.com/google/btree"
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/logger"
 )
-
-// ServerCreds tracks the root CA and the
-// server CA
-type ServerCreds struct {
-	RootCAx509CertificatePEM []byte
-	serverTLSCertificate     tls.Certificate
-}
 
 // Server tracks the state of the server
 type Server struct {
@@ -41,18 +35,19 @@ type Server struct {
 	svrMap           map[string]*methodArgs // Key: Method name
 	ipaddr           string                 // IP address server listens too
 	port             int                    // Port of server
-	netListener      net.Listener
-	tlsListener      net.Listener
+	clientIDNonce    uint64                 // Nonce used to create a unique client ID
+	netListener      net.Listener           // Accepts on this to skip TLS upgrade
+	tlsListener      net.Listener           // Accepts on this to use  TLS upgrade
 
 	halting              bool
 	goroutineWG          sync.WaitGroup // Used to track outstanding goroutines
 	connLock             sync.Mutex
 	connections          *list.List
 	connWG               sync.WaitGroup
-	Creds                *ServerCreds
+	tlsCertificate       tls.Certificate
 	listenersWG          sync.WaitGroup
 	receiver             reflect.Value          // Package receiver being served
-	perClientInfo        map[string]*clientInfo // Key: "clientID".  Tracks clients
+	perClientInfo        map[uint64]*clientInfo // Key: "clientID".  Tracks clients
 	completedTickerDone  chan bool
 	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
 	completedShortTicker *time.Ticker // Shorter ~100ms timer to trim known completed
@@ -64,40 +59,32 @@ type Server struct {
 
 // ServerConfig is used to configure a retryrpc Server
 type ServerConfig struct {
-	LongTrim          time.Duration // How long the results of an RPC are stored on a Server before removed
-	ShortTrim         time.Duration // How frequently completed and ACKed RPCs results are removed from Server
-	IPAddr            string        // IP Address that Server uses to listen
-	Port              int           // Port that Server uses to listen
-	DeadlineIO        time.Duration // How long I/Os on sockets wait even if idle
-	KeepAlivePeriod   time.Duration // How frequently a KEEPALIVE is sent
-	dontStartTrimmers bool          // Used for testing
+	LongTrim          time.Duration   // How long the results of an RPC are stored on a Server before removed
+	ShortTrim         time.Duration   // How frequently completed and ACKed RPCs results are removed from Server
+	IPAddr            string          // IP Address that Server uses to listen
+	Port              int             // Port that Server uses to listen
+	DeadlineIO        time.Duration   // How long I/Os on sockets wait even if idle
+	KeepAlivePeriod   time.Duration   // How frequently a KEEPALIVE is sent
+	TLSCertificate    tls.Certificate // TLS Certificate to present to Clients (or tls.Certificate{} if using TCP)
+	dontStartTrimmers bool            // Used for testing
 }
 
 // NewServer creates the Server object
 func NewServer(config *ServerConfig) *Server {
-	var (
-		err error
-	)
 	server := &Server{ipaddr: config.IPAddr, port: config.Port, completedLongTTL: config.LongTrim,
 		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
-		keepAlivePeriod: config.KeepAlivePeriod, dontStartTrimmers: config.dontStartTrimmers}
+		keepAlivePeriod: config.KeepAlivePeriod, dontStartTrimmers: config.dontStartTrimmers,
+		tlsCertificate: config.TLSCertificate}
 	server.svrMap = make(map[string]*methodArgs)
-	server.perClientInfo = make(map[string]*clientInfo)
+	server.perClientInfo = make(map[uint64]*clientInfo)
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
-
-	server.Creds, err = constructServerCreds(server.ipaddr)
-	if err != nil {
-		logger.Errorf("Construction of server credentials failed with err: %v", err)
-		panic(err)
-	}
 
 	return server
 }
 
 // Register creates the map of server methods
 func (server *Server) Register(retrySvr interface{}) (err error) {
-
 	// Find all the methods associated with retrySvr and put into serviceMap
 	server.receiver = reflect.ValueOf(retrySvr)
 	return server.register(retrySvr)
@@ -105,11 +92,10 @@ func (server *Server) Register(retrySvr interface{}) (err error) {
 
 // Start listener
 func (server *Server) Start() (err error) {
-	portStr := fmt.Sprintf("%d", server.port)
-	hostPortStr := net.JoinHostPort(server.ipaddr, portStr)
+	hostPortStr := net.JoinHostPort(server.ipaddr, fmt.Sprintf("%d", server.port))
 
 	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{server.Creds.serverTLSCertificate},
+		Certificates: []tls.Certificate{server.tlsCertificate},
 	}
 
 	listenConfig := &net.ListenConfig{KeepAlive: server.keepAlivePeriod}
@@ -119,7 +105,9 @@ func (server *Server) Start() (err error) {
 		return
 	}
 
-	server.tlsListener = tls.NewListener(server.netListener, tlsConfig)
+	if len(server.tlsCertificate.Certificate) != 0 {
+		server.tlsListener = tls.NewListener(server.netListener, tlsConfig)
+	}
 
 	server.listenersWG.Add(1)
 
@@ -175,7 +163,7 @@ func (server *Server) Run() {
 //
 // The message is "best effort" - if we fail to write on socket then the
 // message is silently dropped on floor.
-func (server *Server) SendCallback(clientID string, msg []byte) {
+func (server *Server) SendCallback(clientID uint64, msg []byte) {
 
 	// TODO - what if client no longer in list of current clients?
 	var (
@@ -206,9 +194,16 @@ func (server *Server) Close() {
 	server.halting = true
 	server.Unlock()
 
-	err := server.tlsListener.Close()
-	if err != nil {
-		logger.Errorf("server.tlsListener.Close() returned err: %v", err)
+	if len(server.tlsCertificate.Certificate) == 0 {
+		err := server.netListener.Close()
+		if err != nil {
+			logger.Errorf("server.netListener.Close() returned err: %v", err)
+		}
+	} else {
+		err := server.tlsListener.Close()
+		if err != nil {
+			logger.Errorf("server.tlsListener.Close() returned err: %v", err)
+		}
 	}
 
 	server.listenersWG.Wait()
@@ -228,7 +223,7 @@ func (server *Server) Close() {
 	// Cleanup bucketstats so that unit tests can run
 	for _, ci := range server.perClientInfo {
 		ci.Lock()
-		bucketstats.UnRegister("proxyfs.retryrpc", ci.myUniqueID)
+		ci.unregsiterMethodStats(server)
 		ci.Unlock()
 
 	}
@@ -267,8 +262,6 @@ type clientState int
 const (
 	// INITIAL means the Client struct has just been created
 	INITIAL clientState = iota + 1
-	// DISCONNECTED means the Client has lost the connection to the server
-	DISCONNECTED
 	// CONNECTED means the Client is connected to the server
 	CONNECTED
 	// RETRANSMITTING means a goroutine is in the middle of recovering
@@ -277,13 +270,14 @@ const (
 )
 
 type connectionTracker struct {
-	state                    clientState
-	genNum                   uint64 // Generation number of tlsConn - avoid racing recoveries
-	tlsConfig                *tls.Config
-	tlsConn                  *tls.Conn // Our connection to the server
-	x509CertPool             *x509.CertPool
-	rootCAx509CertificatePEM []byte
-	hostPortStr              string
+	state        clientState    //
+	genNum       uint64         // Generation number of tlsConn - avoid racing recoveries
+	useTLS       bool           //
+	netConn      net.Conn       // Our TCP connection to the server
+	tlsConn      *tls.Conn      // Our TLS connection to the server
+	tlsConfig    *tls.Config    //
+	x509CertPool *x509.CertPool // If nil, use TCP; if !nil, use TLS
+	hostPortStr  string         //
 }
 
 // Client tracking structure
@@ -293,8 +287,8 @@ type Client struct {
 	currentRequestID requestID // Last request ID - start from clock
 	// tick at mount and increment from there?
 	// Handle reset of time?
-	connection         connectionTracker
-	myUniqueID         string      // Unique ID across all clients
+	connection         *connectionTracker
+	myUniqueID         uint64      // Unique ID across all clients
 	cb                 interface{} // Callbacks to client
 	deadlineIO         time.Duration
 	keepAlivePeriod    time.Duration
@@ -315,10 +309,9 @@ type ClientCallbacks interface {
 
 // ClientConfig is used to configure a retryrpc Client
 type ClientConfig struct {
-	MyUniqueID               string
 	IPAddr                   string        // IP Address of Server
 	Port                     int           // Port of Server
-	RootCAx509CertificatePEM []byte        // Root certificate
+	RootCAx509CertificatePEM []byte        // If TLS...Root certificate; If TCP... nil
 	Callbacks                interface{}   // Structure implementing ClientCallbacks
 	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod          time.Duration // How frequently a KEEPALIVE is sent
@@ -339,23 +332,34 @@ type ClientConfig struct {
 // starting point for requestID.
 func NewClient(config *ClientConfig) (client *Client, err error) {
 
-	client = &Client{myUniqueID: config.MyUniqueID, cb: config.Callbacks,
-		keepAlivePeriod: config.KeepAlivePeriod, deadlineIO: config.DeadlineIO}
-	portStr := fmt.Sprintf("%d", config.Port)
-	client.connection.state = INITIAL
-	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, portStr)
-	client.outstandingRequest = make(map[requestID]*reqCtx)
-	client.connection.x509CertPool = x509.NewCertPool()
-	client.bt = btree.New(2)
-
-	// Add cert for root CA to our pool
-	ok := client.connection.x509CertPool.AppendCertsFromPEM(config.RootCAx509CertificatePEM)
-	if !ok {
-		err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
-		return nil, err
+	client = &Client{
+		connection: &connectionTracker{
+			state:       INITIAL,
+			hostPortStr: net.JoinHostPort(config.IPAddr, fmt.Sprintf("%d", config.Port)),
+		},
+		cb:              config.Callbacks,
+		keepAlivePeriod: config.KeepAlivePeriod,
+		deadlineIO:      config.DeadlineIO,
 	}
 
-	bucketstats.Register("proxyfs.retryrpc", client.GetStatsGroupName(), &client.stats)
+	client.outstandingRequest = make(map[requestID]*reqCtx)
+	client.bt = btree.New(2)
+
+	if config.RootCAx509CertificatePEM == nil {
+		client.connection.useTLS = false
+		client.connection.tlsConn = nil
+		client.connection.x509CertPool = nil
+	} else {
+		client.connection.useTLS = true
+		client.connection.netConn = nil
+		// Add cert for root CA to our pool
+		client.connection.x509CertPool = x509.NewCertPool()
+		ok := client.connection.x509CertPool.AppendCertsFromPEM(config.RootCAx509CertificatePEM)
+		if !ok {
+			err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
+			return nil, err
+		}
+	}
 
 	return client, err
 }
@@ -366,10 +370,15 @@ func (client *Client) Send(method string, request interface{}, reply interface{}
 	return client.send(method, request, reply)
 }
 
+// GetMyUniqueID returns the unique ID of the client
+func (client *Client) GetMyUniqueID() uint64 {
+	return client.myUniqueID
+}
+
 // GetStatsGroupName returns the bucketstats GroupName for this client
 func (client *Client) GetStatsGroupName() (s string) {
-
-	return clientSideGroupPrefix + client.myUniqueID
+	s10 := strconv.FormatInt(int64(client.myUniqueID), 10)
+	return clientSideGroupPrefix + s10
 }
 
 // Close gracefully shuts down the client
@@ -380,12 +389,11 @@ func (client *Client) Close() {
 	client.halting = true
 	if client.connection.state == CONNECTED {
 		client.connection.state = INITIAL
-		client.connection.tlsConn.Close()
+		client.connection.Close()
 	}
 	client.Unlock()
 
 	// Wait for the goroutines to return
 	client.goroutineWG.Wait()
-	bucketstats.UnRegister("proxyfs.retryrpc", client.GetStatsGroupName())
-
+	bucketstats.UnRegister(bucketStatsPkgName, client.GetStatsGroupName())
 }

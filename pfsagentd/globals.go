@@ -7,8 +7,8 @@ import (
 	"container/list"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,15 +17,15 @@ import (
 
 	"bazil.org/fuse"
 
-	"github.com/swiftstack/fission"
-	"github.com/swiftstack/sortedmap"
+	"github.com/NVIDIA/fission"
+	"github.com/NVIDIA/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/bucketstats"
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/jrpcfs"
-	"github.com/swiftstack/ProxyFS/retryrpc"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/inode"
+	"github.com/NVIDIA/proxyfs/jrpcfs"
+	"github.com/NVIDIA/proxyfs/retryrpc"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 type configStruct struct {
@@ -66,13 +66,15 @@ type configStruct struct {
 	XAttrEnabled                 bool
 	EntryDuration                time.Duration
 	AttrDuration                 time.Duration
-	AttrBlockSize                uint64
 	ReaddirMaxEntries            uint64
 	FUSEMaxBackground            uint16
 	FUSECongestionThreshhold     uint16
 	FUSEMaxWrite                 uint32
+	RetryRPCPublicIPAddr         string
+	RetryRPCPort                 uint16
 	RetryRPCDeadlineIO           time.Duration
 	RetryRPCKeepAlivePeriod      time.Duration
+	RetryRPCCACertFilePath       string
 }
 
 type retryDelayElementStruct struct {
@@ -331,10 +333,8 @@ type globalsStruct struct {
 	sync.Mutex
 	config                          configStruct
 	logFile                         *os.File // == nil if configStruct.LogFilePath == ""
-	retryRPCPublicIPAddr            string
-	retryRPCPort                    uint16
+	retryRPCCACertPEM               []byte
 	retryRPCClient                  *retryrpc.Client
-	rootCAx509CertificatePEM        []byte
 	entryValidSec                   uint64
 	entryValidNSec                  uint32
 	attrValidSec                    uint64
@@ -348,7 +348,6 @@ type globalsStruct struct {
 	swiftAuthToken                  string          // Protected by swiftAuthWaitGroup
 	swiftStorageURL                 string          // Protected by swiftAuthWaitGroup
 	mountID                         jrpcfs.MountIDAsString
-	rootDirInodeNumber              uint64
 	fissionErrChan                  chan error
 	fissionVolume                   fission.Volume
 	fuseConn                        *fuse.Conn
@@ -359,6 +358,7 @@ type globalsStruct struct {
 	unleasedFileInodeCacheLRU       *list.List           // Front() is oldest fileInodeStruct.leaseListElement
 	sharedLeaseFileInodeCacheLRU    *list.List           // Front() is oldest fileInodeStruct.leaseListElement
 	exclusiveLeaseFileInodeCacheLRU *list.List           // Front() is oldest fileInodeStruct.leaseListElement
+	fhToOpenRequestMap              map[uint64]uint32    // Key == FH; Value == {Create|Open}In.Flags
 	fhToInodeNumberMap              map[uint64]uint64    // Key == FH; Value == InodeNumber
 	inodeNumberToFHMap              map[uint64]fhSetType // Key == InodeNumber; Value == set of FH's
 	lastFH                          uint64               // Valid FH's start at 1
@@ -615,14 +615,6 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
-	globals.config.AttrBlockSize, err = confMap.FetchOptionValueUint64("Agent", "AttrBlockSize")
-	if nil != err {
-		logFatal(err)
-	}
-	if (0 == globals.config.AttrBlockSize) || (math.MaxUint32 < globals.config.AttrBlockSize) {
-		logFatalf("AttrBlockSize must be non-zero and fit in a uint32")
-	}
-
 	globals.config.ReaddirMaxEntries, err = confMap.FetchOptionValueUint64("Agent", "ReaddirMaxEntries")
 	if nil != err {
 		logFatal(err)
@@ -643,6 +635,16 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
+	globals.config.RetryRPCPublicIPAddr, err = confMap.FetchOptionValueString("Agent", "RetryRPCPublicIPAddr")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.RetryRPCPort, err = confMap.FetchOptionValueUint16("Agent", "RetryRPCPort")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.RetryRPCDeadlineIO, err = confMap.FetchOptionValueDuration("Agent", "RetryRPCDeadlineIO")
 	if nil != err {
 		logFatal(err)
@@ -653,9 +655,23 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
+	globals.config.RetryRPCCACertFilePath, err = confMap.FetchOptionValueString("Agent", "RetryRPCCACertFilePath")
+	if nil != err {
+		globals.config.RetryRPCCACertFilePath = ""
+	}
+
 	configJSONified = utils.JSONify(globals.config, true)
 
 	logInfof("\n%s", configJSONified)
+
+	if "" == globals.config.RetryRPCCACertFilePath {
+		globals.retryRPCCACertPEM = nil
+	} else {
+		globals.retryRPCCACertPEM, err = ioutil.ReadFile(globals.config.RetryRPCCACertFilePath)
+		if nil != err {
+			logFatal(err)
+		}
+	}
 
 	globals.entryValidSec, globals.entryValidNSec = nsToUnixTime(uint64(globals.config.EntryDuration))
 	globals.attrValidSec, globals.attrValidNSec = nsToUnixTime(uint64(globals.config.AttrDuration))
@@ -724,6 +740,7 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.sharedLeaseFileInodeCacheLRU = list.New()
 	globals.exclusiveLeaseFileInodeCacheLRU = list.New()
 
+	globals.fhToOpenRequestMap = make(map[uint64]uint32)
 	globals.fhToInodeNumberMap = make(map[uint64]uint64)
 	globals.inodeNumberToFHMap = make(map[uint64]fhSetType)
 
@@ -742,10 +759,8 @@ func uninitializeGlobals() {
 	bucketstats.UnRegister("PFSAgent", "")
 
 	globals.logFile = nil
-	globals.retryRPCPublicIPAddr = ""
-	globals.retryRPCPort = 0
+	globals.retryRPCCACertPEM = nil
 	globals.retryRPCClient = nil
-	globals.rootCAx509CertificatePEM = []byte{}
 	globals.entryValidSec = 0
 	globals.entryValidNSec = 0
 	globals.attrValidSec = 0
@@ -767,6 +782,7 @@ func uninitializeGlobals() {
 	globals.unleasedFileInodeCacheLRU = nil       // TODO: Obsolete this
 	globals.sharedLeaseFileInodeCacheLRU = nil    // TODO: Obsolete this
 	globals.exclusiveLeaseFileInodeCacheLRU = nil // TODO: Obsolete this
+	globals.fhToOpenRequestMap = nil
 	globals.fhToInodeNumberMap = nil
 	globals.inodeNumberToFHMap = nil
 	globals.lastFH = 0

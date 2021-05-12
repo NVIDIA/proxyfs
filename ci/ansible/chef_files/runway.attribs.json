@@ -29,7 +29,6 @@
   "swift_bench_repo": "git://github.com/openstack/swift-bench.git",
   "swift_bench_repo_branch": "master",
   "extra_key": "",
-  "source_root": "/home/swift/code/ProxyFS",
-  "use_swiftstack_packages": false,
-  "package_spec_path": "/home/swift/code/ProxyFS/src/github.com/swiftstack/ProxyFS/ci/ansible/chef_files/packages"
+  "source_root": "/home/swift/code/proxyfs",
+  "package_spec_path": "/home/swift/code/proxyfs/src/github.com/NVIDIA/proxyfs/ci/ansible/chef_files/packages"
 }

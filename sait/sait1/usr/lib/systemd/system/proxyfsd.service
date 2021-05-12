@@ -4,7 +4,7 @@ Description=Swift ProxyFS service
 [Service]
 Environment=GOTRACEBACK=crash
 LimitCORE=infinity
-ExecStart=/vagrant/bin/proxyfsd /vagrant/src/github.com/swiftstack/ProxyFS/sait/sait1/proxyfs.conf
+ExecStart=/vagrant/bin/proxyfsd /vagrant/src/github.com/NVIDIA/proxyfs/sait/sait1/proxyfs.conf
 ExecReload=/usr/bin/kill -HUP $MAINPID
 Restart=no
 KillMode=process

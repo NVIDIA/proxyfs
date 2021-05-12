@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/headhunter"
-	"github.com/swiftstack/ProxyFS/trackedlock"
+	"github.com/NVIDIA/proxyfs/headhunter"
+	"github.com/NVIDIA/proxyfs/trackedlock"
 )
 
 const (

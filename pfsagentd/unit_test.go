@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/jrpcfs"
+	"github.com/NVIDIA/proxyfs/jrpcfs"
 )
 
 const (

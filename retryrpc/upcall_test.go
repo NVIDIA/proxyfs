@@ -9,12 +9,17 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/swiftstack/ProxyFS/retryrpc/rpctest"
 )
 
 // Test Upcall() functionality
-func TestUpCall(t *testing.T) {
-	testUpCall(t)
+func TestTCPUpCall(t *testing.T) {
+	testTLSCerts = nil
+	testUpCall(t, false)
+}
+
+func TestTLSUpCall(t *testing.T) {
+	testTLSCertsAllocate(t)
+	testUpCall(t, true)
 }
 
 type MyClient struct {
@@ -32,18 +37,19 @@ func (cb *MyClient) Interrupt(payload []byte) {
 }
 
 // Test getting an upcallbasic Server creation and deletion
-func testUpCall(t *testing.T) {
-	var myUniqueClientID string = "my upcall client 1"
+func testUpCall(t *testing.T, useTLS bool) {
+	var (
+		clientConfig *ClientConfig
+	)
 
 	assert := assert.New(t)
 	zero := 0
 	assert.Equal(0, zero)
 
-	// Create new rpctest server - needed for calling
-	// RPCs
-	myJrpcfs := rpctest.NewServer()
+	// Create new TestPingServer - needed for calling RPCs
+	myJrpcfs := &TestPingServer{}
 
-	rrSvr, ipaddr, port := getNewServer(10*time.Second, false)
+	rrSvr := getNewServer(10*time.Second, false, useTLS)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -62,17 +68,33 @@ func testUpCall(t *testing.T) {
 	cb := &MyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
 
-	clientConfig := &ClientConfig{MyUniqueID: myUniqueClientID, IPAddr: ipaddr, Port: port,
-		RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM, Callbacks: cb,
-		DeadlineIO: 5 * time.Second}
+	if useTLS {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
+			Callbacks:                cb,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
+	} else {
+		clientConfig = &ClientConfig{
+			IPAddr:                   testIPAddr,
+			Port:                     testPort,
+			RootCAx509CertificatePEM: nil,
+			Callbacks:                cb,
+			DeadlineIO:               60 * time.Second,
+			KeepAlivePeriod:          60 * time.Second,
+		}
+	}
 	rrClnt, newErr := NewClient(clientConfig)
 	assert.NotNil(rrClnt)
 	assert.Nil(newErr)
 
 	// Send an RPC which should return success
-	pingRequest := &rpctest.PingReq{Message: "Ping Me!"}
-	pingReply := &rpctest.PingReply{}
-	sendErr := rrClnt.Send("RpcPing", pingRequest, pingReply)
+	pingRequest := &TestPingReq{Message: "Ping Me!"}
+	pingReply := &TestPingReply{}
+	sendErr := rrClnt.Send("RpcTestPing", pingRequest, pingReply)
 	assert.Nil(sendErr)
 	assert.Equal("pong 8 bytes", pingReply.Message)
 	assert.Equal(1, rrSvr.CompletedCnt())
@@ -80,7 +102,7 @@ func testUpCall(t *testing.T) {
 	// Send an upcall() from the server to the client and
 	// verify that client method is called.
 	var msg1 []byte = []byte("server msg back to client")
-	rrSvr.SendCallback(myUniqueClientID, msg1)
+	rrSvr.SendCallback(rrClnt.GetMyUniqueID(), msg1)
 
 	// Wait until Interrupt() was called
 	cb.Lock()
