@@ -143,7 +143,7 @@ retryGenerateMountID:
 		leasesExpired:    false,
 		authTokenExpired: false,
 		authToken:        mountRequest.AuthToken,
-		lastAuthTime:     time.Now(),
+		lastAuthTime:     startTime,
 	}
 
 	volume.mountMap[mountIDAsString] = mount
@@ -207,6 +207,7 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 		mount     *mountStruct
 		ok        bool
 		startTime time.Time
+		volume    *volumeStruct
 	)
 
 	startTime = time.Now()
@@ -220,13 +221,18 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 	mount, ok = globals.mountMap[fetchNonceRangeRequest.MountID]
 	if !ok {
 		globals.RUnlock()
-		err = fmt.Errorf("MountID not recognized")
+		err = fmt.Errorf("%s %s", EUnknownMountID, fetchNonceRangeRequest.MountID)
 		return
 	}
 
+	volume = mount.volume
+
+	volume.Lock()
+	globals.RUnlock()
+
 	fmt.Printf("TODO: Perform fetchNonceRange() for mountStruct @ %p\n", mount)
 
-	globals.RUnlock()
+	volume.Unlock()
 
 	return fmt.Errorf(ETODO + " fetchNonceRange")
 }
@@ -373,4 +379,32 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 	}
 
 	return fmt.Errorf(ETODO + " lease")
+}
+
+func (mount *mountStruct) authTokenHasExpired() (authTokenExpired bool) {
+	var (
+		err       error
+		startTime time.Time
+	)
+
+	if mount.authTokenExpired {
+		return true
+	}
+
+	startTime = time.Now()
+
+	if startTime.Sub(mount.lastAuthTime) < globals.config.AuthTokenCheckInterval {
+		return false
+	}
+
+	_, err = swiftObjectGet(mount.volume.storageURL, mount.authToken, ilayout.CheckPointObjectNumber)
+
+	globals.stats.AuthTokenCheckUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+
+	if nil == err {
+		mount.lastAuthTime = startTime
+		return false
+	} else {
+		return true
+	}
 }

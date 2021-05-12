@@ -36,6 +36,8 @@ type configStruct struct {
 
 	CheckPointInterval time.Duration
 
+	AuthTokenCheckInterval time.Duration
+
 	FetchNonceRangeToReturn uint64
 
 	MinLeaseDuration       time.Duration
@@ -98,6 +100,8 @@ type statsStruct struct {
 
 	VolumeCheckPointUsecs bucketstats.BucketLog2Round
 
+	AuthTokenCheckUsecs bucketstats.BucketLog2Round
+
 	SharedLeaseRequestUsecs    bucketstats.BucketLog2Round
 	PromoteLeaseRequestUsecs   bucketstats.BucketLog2Round
 	ExclusiveLeaseRequestUsecs bucketstats.BucketLog2Round
@@ -133,21 +137,27 @@ type mountStruct struct {
 	listElement      *list.Element // LRU element on either volumeStruct.{healthy|expired}MountList
 }
 
+type inodeTableLayoutElementStruct struct {
+	objectSize      uint64 // matches ilayout.InodeTableLayoutEntryV1Struct.ObjectSize
+	bytesReferenced uint64 // matches ilayout.InodeTableLayoutEntryV1Struct.BytesReferenced
+}
+
 type volumeStruct struct {
-	sync.RWMutex                                          // must globals.{R|}Lock() before volume.{R|}Lock()
-	name                      string                      //
-	storageURL                string                      //
-	mountMap                  map[string]*mountStruct     // key == mountStruct.mountID
-	healthyMountList          *list.List                  // LRU of mountStruct's with .{leases|authToken}Expired == false
-	leasesExpiredMountList    *list.List                  // list of mountStruct's with .leasesExpired == true (regardless of .authTokenExpired) value
-	authTokenExpiredMountList *list.List                  // list of mountStruct's with at .authTokenExpired == true (& .leasesExpired == false)
-	deleting                  bool                        //
-	checkPoint                *ilayout.CheckPointV1Struct // == nil if not currently mounted and/or checkpointing
-	superBlock                *ilayout.SuperBlockV1Struct // == nil if not currently mounted and/or checkpointing
-	inodeTable                sortedmap.BPlusTree         // == nil if not currently mounted and/or checkpointing
-	pendingObjectDeleteSet    map[uint64]struct{}         // key == objectNumber
-	checkPointControlChan     chan chan error             // send chan error to chan to request a CheckPoint; close it to terminate checkPointDaemon()
-	checkPointControlWG       sync.WaitGroup              // checkPointDeamon() indicates it is done by calling .Done() on this WG
+	sync.RWMutex                                                        // must globals.{R|}Lock() before volume.{R|}Lock()
+	name                      string                                    //
+	storageURL                string                                    //
+	mountMap                  map[string]*mountStruct                   // key == mountStruct.mountID
+	healthyMountList          *list.List                                // LRU of mountStruct's with .{leases|authToken}Expired == false
+	leasesExpiredMountList    *list.List                                // list of mountStruct's with .leasesExpired == true (regardless of .authTokenExpired) value
+	authTokenExpiredMountList *list.List                                // list of mountStruct's with at .authTokenExpired == true (& .leasesExpired == false)
+	deleting                  bool                                      //
+	checkPoint                *ilayout.CheckPointV1Struct               // == nil if not currently mounted and/or checkpointing
+	superBlock                *ilayout.SuperBlockV1Struct               // == nil if not currently mounted and/or checkpointing
+	inodeTable                sortedmap.BPlusTree                       // == nil if not currently mounted and/or checkpointing
+	inodeTableLayout          map[uint64]*inodeTableLayoutElementStruct // == nil if not currently mounted and/or checkpointing; key == objectNumber (matching ilayout.InodeTableLayoutEntryV1Struct.ObjectNumber)
+	pendingObjectDeleteSet    map[uint64]struct{}                       // key == objectNumber
+	checkPointControlChan     chan chan error                           // send chan error to chan to request a CheckPoint; close it to terminate checkPointDaemon()
+	checkPointControlWG       sync.WaitGroup                            // checkPointDeamon() indicates it is done by calling .Done() on this WG
 }
 
 type globalsStruct struct {
@@ -268,6 +278,11 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 
+	globals.config.AuthTokenCheckInterval, err = confMap.FetchOptionValueDuration("IMGR", "AuthTokenCheckInterval")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.FetchNonceRangeToReturn, err = confMap.FetchOptionValueUint64("IMGR", "FetchNonceRangeToReturn")
 	if nil != err {
 		logFatal(err)
@@ -371,6 +386,8 @@ func uninitializeGlobals() (err error) {
 	globals.config.RetryRPCKeyFilePath = ""
 
 	globals.config.CheckPointInterval = time.Duration(0)
+
+	globals.config.AuthTokenCheckInterval = time.Duration(0)
 
 	globals.config.FetchNonceRangeToReturn = 0
 
