@@ -731,6 +731,7 @@ func putVolume(name string, storageURL string) (err error) {
 		checkPoint:                nil,
 		superBlock:                nil,
 		inodeTable:                nil,
+		inodeTableLayout:          nil,
 		pendingObjectDeleteSet:    make(map[uint64]struct{}),
 		checkPointControlChan:     nil,
 	}

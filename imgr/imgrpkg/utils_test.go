@@ -136,6 +136,8 @@ func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 
 		"IMGR.CheckPointInterval=10s",
 
+		"IMGR.AuthTokenCheckInterval=1m",
+
 		"IMGR.FetchNonceRangeToReturn=100",
 
 		"IMGR.MinLeaseDuration=250ms",

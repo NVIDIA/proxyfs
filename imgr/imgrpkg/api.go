@@ -26,6 +26,8 @@
 //
 //  CheckPointInterval:                   10s
 //
+//  AuthTokenCheckInterval:               1m
+//
 //  FetchNonceRangeToReturn:              100
 //
 //  MinLeaseDuration:                     250ms
@@ -218,6 +220,8 @@ func (dummy *RetryRPCServerStruct) Unmount(unmountRequest *UnmountRequestStruct,
 }
 
 // FetchNonceRangeRequestStruct is the request object for FetchNonceRange.
+//
+// Possible errors: EAuthTokenRejected EUnknownMountID
 //
 type FetchNonceRangeRequestStruct struct {
 	MountID string
