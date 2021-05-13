@@ -1,5 +1,58 @@
 # ProxyFS Release Notes
 
+## 1.19.1 (May 13, 2021)
+
+### Bug Fixes:
+
+PFSAgent was getting a SIGSEGV on a DoSetAttr() operation when
+the inode's current stat() information had not been cached. The
+fix ensures that the current stat() information is in the cache
+(and, of course, coherent with the actual state of the inode).
+
+### Notes:
+
+As of 1.19.0, we should have indicated the impact to upgrading
+from prior releases... so doing that here now.
+
+While many .conf changes have occurred since 1.18.0, all are
+backwards compatible for ProxyFS itself. Unfortunately, in
+PFSAgent, an important change in the RetryRPC mechanism has
+been implemented. In 1.18.0, the way a PFSAgent instance would
+perform an RpcMount is to send this request to the Swift Proxy.
+The pfs_middleware in the Swift Proxy would determine which
+ProxyFS instance serves the Volume being mounted... and forward
+the RpcMount request there. The response to RpcMount would
+include two items:
+
+- IPAddr:Port# of RetryRPC TLS endpoint of the serving ProxyFS instance
+- RootCA PublicKey PEMBlock used to "sign" the ProxyFS instance's TLS Cert
+
+Release 1.19.0 moved to a new model where such certificates are
+computed "outside" of ProxyFS (though the new `icert` tool can
+be used to do so). As such, new configurations are available
+to tell ProxyFS what to use. These are:
+
+- [JSONRPCServer]RetryRPCCertFilePath
+- [JSONRPCServer]RetryRPCKeyFilePath
+
+Meanwhile, in PFSAgent, the RpcMount request needs to be sent *directly*
+to the serving ProxyFS instance. **Swift Proxy, by way of pfs_middleware,
+will no longer provide this discovery.** So to provide the following:
+
+- [Agent]RetryRPCPublicIPAddr
+- [Agent]RetryRPCPort
+- [Agent]RetryRPCCACertFilePath
+
+It is also now possible to operate without TLS protecting the RetryRPC
+transport. To opt for TCP, instead of TLS, for the RetryRPC transport,
+the ProxyFS configuration should either don't define `RetryRPCCertFilePath`
+nor `RetryRPCKeyFilePath` or define them as empty strings and RetryRPC will
+use TCP rather than TLS.
+
+If opting for TCP instead of TLS for the RetryRPC transport, the PFSAgent
+configuration should either not define RetryRPCCACertFilePath or define it
+as an empty string.
+
 ## 1.19.0 (May 12, 2021)
 
 ### Bug Fixes:
