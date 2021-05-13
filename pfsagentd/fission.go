@@ -540,6 +540,13 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 	fileInode.doFlushIfNecessary()
 
+	err = fileInode.ensureCachedStatPopulatedWhileLocked()
+	if nil != err {
+		fileInode.unlock(true)
+		errno = convertErrToErrno(err, syscall.EIO)
+		return
+	}
+
 	if settingMode {
 		errno = setMode(inHeader.NodeID, setAttrIn.Mode)
 		if 0 != errno {
