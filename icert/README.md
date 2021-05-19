@@ -48,7 +48,7 @@ A `-ttl` must be specified.
 Both `-caCert` and `-caKey` must be specified.
 
 If `-ca` is specified:
-* neither `-cert` nor `key` may be specified
+* neither `-cert` nor `-key` may be specified
 * neither `-dns` nor `-ip` may be specified
 
 If `-ca` is not specified:
