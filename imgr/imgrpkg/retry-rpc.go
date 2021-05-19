@@ -82,12 +82,10 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 		mountIDAsByteArray        []byte
 		mountIDAsString           string
 		ok                        bool
-		startTime                 time.Time
+		startTime                 time.Time = time.Now()
 		volume                    *volumeStruct
 		volumeAsValue             sortedmap.Value
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.MountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -179,11 +177,9 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 	var (
 		mount     *mountStruct
 		ok        bool
-		startTime time.Time
+		startTime time.Time = time.Now()
 		volume    *volumeStruct
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.RenewMountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -228,10 +224,8 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 
 func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountResponseStruct) (err error) {
 	var (
-		startTime time.Time
+		startTime time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.UnmountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -246,11 +240,9 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 		nonceUpdatedCheckPoint         *ilayout.CheckPointV1Struct
 		nonceUpdatedCheckPointAsString string
 		ok                             bool
-		startTime                      time.Time
+		startTime                      time.Time = time.Now()
 		volume                         *volumeStruct
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.FetchNonceRangeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -309,10 +301,8 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 
 func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryResponse *GetInodeTableEntryResponseStruct) (err error) {
 	var (
-		startTime time.Time
+		startTime time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.GetInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -323,10 +313,8 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 
 func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesResponse *PutInodeTableEntriesResponseStruct) (err error) {
 	var (
-		startTime time.Time
+		startTime time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.PutInodeTableEntriesUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -337,10 +325,8 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 
 func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *DeleteInodeTableEntryResponseStruct) (err error) {
 	var (
-		startTime time.Time
+		startTime time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.DeleteInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -351,10 +337,8 @@ func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRe
 
 func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct) (err error) {
 	var (
-		startTime time.Time
+		startTime time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.AdjustInodeTableEntryOpenCountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -368,11 +352,9 @@ func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct)
 		checkPointResponseChan chan error
 		mount                  *mountStruct
 		ok                     bool
-		startTime              time.Time
+		startTime              time.Time = time.Now()
 		volume                 *volumeStruct
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.FlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -411,10 +393,8 @@ func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct)
 
 func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct) (err error) {
 	var (
-		startTime time.Time
+		startTime time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.LeaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -454,14 +434,12 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 func (mount *mountStruct) authTokenHasExpired() (authTokenExpired bool) {
 	var (
 		err       error
-		startTime time.Time
+		startTime time.Time = time.Now()
 	)
 
 	if mount.authTokenExpired {
 		return true
 	}
-
-	startTime = time.Now()
 
 	if startTime.Sub(mount.lastAuthTime) < globals.config.AuthTokenCheckInterval {
 		return false
