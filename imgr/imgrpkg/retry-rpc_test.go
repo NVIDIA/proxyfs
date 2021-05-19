@@ -108,13 +108,6 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"Mount(,)\",,) failed: %v", err)
 	}
 
-	// TODO: Remove this early exit skipping of following TODOs
-
-	if nil == err {
-		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
-		return
-	}
-
 	// Perform a FetchNonceRange()
 
 	fetchNonceRangeRequest = &FetchNonceRangeRequestStruct{
@@ -125,6 +118,13 @@ func TestRetryRPC(t *testing.T) {
 	err = retryrpcClient.Send("FetchNonceRange", fetchNonceRangeRequest, fetchNonceRangeResponse)
 	if nil != err {
 		t.Fatalf("retryrpcClient.Send(\"FetchNonceRange()\",,) failed: %v", err)
+	}
+
+	// TODO: Remove this early exit skipping of following TODOs
+
+	if nil == err {
+		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
+		return
 	}
 
 	// Attempt a GetInodeTableEntry() for RootDirInode... which should fail (no Lease)

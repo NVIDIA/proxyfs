@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/NVIDIA/sortedmap"
@@ -241,10 +242,12 @@ func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountRespo
 
 func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeResponse *FetchNonceRangeResponseStruct) (err error) {
 	var (
-		mount     *mountStruct
-		ok        bool
-		startTime time.Time
-		volume    *volumeStruct
+		mount                          *mountStruct
+		nonceUpdatedCheckPoint         *ilayout.CheckPointV1Struct
+		nonceUpdatedCheckPointAsString string
+		ok                             bool
+		startTime                      time.Time
+		volume                         *volumeStruct
 	)
 
 	startTime = time.Now()
@@ -267,11 +270,41 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 	volume.Lock()
 	globals.RUnlock()
 
-	fmt.Printf("TODO: Perform fetchNonceRange() for mountStruct @ %p\n", mount)
+	if mount.authTokenHasExpired() {
+		volume.Unlock()
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
+		return
+	}
+
+	nonceUpdatedCheckPoint = &ilayout.CheckPointV1Struct{}
+	*nonceUpdatedCheckPoint = *volume.checkPoint
+
+	nonceUpdatedCheckPoint.ReservedToNonce += globals.config.FetchNonceRangeToReturn
+
+	fetchNonceRangeResponse.NextNonce = volume.checkPoint.ReservedToNonce + 1
+	fetchNonceRangeResponse.NumNoncesFetched = globals.config.FetchNonceRangeToReturn
+
+	nonceUpdatedCheckPointAsString, err = nonceUpdatedCheckPoint.MarshalCheckPointV1()
+	if nil != err {
+		logFatalf("nonceUpdatedCheckPoint.MarshalCheckPointV1() failed: %v", err)
+	}
+
+	err = swiftObjectPut(volume.storageURL, mount.authToken, ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString))
+	if nil == err {
+		if mount.leasesExpired {
+			volume.leasesExpiredMountList.MoveToBack(mount.listElement)
+		} else {
+			volume.healthyMountList.MoveToBack(mount.listElement)
+		}
+
+		volume.checkPoint = nonceUpdatedCheckPoint
+	} else {
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
+	}
 
 	volume.Unlock()
 
-	return fmt.Errorf(ETODO + " fetchNonceRange")
+	return
 }
 
 func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryResponse *GetInodeTableEntryResponseStruct) (err error) {
