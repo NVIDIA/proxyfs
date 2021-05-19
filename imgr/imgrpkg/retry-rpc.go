@@ -176,7 +176,10 @@ retryGenerateMountID:
 
 func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *RenewMountResponseStruct) (err error) {
 	var (
+		mount     *mountStruct
+		ok        bool
 		startTime time.Time
+		volume    *volumeStruct
 	)
 
 	startTime = time.Now()
@@ -185,7 +188,41 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 		globals.stats.RenewMountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf(ETODO + " renewMount")
+	globals.RLock()
+
+	mount, ok = globals.mountMap[renewMountRequest.MountID]
+	if !ok {
+		globals.RUnlock()
+		err = fmt.Errorf("%s %s", EUnknownMountID, renewMountRequest.MountID)
+		return
+	}
+
+	volume = mount.volume
+
+	volume.Lock()
+	globals.RUnlock()
+
+	mount.authToken = renewMountRequest.AuthToken
+
+	_, err = swiftObjectGet(mount.volume.storageURL, mount.authToken, ilayout.CheckPointObjectNumber)
+	if nil == err {
+		if mount.leasesExpired {
+			volume.leasesExpiredMountList.MoveToBack(mount.listElement)
+		} else {
+			if mount.authTokenExpired {
+				_ = volume.authTokenExpiredMountList.Remove(mount.listElement)
+				mount.listElement = volume.healthyMountList.PushBack(mount)
+			} else {
+				volume.healthyMountList.MoveToBack(mount.listElement)
+			}
+		}
+	} else {
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, renewMountRequest.AuthToken)
+	}
+
+	volume.Unlock()
+
+	return
 }
 
 func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountResponseStruct) (err error) {
