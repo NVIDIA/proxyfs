@@ -134,7 +134,7 @@ type mountStruct struct {
 	authTokenExpired bool          // if true, authToken has been rejected... needing a renewMount() to update
 	authToken        string        //
 	lastAuthTime     time.Time     // used to periodically check TTL of authToken
-	listElement      *list.Element // LRU element on either volumeStruct.{healthy|expired}MountList
+	listElement      *list.Element // LRU element on either volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList
 }
 
 type inodeTableLayoutElementStruct struct {
