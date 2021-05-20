@@ -87,14 +87,14 @@ func deleteVolume(volumeName string) (err error) {
 
 	volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
 	if !ok {
-		logFatalf("[IMGR]globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
+		logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
 	}
 
 	// The following is only temporary...
 	// TODO: Actually gracefully unmount clients, block new mounts, and lazily remove it
 
 	if 0 != len(volumeAsStruct.mountMap) {
-		logFatalf("[IMGR]No support for deleting actively mounted volume \"%s\"", volumeName)
+		logFatalf("No support for deleting actively mounted volume \"%s\"", volumeName)
 	}
 
 	ok, err = globals.volumeMap.DeleteByKey(volumeAsStruct.name)
@@ -102,7 +102,7 @@ func deleteVolume(volumeName string) (err error) {
 		logFatal(err)
 	}
 	if !ok {
-		logFatalf("[IMGR]globals.volumeMap[\"%s\"] suddenly missing", volumeAsStruct.name)
+		logFatalf("globals.volumeMap[\"%s\"] suddenly missing", volumeAsStruct.name)
 	}
 
 	globals.Unlock()
@@ -141,7 +141,7 @@ func getVolumeAsJSON(volumeName string) (volume []byte, err error) {
 
 	volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
 	if !ok {
-		logFatalf("[IMGR]globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
+		logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
 	}
 
 	volumeAsStruct.RLock()
@@ -192,12 +192,12 @@ func getVolumeListAsJSON() (volumeList []byte) {
 			logFatal(err)
 		}
 		if !ok {
-			logFatalf("[IMGR]globals.volumeMap[] len (%d) is wrong", volumeListLen)
+			logFatalf("globals.volumeMap[] len (%d) is wrong", volumeListLen)
 		}
 
 		volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
 		if !ok {
-			logFatalf("[IMGR]globals.volumeMap[%d] was not a *volumeStruct", volumeListIndex)
+			logFatalf("globals.volumeMap[%d] was not a *volumeStruct", volumeListIndex)
 		}
 
 		volumeAsStruct.RLock()
@@ -806,6 +806,168 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 	globals.stats.VolumeCheckPointUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 
 	volume.Unlock()
+
+	return
+}
+
+func (volume *volumeStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+	var (
+		keyAsInodeNumber uint64
+		ok               bool
+	)
+
+	keyAsInodeNumber, ok = key.(uint64)
+	if !ok {
+		err = fmt.Errorf("key.(uint64) returned !ok")
+		return
+	}
+
+	keyAsString = fmt.Sprintf("%016X", keyAsInodeNumber)
+
+	err = nil
+	return
+}
+
+func (volume *volumeStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+	var (
+		ok                          bool
+		valueAsInodeTableEntryValue *ilayout.InodeTableEntryValueV1Struct
+	)
+
+	valueAsInodeTableEntryValue, ok = value.(*ilayout.InodeTableEntryValueV1Struct)
+	if !ok {
+		err = fmt.Errorf("value.(*ilayout.InodeTableEntryValueV1Struct) returned !ok")
+		return
+	}
+
+	valueAsString = fmt.Sprintf("[%016X %016X]", valueAsInodeTableEntryValue.InodeHeadObjectNumber, valueAsInodeTableEntryValue.InodeHeadLength)
+
+	err = nil
+	return
+}
+
+func (volume *volumeStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	var (
+		mount            *mountStruct
+		mountListElement *list.Element
+		ok               bool
+	)
+
+NextHealthyMount:
+
+	mountListElement = volume.healthyMountList.Front()
+	if nil == mountListElement {
+		err = fmt.Errorf("no healthy mounts available [case 1]")
+		return
+	}
+
+	mount, ok = mountListElement.Value.(*mountStruct)
+	if !ok {
+		logFatalf("mountListElement.Value.(*mountStruct) returned !ok [case 1]")
+	}
+
+	volume.healthyMountList.MoveToBack(mountListElement)
+
+	nodeByteSlice, err = swiftObjectGetRange(volume.storageURL, mount.authToken, objectNumber, objectOffset, objectLength)
+	if nil == err {
+		volume.healthyMountList.MoveToBack(mountListElement)
+
+		return // nil err from swiftObjectGetRange() is used
+	}
+
+	// Assume that the failure was due to AuthToken expiration
+
+	_ = volume.healthyMountList.Remove(mount.listElement)
+
+	mount.authTokenExpired = true
+
+	mount.listElement = volume.authTokenExpiredMountList.PushBack(mount)
+
+	goto NextHealthyMount
+}
+
+func (volume *volumeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+	err = fmt.Errorf("%s %s", ETODO, "PutNode()")
+	return
+}
+
+func (volume *volumeStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+	err = fmt.Errorf("%s %s", ETODO, "DiscardNode()")
+	return
+}
+
+func (volume *volumeStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
+	var (
+		keyAsUint64 uint64
+		nextPos     int
+		ok          bool
+	)
+
+	keyAsUint64, ok = key.(uint64)
+	if !ok {
+		err = fmt.Errorf("(*volumeStruct).PackKey(key:%v) called with non-uint64", key)
+		return
+	}
+
+	packedKey = make([]byte, 8)
+
+	nextPos, err = ilayout.PutLEUint64ToBuf(packedKey, 0, keyAsUint64)
+	if nil != err {
+		return
+	}
+
+	if len(packedKey) != nextPos {
+		err = fmt.Errorf("(*volumeStruct).PackKey(key:%016X) logic error", keyAsUint64)
+		return
+	}
+
+	err = nil
+	return
+}
+
+func (volume *volumeStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
+	var (
+		nextPos int
+	)
+
+	key, nextPos, err = ilayout.GetLEUint64FromBuf(payloadData, 0)
+	if (nil == err) && (nextPos != 8) {
+		err = fmt.Errorf("ilayout.GetLEUint64FromBuf(payloadData, 0) consumed %v bytes (8 expected)", nextPos)
+	}
+
+	bytesConsumed = 8
+
+	return
+}
+
+func (volume *volumeStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
+	var (
+		ok                            bool
+		valueAsInodeTableEntryValueV1 ilayout.InodeTableEntryValueV1Struct
+	)
+
+	valueAsInodeTableEntryValueV1, ok = value.(ilayout.InodeTableEntryValueV1Struct)
+	if !ok {
+		err = fmt.Errorf("(*volumeStruct).PackValue(value:%v) called with non-InodeTableEntryValueV1Struct", value)
+		return
+	}
+
+	packedValue, err = valueAsInodeTableEntryValueV1.MarshalInodeTableEntryValueV1()
+
+	return
+}
+
+func (volume *volumeStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
+	var (
+		bytesConsumedAsInt int
+	)
+
+	value, bytesConsumedAsInt, err = ilayout.UnmarshalInodeTableEntryValueV1(payloadData)
+	if (nil == err) && (bytesConsumedAsInt != 24) {
+		err = fmt.Errorf("ilayout.UnmarshalInodeTableEntryValueV1(payloadData) consumed %v bytes (24 expected)", bytesConsumedAsInt)
+	}
+
+	bytesConsumed = 24
 
 	return
 }

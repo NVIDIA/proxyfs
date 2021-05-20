@@ -248,8 +248,8 @@ func (inodeTableEntryValueV1 *InodeTableEntryValueV1Struct) MarshalInodeTableEnt
 
 // UnmarshalInodeTableEntryValueV1 decodes inodeTableEntryValueV1 from inodeTableEntryValueV1Buf.
 //
-func UnmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTableEntryValueV1 *InodeTableEntryValueV1Struct, err error) {
-	inodeTableEntryValueV1, err = unmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf)
+func UnmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTableEntryValueV1 *InodeTableEntryValueV1Struct, bytesConsumed int, err error) {
+	inodeTableEntryValueV1, bytesConsumed, err = unmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf)
 	return
 }
 
@@ -397,8 +397,8 @@ func (directoryEntryValueV1 *DirectoryEntryValueV1Struct) MarshalDirectoryEntryV
 
 // UnmarshalDirectoryEntryValueV1 decodes directoryEntryValueV1 from directoryEntryValueV1Buf.
 //
-func UnmarshalDirectoryEntryValueV1(directoryEntryValueV1Buf []byte) (directoryEntryValueV1 *DirectoryEntryValueV1Struct, err error) {
-	directoryEntryValueV1, err = unmarshalDirectoryEntryValueV1(directoryEntryValueV1Buf)
+func UnmarshalDirectoryEntryValueV1(directoryEntryValueV1Buf []byte) (directoryEntryValueV1 *DirectoryEntryValueV1Struct, bytesConsumed int, err error) {
+	directoryEntryValueV1, bytesConsumed, err = unmarshalDirectoryEntryValueV1(directoryEntryValueV1Buf)
 	return
 }
 
@@ -426,8 +426,8 @@ func (extentMapEntryValueV1 *ExtentMapEntryValueV1Struct) MarshalExtentMapEntryV
 
 // UnmarshalExtentMapEntryValueV1 decodes directoryEntryValueV1 from directoryEntryValueV1Buf.
 //
-func UnmarshalExtentMapEntryValueV1(extentMapEntryValueV1Buf []byte) (extentMapEntryValueV1 *ExtentMapEntryValueV1Struct, err error) {
-	extentMapEntryValueV1, err = unmarshalExtentMapEntryValueV1(extentMapEntryValueV1Buf)
+func UnmarshalExtentMapEntryValueV1(extentMapEntryValueV1Buf []byte) (extentMapEntryValueV1 *ExtentMapEntryValueV1Struct, bytesConsumed int, err error) {
+	extentMapEntryValueV1, bytesConsumed, err = unmarshalExtentMapEntryValueV1(extentMapEntryValueV1Buf)
 	return
 }
 
