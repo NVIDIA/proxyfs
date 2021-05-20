@@ -64,9 +64,11 @@ func TestAPI(t *testing.T) {
 			InodeHeadLength:       3,
 		}
 
-		marshaledInodeTableEntryValueV1        []byte
-		unmarshaledInodeTableEntryValueVersion uint64
-		unmarshaledInodeTableEntryValueV1      *InodeTableEntryValueV1Struct
+		marshaledInodeTableEntryValueV1                        []byte
+		unmarshaledInodeTableEntryValueVersion                 uint64
+		unmarshaledInodeTableEntryValueV1                      *InodeTableEntryValueV1Struct
+		unmarshaledInodeTableEntryValueV1BytesConsumed         int
+		unmarshaledInodeTableEntryValueV1BytesConsumedExpected = int(8 + 8 + 8)
 
 		testStartTime = time.Now().Truncate(time.Second)
 
@@ -131,8 +133,10 @@ func TestAPI(t *testing.T) {
 			InodeType:   2,
 		}
 
-		marshaledDirectoryEntryValueV1   []byte
-		unmarshaledDirectoryEntryValueV1 *DirectoryEntryValueV1Struct
+		marshaledDirectoryEntryValueV1                        []byte
+		unmarshaledDirectoryEntryValueV1                      *DirectoryEntryValueV1Struct
+		unmarshaledDirectoryEntryValueV1BytesConsumed         int
+		unmarshaledDirectoryEntryValueV1BytesConsumedExpected = int(8 + 1)
 
 		testExtentMapEntryValueV1 = &ExtentMapEntryValueV1Struct{
 			FileOffset:   1,
@@ -141,8 +145,10 @@ func TestAPI(t *testing.T) {
 			ObjectOffset: 4,
 		}
 
-		marshaledExtentMapEntryValueV1   []byte
-		unmarshaledExtentMapEntryValueV1 *ExtentMapEntryValueV1Struct
+		marshaledExtentMapEntryValueV1                        []byte
+		unmarshaledExtentMapEntryValueV1                      *ExtentMapEntryValueV1Struct
+		unmarshaledExtentMapEntryValueV1BytesConsumed         int
+		unmarshaledExtentMapEntryValueV1BytesConsumedExpected = int(8 + 8 + 8 + 8)
 	)
 
 	marshaledCheckPointV1, err = testCheckPointV1.MarshalCheckPointV1()
@@ -215,13 +221,16 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Bad unmarshaledInodeTableEntryValueVersion (%016X) - expected InodeTableEntryValueVersionV1 (%016X)", unmarshaledInodeTableEntryValueVersion, InodeTableEntryValueVersionV1)
 	}
 
-	unmarshaledInodeTableEntryValueV1, err = UnmarshalInodeTableEntryValueV1(marshaledInodeTableEntryValueV1)
+	unmarshaledInodeTableEntryValueV1, unmarshaledInodeTableEntryValueV1BytesConsumed, err = UnmarshalInodeTableEntryValueV1(marshaledInodeTableEntryValueV1)
 	if nil != err {
 		t.Fatal(err)
 	}
 	if (testInodeTableEntryValueV1.InodeHeadObjectNumber != unmarshaledInodeTableEntryValueV1.InodeHeadObjectNumber) ||
 		(testInodeTableEntryValueV1.InodeHeadLength != unmarshaledInodeTableEntryValueV1.InodeHeadLength) {
 		t.Fatalf("Bad unmarshaledInodeTableEntryValueV1 (%+v) - expected testInodeTableEntryValueV1 (%+v)", unmarshaledInodeTableEntryValueV1, testInodeTableEntryValueV1)
+	}
+	if unmarshaledInodeTableEntryValueV1BytesConsumed != unmarshaledInodeTableEntryValueV1BytesConsumedExpected {
+		t.Fatalf("Bad unmarshaledInodeTableEntryValueV1BytesConsumed (%v) - expected %v", unmarshaledInodeTableEntryValueV1BytesConsumed, unmarshaledInodeTableEntryValueV1BytesConsumedExpected)
 	}
 
 	marshaledInodeHeadV1, err = testInodeHeadV1.MarshalInodeHeadV1()
@@ -274,12 +283,15 @@ func TestAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unmarshaledDirectoryEntryValueV1, err = UnmarshalDirectoryEntryValueV1(marshaledDirectoryEntryValueV1)
+	unmarshaledDirectoryEntryValueV1, unmarshaledDirectoryEntryValueV1BytesConsumed, err = UnmarshalDirectoryEntryValueV1(marshaledDirectoryEntryValueV1)
 	if nil != err {
 		t.Fatal(err)
 	}
 	if *testDirectoryEntryValueV1 != *unmarshaledDirectoryEntryValueV1 {
 		t.Fatalf("Bad unmarshaledDirectoryEntryValueV1 (%+v) - expected testDirectoryEntryValueV1 (%+v)", unmarshaledDirectoryEntryValueV1, testDirectoryEntryValueV1)
+	}
+	if unmarshaledDirectoryEntryValueV1BytesConsumed != unmarshaledDirectoryEntryValueV1BytesConsumedExpected {
+		t.Fatalf("Bad unmarshaledDirectoryEntryValueV1BytesConsumed (%v) - expected %v", unmarshaledDirectoryEntryValueV1BytesConsumed, unmarshaledDirectoryEntryValueV1BytesConsumedExpected)
 	}
 
 	marshaledExtentMapEntryValueV1, err = testExtentMapEntryValueV1.MarshalExtentMapEntryValueV1()
@@ -287,11 +299,14 @@ func TestAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unmarshaledExtentMapEntryValueV1, err = UnmarshalExtentMapEntryValueV1(marshaledExtentMapEntryValueV1)
+	unmarshaledExtentMapEntryValueV1, unmarshaledExtentMapEntryValueV1BytesConsumed, err = UnmarshalExtentMapEntryValueV1(marshaledExtentMapEntryValueV1)
 	if nil != err {
 		t.Fatal(err)
 	}
 	if *testExtentMapEntryValueV1 != *unmarshaledExtentMapEntryValueV1 {
 		t.Fatalf("Bad unmarshaledExtentMapEntryValueV1 (%+v) - expected testExtentMapEntryValueV1 (%+v)", unmarshaledExtentMapEntryValueV1, testExtentMapEntryValueV1)
+	}
+	if unmarshaledExtentMapEntryValueV1BytesConsumed != unmarshaledExtentMapEntryValueV1BytesConsumedExpected {
+		t.Fatalf("Bad unmarshaledExtentMapEntryValueV1BytesConsumed (%v) - expected %v", unmarshaledExtentMapEntryValueV1BytesConsumed, unmarshaledExtentMapEntryValueV1BytesConsumedExpected)
 	}
 }

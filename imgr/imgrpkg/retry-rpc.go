@@ -75,6 +75,8 @@ func stopRetryRPCServer() (err error) {
 func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountResponse *MountResponseStruct) (err error) {
 	var (
 		alreadyInGlobalsMountMap  bool
+		inodeTableEntryInMemory   *inodeTableLayoutElementStruct
+		inodeTableEntryOnDisk     ilayout.InodeTableLayoutEntryV1Struct
 		lastCheckPoint            *ilayout.CheckPointV1Struct
 		lastCheckPointAsByteSlice []byte
 		lastCheckPointAsString    string
@@ -83,6 +85,7 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 		mountIDAsString           string
 		ok                        bool
 		startTime                 time.Time = time.Now()
+		superBlockAsByteSlice     []byte
 		volume                    *volumeStruct
 		volumeAsValue             sortedmap.Value
 	)
@@ -159,6 +162,32 @@ retryGenerateMountID:
 		}
 
 		volume.checkPoint = lastCheckPoint
+
+		superBlockAsByteSlice, err = swiftObjectGetTail(volume.storageURL, mountRequest.AuthToken, volume.checkPoint.SuperBlockObjectNumber, volume.checkPoint.SuperBlockLength)
+		if nil != err {
+			logFatalf("swiftObjectGetTail(volume.storageURL, mountRequest.AuthToken, volume.checkPoint.SuperBlockObjectNumber, volume.checkPoint.SuperBlockLength) failed: %v", err)
+		}
+
+		volume.superBlock, err = ilayout.UnmarshalSuperBlockV1(superBlockAsByteSlice)
+		if nil != err {
+			logFatalf("ilayout.UnmarshalSuperBlockV1(superBlockAsByteSlice) failed: %v", err)
+		}
+
+		volume.inodeTable, err = sortedmap.OldBPlusTree(volume.superBlock.InodeTableRootObjectNumber, volume.superBlock.InodeTableRootObjectOffset, volume.superBlock.InodeTableRootObjectLength, sortedmap.CompareUint64, volume, globals.inodeTableCache)
+		if nil != err {
+			logFatalf("sortedmap.OldBPlusTree(volume.superBlock.InodeTableRootObjectNumber, volume.superBlock.InodeTableRootObjectOffset, volume.superBlock.InodeTableRootObjectLength, sortedmap.CompareUint64, volume, globals.inodeTableCache) failed: %v", err)
+		}
+
+		volume.inodeTableLayout = make(map[uint64]*inodeTableLayoutElementStruct)
+
+		for _, inodeTableEntryOnDisk = range volume.superBlock.InodeTableLayout {
+			inodeTableEntryInMemory = &inodeTableLayoutElementStruct{
+				objectSize:      inodeTableEntryOnDisk.ObjectSize,
+				bytesReferenced: inodeTableEntryOnDisk.BytesReferenced,
+			}
+
+			volume.inodeTableLayout[inodeTableEntryOnDisk.ObjectNumber] = inodeTableEntryInMemory
+		}
 
 		volume.checkPointControlChan = make(chan chan error)
 
@@ -304,14 +333,68 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 
 func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryResponse *GetInodeTableEntryResponseStruct) (err error) {
 	var (
-		startTime time.Time = time.Now()
+		inodeTableEntryValue    *ilayout.InodeTableEntryValueV1Struct
+		inodeTableEntryValueRaw sortedmap.Value
+		leaseRequest            *leaseRequestStruct
+		mount                   *mountStruct
+		ok                      bool
+		startTime               time.Time = time.Now()
+		volume                  *volumeStruct
 	)
 
 	defer func() {
 		globals.stats.GetInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf(ETODO + " getInodeTableEntry")
+	globals.RLock()
+
+	mount, ok = globals.mountMap[getInodeTableEntryRequest.MountID]
+	if !ok {
+		globals.RUnlock()
+		err = fmt.Errorf("%s %s", EUnknownMountID, getInodeTableEntryRequest.MountID)
+		return
+	}
+
+	volume = mount.volume
+
+	volume.Lock()
+	globals.RUnlock()
+
+	if mount.authTokenHasExpired() {
+		volume.Unlock()
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
+		return
+	}
+
+	leaseRequest, ok = mount.leaseRequestMap[getInodeTableEntryRequest.InodeNumber]
+	if !ok || ((leaseRequestStateSharedGranted != leaseRequest.requestState) && (leaseRequestStateExclusiveGranted != leaseRequest.requestState)) {
+		volume.Unlock()
+		err = fmt.Errorf("%s %016X", EMissingLease, getInodeTableEntryRequest.InodeNumber)
+		return
+	}
+
+	inodeTableEntryValueRaw, ok, err = volume.inodeTable.GetByKey(getInodeTableEntryRequest.InodeNumber)
+	if nil != err {
+		logFatalf("volume.inodeTable.GetByKey(getInodeTableEntryRequest.InodeNumber) failed: %v", err)
+	}
+	if !ok {
+		volume.Unlock()
+		err = fmt.Errorf("%s %016X", EUnknownInodeNumber, getInodeTableEntryRequest.InodeNumber)
+		return
+	}
+
+	inodeTableEntryValue, ok = inodeTableEntryValueRaw.(*ilayout.InodeTableEntryValueV1Struct)
+	if !ok {
+		logFatalf("inodeTableEntryValueRaw.(*ilayout.InodeTableEntryValueV1Struct) returned !ok")
+	}
+
+	getInodeTableEntryResponse.InodeHeadObjectNumber = inodeTableEntryValue.InodeHeadObjectNumber
+	getInodeTableEntryResponse.InodeHeadLength = inodeTableEntryValue.InodeHeadLength
+
+	volume.Unlock()
+
+	err = nil
+	return
 }
 
 func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesResponse *PutInodeTableEntriesResponseStruct) (err error) {

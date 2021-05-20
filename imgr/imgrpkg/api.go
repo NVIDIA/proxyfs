@@ -153,7 +153,9 @@ func LogInfof(format string, args ...interface{}) {
 const (
 	EAuthTokenRejected  = "EAuthTokenRejected:"
 	ELeaseRequestDenied = "ELeaseRequestDenied:"
+	EMissingLease       = "EMissingLease:"
 	EVolumeBeingDeleted = "EVolumeBeingDeleted:"
+	EUnknownInodeNumber = "EUnknownInodeNumber:"
 	EUnknownMountID     = "EUnknownMountID:"
 	EUnknownVolumeName  = "EUnknownVolumeName:"
 
@@ -252,7 +254,8 @@ type GetInodeTableEntryRequestStruct struct {
 // GetInodeTableEntryResponseStruct is the response object for GetInodeTableEntry.
 //
 type GetInodeTableEntryResponseStruct struct {
-	// TODO
+	InodeHeadObjectNumber uint64
+	InodeHeadLength       uint64
 }
 
 // GetInodeTableEntry requests the Inode information for the specified Inode
