@@ -126,15 +126,90 @@ const (
 	mountIDByteArrayLen = 15 // actual mountID will be Base64-encoded form
 )
 
+type leaseRequestOperationStruct struct {
+	mount      *mountStruct
+	inodeLease *inodeLeaseStruct
+	LeaseRequestType
+	replyChan chan LeaseResponseType
+}
+
+type leaseRequestStateType uint32
+
+const (
+	leaseRequestStateNone leaseRequestStateType = iota
+	leaseRequestStateSharedRequested
+	leaseRequestStateSharedGranted
+	leaseRequestStateSharedPromoting
+	leaseRequestStateSharedReleasing
+	leaseRequestStateExclusiveRequested
+	leaseRequestStateExclusiveGranted
+	leaseRequestStateExclusiveDemoting
+	leaseRequestStateExclusiveReleasing
+)
+
+type leaseRequestStruct struct {
+	mount        *mountStruct
+	inodeLease   *inodeLeaseStruct
+	requestState leaseRequestStateType
+	replyChan    chan LeaseResponseType // copied from leaseRequestOperationStruct.replyChan for LeaseRequestType == LeaseRequestType{Shared|Promote|Exclusive}
+	listElement  *list.Element          // used when on one of inodeList.*List's
+}
+
+type inodeLeaseStateType uint32
+
+const (
+	inodeLeaseStateNone inodeLeaseStateType = iota
+	inodeLeaseStateSharedGrantedRecently
+	inodeLeaseStateSharedGrantedLongAgo
+	inodeLeaseStateSharedPromoting
+	inodeLeaseStateSharedReleasing
+	inodeLeaseStateSharedExpired
+	inodeLeaseStateExclusiveGrantedRecently
+	inodeLeaseStateExclusiveGrantedLongAgo
+	inodeLeaseStateExclusiveDemoting
+	inodeLeaseStateExclusiveReleasing
+	inodeLeaseStateExclusiveExpired
+)
+
+type inodeLeaseStruct struct {
+	volume      *volumeStruct
+	inodeNumber uint64
+	lruElement  *list.Element // link into volumeStruct.inodeLeaseLRU
+	leaseState  inodeLeaseStateType
+
+	requestChan chan *leaseRequestOperationStruct
+	stopChan    chan struct{} // closing this chan will trigger *inodeLeaseStruct.handler() to:
+	//                             revoke/reject all leaseRequestStruct's in *Holder* & requestedList
+	//                             issue volume.leaseHandlerWG.Done()
+	//                             and exit
+
+	sharedHoldersList    *list.List          // each list.Element.Value.(*leaseRequestStruct).requestState == leaseRequestStateSharedGranted
+	promotingHolder      *leaseRequestStruct // leaseRequest.requestState == leaseRequestStateSharedPromoting
+	exclusiveHolder      *leaseRequestStruct // leaseRequest.requestState == leaseRequestStateExclusiveGranted
+	demotingHolder       *leaseRequestStruct // leaseRequest.requestState == leaseRequestStateExclusiveDemoting
+	releasingHoldersList *list.List          // each list.Element.Value.(*leaseRequestStruct).requestState == leaseRequestState{Shared|Exclusive}Releasing
+	requestedList        *list.List          // each list.Element.Value.(*leaseRequestStruct).requestState == leaseRequestState{Shared|Exclusive}Requested
+
+	lastGrantTime     time.Time // records the time at which the last exclusive or shared holder was set/added-to exclusiveHolder/sharedHoldersList
+	lastInterruptTime time.Time // records the time at which the last Interrupt was sent
+	interruptsSent    uint32
+
+	longAgoTimer   *time.Timer // if .C != nil, timing when to state transition from {Shared|Exclusive}LeaseGrantedRecently to {Shared|Exclusive}LeaseGrantedLogAgo
+	interruptTimer *time.Timer // if .C != nil, timing when to issue next Interrupt... or expire a Lease
+}
+
 type mountStruct struct {
-	//                                reentrancy covered by volumeStruct's sync.RWMutex
-	volume           *volumeStruct // volume.{R|}Lock() also protects each mountStruct
-	mountID          string        //
-	leasesExpired    bool          // if true, leases are being expired prior to auto-deletion of mountStruct
-	authTokenExpired bool          // if true, authToken has been rejected... needing a renewMount() to update
-	authToken        string        //
-	lastAuthTime     time.Time     // used to periodically check TTL of authToken
-	listElement      *list.Element // LRU element on either volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList
+	//                                                       reentrancy covered by volumeStruct's sync.RWMutex
+	volume                 *volumeStruct                  // volume.{R|}Lock() also protects each mountStruct
+	mountID                string                         //
+	retryRPCClientID       uint64                         //
+	acceptingLeaseRequests bool                           //
+	leaseRequestMap        map[uint64]*leaseRequestStruct // key == leaseRequestStruct.inodeLease.inodeNumber
+	leasesExpired          bool                           // if true, leases are being expired prior to auto-deletion of mountStruct
+	authTokenExpired       bool                           // if true, authToken has been rejected... needing a renewMount() to update
+	authToken              string                         //
+	lastAuthTime           time.Time                      // used to periodically check TTL of authToken
+	listElement            *list.Element                  // LRU element on either volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList
 }
 
 type inodeTableLayoutElementStruct struct {
@@ -158,6 +233,10 @@ type volumeStruct struct {
 	pendingObjectDeleteSet    map[uint64]struct{}                       // key == objectNumber
 	checkPointControlChan     chan chan error                           // send chan error to chan to request a CheckPoint; close it to terminate checkPointDaemon()
 	checkPointControlWG       sync.WaitGroup                            // checkPointDeamon() indicates it is done by calling .Done() on this WG
+	inodeLeaseMap             map[uint64]*inodeLeaseStruct              // key == inodeLeaseStruct.inodeNumber
+	inodeLeaseLRU             *list.List                                // .Front() is the LRU inodeLeaseStruct.listElement
+	leaseHandlerWG            sync.WaitGroup                            // .Add(1) each inodeLease insertion into inodeLeaseMap
+	//                                                                     .Done() each inodeLease after it is removed from inodeLeaseMap
 }
 
 type globalsStruct struct {

@@ -4,6 +4,7 @@
 package imgrpkg
 
 import (
+	"container/list"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/NVIDIA/sortedmap"
 
-	"github.com/NVIDIA/proxyfs/blunder"
 	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/proxyfs/retryrpc"
 	"github.com/NVIDIA/proxyfs/utils"
@@ -137,12 +137,15 @@ retryGenerateMountID:
 	}
 
 	mount = &mountStruct{
-		volume:           volume,
-		mountID:          mountIDAsString,
-		leasesExpired:    false,
-		authTokenExpired: false,
-		authToken:        mountRequest.AuthToken,
-		lastAuthTime:     startTime,
+		volume:                 volume,
+		mountID:                mountIDAsString,
+		retryRPCClientID:       retryRPCClientID,
+		acceptingLeaseRequests: true,
+		leaseRequestMap:        make(map[uint64]*leaseRequestStruct),
+		leasesExpired:          false,
+		authTokenExpired:       false,
+		authToken:              mountRequest.AuthToken,
+		lastAuthTime:           startTime,
 	}
 
 	volume.mountMap[mountIDAsString] = mount
@@ -376,6 +379,12 @@ func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct)
 	volume.RLock()
 	globals.RUnlock()
 
+	if mount.authTokenHasExpired() {
+		volume.RUnlock()
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
+		return
+	}
+
 	if nil == volume.checkPointControlChan {
 		volume.RUnlock()
 		err = nil
@@ -393,7 +402,12 @@ func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct)
 
 func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct) (err error) {
 	var (
-		startTime time.Time = time.Now()
+		inodeLease            *inodeLeaseStruct
+		leaseRequestOperation *leaseRequestOperationStruct
+		mount                 *mountStruct
+		ok                    bool
+		startTime             time.Time = time.Now()
+		volume                *volumeStruct
 	)
 
 	defer func() {
@@ -423,12 +437,91 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 		}()
 	default:
 		leaseResponse.LeaseResponseType = LeaseResponseTypeDenied
-		err = fmt.Errorf("LeaseRequestType %v not supported", leaseRequest.LeaseRequestType)
-		err = blunder.AddError(err, blunder.BadLeaseRequest)
+		err = fmt.Errorf("%s LeaseRequestType %v not supported", ELeaseRequestDenied, leaseRequest.LeaseRequestType)
 		return
 	}
 
-	return fmt.Errorf(ETODO + " lease")
+	globals.RLock()
+
+	mount, ok = globals.mountMap[leaseRequest.MountID]
+	if !ok {
+		globals.RUnlock()
+		err = fmt.Errorf("%s %s", EUnknownMountID, leaseRequest.MountID)
+		return
+	}
+
+	volume = mount.volume
+
+	volume.Lock()
+	globals.RUnlock()
+
+	if mount.authTokenHasExpired() {
+		volume.Unlock()
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
+		return
+	}
+
+	if (leaseRequest.LeaseRequestType == LeaseRequestTypeShared) || (leaseRequest.LeaseRequestType == LeaseRequestTypeExclusive) {
+		if !mount.acceptingLeaseRequests {
+			volume.Unlock()
+			leaseResponse.LeaseResponseType = LeaseResponseTypeDenied
+			err = fmt.Errorf("%s LeaseRequestType %v not currently being accepted", ELeaseRequestDenied, leaseRequest.LeaseRequestType)
+			return
+		}
+		inodeLease, ok = volume.inodeLeaseMap[leaseRequest.InodeNumber]
+		if !ok {
+			inodeLease = &inodeLeaseStruct{
+				volume:               volume,
+				inodeNumber:          leaseRequest.InodeNumber,
+				leaseState:           inodeLeaseStateNone,
+				requestChan:          make(chan *leaseRequestOperationStruct),
+				stopChan:             make(chan struct{}),
+				sharedHoldersList:    list.New(),
+				promotingHolder:      nil,
+				exclusiveHolder:      nil,
+				releasingHoldersList: list.New(),
+				requestedList:        list.New(),
+				lastGrantTime:        time.Time{},
+				lastInterruptTime:    time.Time{},
+				interruptsSent:       0,
+				longAgoTimer:         &time.Timer{},
+				interruptTimer:       &time.Timer{},
+			}
+
+			volume.inodeLeaseMap[leaseRequest.InodeNumber] = inodeLease
+			inodeLease.lruElement = volume.inodeLeaseLRU.PushBack(inodeLease)
+
+			volume.leaseHandlerWG.Add(1)
+			go inodeLease.handler()
+		}
+	} else { // in.LeaseRequestType is one of LeaseRequestType{Promote|Demote|Release}
+		inodeLease, ok = volume.inodeLeaseMap[leaseRequest.InodeNumber]
+		if !ok {
+			volume.Unlock()
+			leaseResponse.LeaseResponseType = LeaseResponseTypeDenied
+			err = fmt.Errorf("%s LeaseRequestType %v not allowed for non-existent Lease", ELeaseRequestDenied, leaseRequest.LeaseRequestType)
+			return
+		}
+	}
+
+	// Send Lease Request Operation to *inodeLeaseStruct.handler()
+	//
+	// Note that we still hold the volumesLock, so inodeLease can't disappear out from under us
+
+	leaseRequestOperation = &leaseRequestOperationStruct{
+		mount:            mount,
+		inodeLease:       inodeLease,
+		LeaseRequestType: leaseRequest.LeaseRequestType,
+		replyChan:        make(chan LeaseResponseType),
+	}
+
+	inodeLease.requestChan <- leaseRequestOperation
+
+	volume.Unlock()
+
+	leaseResponse.LeaseResponseType = <-leaseRequestOperation.replyChan
+
+	return
 }
 
 func (mount *mountStruct) authTokenHasExpired() (authTokenExpired bool) {
