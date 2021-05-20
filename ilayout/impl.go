@@ -321,7 +321,7 @@ func (inodeTableEntryValueV1 *InodeTableEntryValueV1Struct) marshalInodeTableEnt
 	return
 }
 
-func unmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTableEntryValueV1 *InodeTableEntryValueV1Struct, err error) {
+func unmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTableEntryValueV1 *InodeTableEntryValueV1Struct, bytesConsumed int, err error) {
 	var (
 		curPos                      int
 		inodeTableEntryValueVersion uint64
@@ -350,10 +350,7 @@ func unmarshalInodeTableEntryValueV1(inodeTableEntryValueV1Buf []byte) (inodeTab
 		return
 	}
 
-	if curPos != len(inodeTableEntryValueV1Buf) {
-		err = fmt.Errorf("Incorrect size for inodeTableEntryValueV1Buf")
-		return
-	}
+	bytesConsumed = curPos
 
 	err = nil
 	return
@@ -754,7 +751,7 @@ func (directoryEntryValueV1 *DirectoryEntryValueV1Struct) marshalDirectoryEntryV
 	return
 }
 
-func unmarshalDirectoryEntryValueV1(directoryEntryValueV1Buf []byte) (directoryEntryValueV1 *DirectoryEntryValueV1Struct, err error) {
+func unmarshalDirectoryEntryValueV1(directoryEntryValueV1Buf []byte) (directoryEntryValueV1 *DirectoryEntryValueV1Struct, bytesConsumed int, err error) {
 	var (
 		curPos int
 	)
@@ -773,10 +770,7 @@ func unmarshalDirectoryEntryValueV1(directoryEntryValueV1Buf []byte) (directoryE
 		return
 	}
 
-	if curPos != len(directoryEntryValueV1Buf) {
-		err = fmt.Errorf("Incorrect size for directoryEntryValueV1Buf")
-		return
-	}
+	bytesConsumed = curPos
 
 	err = nil
 	return
@@ -815,7 +809,7 @@ func (extentMapEntryValueV1 *ExtentMapEntryValueV1Struct) marshalExtentMapEntryV
 	return
 }
 
-func unmarshalExtentMapEntryValueV1(extentMapEntryValueV1Buf []byte) (extentMapEntryValueV1 *ExtentMapEntryValueV1Struct, err error) {
+func unmarshalExtentMapEntryValueV1(extentMapEntryValueV1Buf []byte) (extentMapEntryValueV1 *ExtentMapEntryValueV1Struct, bytesConsumed int, err error) {
 	var (
 		curPos int
 	)
@@ -844,10 +838,7 @@ func unmarshalExtentMapEntryValueV1(extentMapEntryValueV1Buf []byte) (extentMapE
 		return
 	}
 
-	if curPos != len(extentMapEntryValueV1Buf) {
-		err = fmt.Errorf("Incorrect size for extentMapEntryValueV1Buf")
-		return
-	}
+	bytesConsumed = curPos
 
 	err = nil
 	return

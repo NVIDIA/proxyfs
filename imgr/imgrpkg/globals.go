@@ -228,7 +228,7 @@ type volumeStruct struct {
 	deleting                  bool                                      //
 	checkPoint                *ilayout.CheckPointV1Struct               // == nil if not currently mounted and/or checkpointing
 	superBlock                *ilayout.SuperBlockV1Struct               // == nil if not currently mounted and/or checkpointing
-	inodeTable                sortedmap.BPlusTree                       // == nil if not currently mounted and/or checkpointing
+	inodeTable                sortedmap.BPlusTree                       // == nil if not currently mounted and/or checkpointing; key == inodeNumber; value == *ilayout.InodeTableEntryValueV1Struct
 	inodeTableLayout          map[uint64]*inodeTableLayoutElementStruct // == nil if not currently mounted and/or checkpointing; key == objectNumber (matching ilayout.InodeTableLayoutEntryV1Struct.ObjectNumber)
 	pendingObjectDeleteSet    map[uint64]struct{}                       // key == objectNumber
 	checkPointControlChan     chan chan error                           // send chan error to chan to request a CheckPoint; close it to terminate checkPointDaemon()
