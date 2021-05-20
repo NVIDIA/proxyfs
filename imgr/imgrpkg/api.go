@@ -152,6 +152,7 @@ func LogInfof(format string, args ...interface{}) {
 //
 const (
 	EAuthTokenRejected  = "EAuthTokenRejected:"
+	ELeaseRequestDenied = "ELeaseRequestDenied:"
 	EVolumeBeingDeleted = "EVolumeBeingDeleted:"
 	EUnknownMountID     = "EUnknownMountID:"
 	EUnknownVolumeName  = "EUnknownVolumeName:"

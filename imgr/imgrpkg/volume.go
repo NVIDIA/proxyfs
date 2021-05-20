@@ -734,6 +734,8 @@ func putVolume(name string, storageURL string) (err error) {
 		inodeTableLayout:          nil,
 		pendingObjectDeleteSet:    make(map[uint64]struct{}),
 		checkPointControlChan:     nil,
+		inodeLeaseMap:             make(map[uint64]*inodeLeaseStruct),
+		inodeLeaseLRU:             list.New(),
 	}
 
 	globals.Lock()
