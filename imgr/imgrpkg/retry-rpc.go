@@ -111,10 +111,7 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 		logFatalf("volumeAsValue.(*volumeStruct) returned !ok")
 	}
 
-	volume.Lock()
-
 	if volume.deleting {
-		volume.Unlock()
 		globals.Unlock()
 		err = fmt.Errorf("%s %s", EVolumeBeingDeleted, mountRequest.VolumeName)
 		return
@@ -122,7 +119,6 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 
 	lastCheckPointAsByteSlice, err = swiftObjectGet(volume.storageURL, mountRequest.AuthToken, ilayout.CheckPointObjectNumber)
 	if nil != err {
-		volume.Unlock()
 		globals.Unlock()
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, mountRequest.AuthToken)
 		return
@@ -196,7 +192,6 @@ retryGenerateMountID:
 		go volume.checkPointDaemon(volume.checkPointControlChan)
 	}
 
-	volume.Unlock()
 	globals.Unlock()
 
 	mountResponse.MountID = mountIDAsString
@@ -217,19 +212,18 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 		globals.stats.RenewMountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	globals.RLock()
+	globals.Lock()
 
 	mount, ok = globals.mountMap[renewMountRequest.MountID]
 	if !ok {
-		globals.RUnlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %s", EUnknownMountID, renewMountRequest.MountID)
 		return
 	}
 
 	volume = mount.volume
 
-	volume.Lock()
-	globals.RUnlock()
+	globals.Unlock()
 
 	mount.authToken = renewMountRequest.AuthToken
 
@@ -249,7 +243,7 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, renewMountRequest.AuthToken)
 	}
 
-	volume.Unlock()
+	globals.Unlock()
 
 	return
 }
@@ -280,22 +274,19 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 		globals.stats.FetchNonceRangeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	globals.RLock()
+	globals.Lock()
 
 	mount, ok = globals.mountMap[fetchNonceRangeRequest.MountID]
 	if !ok {
-		globals.RUnlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %s", EUnknownMountID, fetchNonceRangeRequest.MountID)
 		return
 	}
 
 	volume = mount.volume
 
-	volume.Lock()
-	globals.RUnlock()
-
 	if mount.authTokenHasExpired() {
-		volume.Unlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
 		return
 	}
@@ -326,7 +317,7 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
 	}
 
-	volume.Unlock()
+	globals.Unlock()
 
 	return
 }
@@ -346,29 +337,26 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 		globals.stats.GetInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	globals.RLock()
+	globals.Lock()
 
 	mount, ok = globals.mountMap[getInodeTableEntryRequest.MountID]
 	if !ok {
-		globals.RUnlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %s", EUnknownMountID, getInodeTableEntryRequest.MountID)
 		return
 	}
 
 	volume = mount.volume
 
-	volume.Lock()
-	globals.RUnlock()
-
 	if mount.authTokenHasExpired() {
-		volume.Unlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
 		return
 	}
 
 	leaseRequest, ok = mount.leaseRequestMap[getInodeTableEntryRequest.InodeNumber]
 	if !ok || ((leaseRequestStateSharedGranted != leaseRequest.requestState) && (leaseRequestStateExclusiveGranted != leaseRequest.requestState)) {
-		volume.Unlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %016X", EMissingLease, getInodeTableEntryRequest.InodeNumber)
 		return
 	}
@@ -378,7 +366,7 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 		logFatalf("volume.inodeTable.GetByKey(getInodeTableEntryRequest.InodeNumber) failed: %v", err)
 	}
 	if !ok {
-		volume.Unlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %016X", EUnknownInodeNumber, getInodeTableEntryRequest.InodeNumber)
 		return
 	}
@@ -391,7 +379,7 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 	getInodeTableEntryResponse.InodeHeadObjectNumber = inodeTableEntryValue.InodeHeadObjectNumber
 	getInodeTableEntryResponse.InodeHeadLength = inodeTableEntryValue.InodeHeadLength
 
-	volume.Unlock()
+	globals.Unlock()
 
 	err = nil
 	return
@@ -448,35 +436,32 @@ func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct)
 
 	checkPointResponseChan = make(chan error)
 
-	globals.RLock()
+	globals.Lock()
 
 	mount, ok = globals.mountMap[flushRequest.MountID]
 	if !ok {
-		globals.RUnlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %s", EUnknownMountID, flushRequest.MountID)
 		return
 	}
 
 	volume = mount.volume
 
-	volume.RLock()
-	globals.RUnlock()
-
 	if mount.authTokenHasExpired() {
-		volume.RUnlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
 		return
 	}
 
 	if nil == volume.checkPointControlChan {
-		volume.RUnlock()
+		globals.Unlock()
 		err = nil
 		return
 	}
 
 	volume.checkPointControlChan <- checkPointResponseChan
 
-	volume.RUnlock()
+	globals.Unlock()
 
 	err = <-checkPointResponseChan
 
@@ -524,29 +509,26 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 		return
 	}
 
-	globals.RLock()
+	globals.Lock()
 
 	mount, ok = globals.mountMap[leaseRequest.MountID]
 	if !ok {
-		globals.RUnlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %s", EUnknownMountID, leaseRequest.MountID)
 		return
 	}
 
 	volume = mount.volume
 
-	volume.Lock()
-	globals.RUnlock()
-
 	if mount.authTokenHasExpired() {
-		volume.Unlock()
+		globals.Unlock()
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
 		return
 	}
 
 	if (leaseRequest.LeaseRequestType == LeaseRequestTypeShared) || (leaseRequest.LeaseRequestType == LeaseRequestTypeExclusive) {
 		if !mount.acceptingLeaseRequests {
-			volume.Unlock()
+			globals.Unlock()
 			leaseResponse.LeaseResponseType = LeaseResponseTypeDenied
 			err = fmt.Errorf("%s LeaseRequestType %v not currently being accepted", ELeaseRequestDenied, leaseRequest.LeaseRequestType)
 			return
@@ -572,7 +554,7 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 			}
 
 			volume.inodeLeaseMap[leaseRequest.InodeNumber] = inodeLease
-			inodeLease.lruElement = volume.inodeLeaseLRU.PushBack(inodeLease)
+			inodeLease.lruElement = globals.inodeLeaseLRU.PushBack(inodeLease)
 
 			volume.leaseHandlerWG.Add(1)
 			go inodeLease.handler()
@@ -580,7 +562,7 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 	} else { // in.LeaseRequestType is one of LeaseRequestType{Promote|Demote|Release}
 		inodeLease, ok = volume.inodeLeaseMap[leaseRequest.InodeNumber]
 		if !ok {
-			volume.Unlock()
+			globals.Unlock()
 			leaseResponse.LeaseResponseType = LeaseResponseTypeDenied
 			err = fmt.Errorf("%s LeaseRequestType %v not allowed for non-existent Lease", ELeaseRequestDenied, leaseRequest.LeaseRequestType)
 			return
@@ -600,7 +582,7 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 
 	inodeLease.requestChan <- leaseRequestOperation
 
-	volume.Unlock()
+	globals.Unlock()
 
 	leaseResponse.LeaseResponseType = <-leaseRequestOperation.replyChan
 

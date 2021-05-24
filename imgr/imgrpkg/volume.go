@@ -18,6 +18,7 @@ import (
 
 func startVolumeManagement() (err error) {
 	globals.inodeTableCache = sortedmap.NewBPlusTreeCache(globals.config.InodeTableCacheEvictLowLimit, globals.config.InodeTableCacheEvictLowLimit)
+	globals.inodeLeaseLRU = list.New()
 	globals.volumeMap = sortedmap.NewLLRBTree(sortedmap.CompareString, &globals)
 	globals.mountMap = make(map[string]*mountStruct)
 
@@ -27,6 +28,7 @@ func startVolumeManagement() (err error) {
 
 func stopVolumeManagement() (err error) {
 	globals.inodeTableCache = nil
+	globals.inodeLeaseLRU = nil
 	globals.volumeMap = nil
 	globals.mountMap = nil
 
@@ -127,14 +129,14 @@ func getVolumeAsJSON(volumeName string) (volume []byte, err error) {
 		volumeToReturn *volumeGETStruct
 	)
 
-	globals.RLock()
+	globals.Lock()
 
 	volumeAsValue, ok, err = globals.volumeMap.GetByKey(volumeName)
 	if nil != err {
 		logFatal(err)
 	}
 	if !ok {
-		globals.RUnlock()
+		globals.Unlock()
 		err = fmt.Errorf("volumeName \"%s\" does not exist", volumeName)
 		return
 	}
@@ -144,9 +146,6 @@ func getVolumeAsJSON(volumeName string) (volume []byte, err error) {
 		logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
 	}
 
-	volumeAsStruct.RLock()
-	globals.RUnlock()
-
 	volumeToReturn = &volumeGETStruct{
 		Name:                   volumeAsStruct.name,
 		StorageURL:             volumeAsStruct.storageURL,
@@ -155,7 +154,7 @@ func getVolumeAsJSON(volumeName string) (volume []byte, err error) {
 		AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
 	}
 
-	volumeAsStruct.RUnlock()
+	globals.Unlock()
 
 	volume, err = json.Marshal(volumeToReturn)
 	if nil != err {
@@ -177,7 +176,7 @@ func getVolumeListAsJSON() (volumeList []byte) {
 		volumeListToReturn []*volumeGETStruct
 	)
 
-	globals.RLock()
+	globals.Lock()
 
 	volumeListLen, err = globals.volumeMap.Len()
 	if nil != err {
@@ -200,8 +199,6 @@ func getVolumeListAsJSON() (volumeList []byte) {
 			logFatalf("globals.volumeMap[%d] was not a *volumeStruct", volumeListIndex)
 		}
 
-		volumeAsStruct.RLock()
-
 		volumeListToReturn[volumeListIndex] = &volumeGETStruct{
 			Name:                   volumeAsStruct.name,
 			StorageURL:             volumeAsStruct.storageURL,
@@ -209,11 +206,9 @@ func getVolumeListAsJSON() (volumeList []byte) {
 			LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
 			AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
 		}
-
-		volumeAsStruct.RUnlock()
 	}
 
-	globals.RUnlock()
+	globals.Unlock()
 
 	volumeList, err = json.Marshal(volumeListToReturn)
 	if nil != err {
@@ -735,7 +730,6 @@ func putVolume(name string, storageURL string) (err error) {
 		pendingObjectDeleteSet:    make(map[uint64]struct{}),
 		checkPointControlChan:     nil,
 		inodeLeaseMap:             make(map[uint64]*inodeLeaseStruct),
-		inodeLeaseLRU:             list.New(),
 	}
 
 	globals.Lock()
@@ -797,7 +791,7 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 		startTime time.Time
 	)
 
-	volume.Lock()
+	globals.Lock()
 
 	startTime = time.Now()
 
@@ -805,7 +799,7 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 
 	globals.stats.VolumeCheckPointUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 
-	volume.Unlock()
+	globals.Unlock()
 
 	return
 }
