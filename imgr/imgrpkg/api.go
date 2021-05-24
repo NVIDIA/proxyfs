@@ -33,6 +33,8 @@
 //  MinLeaseDuration:                     250ms
 //  LeaseInterruptInterval:               250ms
 //  LeaseInterruptLimit:                  20
+//  LeaseEvictLowLimit:                   100000
+//  LeaseEvictHighLimit:                  100010
 //
 //  SwiftRetryDelay:                      100ms
 //  SwiftRetryExpBackoff:                 2
