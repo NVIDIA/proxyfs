@@ -22,7 +22,7 @@ const (
 	testRpcLeaseMultiFirstInodeNumber     uint64 = 1
 	testRpcLeaseMultiNumInstances         uint64 = 5
 	testRpcLeaseSingleInodeNumber         uint64 = 1
-	testRpcLeaseSingleNumInstances        uint64 = 101 // Must be >= 4
+	testRpcLeaseSingleNumInstances        uint64 = 21 // 101 // Must be >= 4
 	testRpcLeaseTimeFormat                       = "15:04:05.000"
 )
 
