@@ -42,10 +42,10 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 		sharedHolderListElement  *list.Element
 	)
 
-	inodeLease.volume.Lock()
-	defer inodeLease.volume.Unlock()
+	globals.Lock()
+	defer globals.Unlock()
 
-	inodeLease.volume.inodeLeaseLRU.MoveToBack(inodeLease.lruElement)
+	globals.inodeLeaseLRU.MoveToBack(inodeLease.lruElement)
 
 	switch leaseRequestOperation.LeaseRequestType {
 	case LeaseRequestTypeShared:
@@ -675,7 +675,8 @@ func (inodeLease *inodeLeaseStruct) handleLongAgoTimerPop() {
 		rpcInterruptBuf     []byte
 	)
 
-	inodeLease.volume.Lock()
+	globals.Lock()
+	defer globals.Unlock()
 
 	inodeLease.lastGrantTime = time.Time{}
 	inodeLease.longAgoTimer = &time.Timer{}
@@ -775,8 +776,6 @@ func (inodeLease *inodeLeaseStruct) handleLongAgoTimerPop() {
 	default:
 		logFatalf("(*inodeLeaseStruct).handleLongAgoTimerPop() called while in wrong state (%v)", inodeLease.leaseState)
 	}
-
-	inodeLease.volume.Unlock()
 }
 
 func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
@@ -788,7 +787,8 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 		rpcInterruptBuf     []byte
 	)
 
-	inodeLease.volume.Lock()
+	globals.Lock()
+	defer globals.Unlock()
 
 	if globals.config.LeaseInterruptLimit <= inodeLease.interruptsSent {
 		switch inodeLease.leaseState {
@@ -1045,8 +1045,6 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 		inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
 	}
-
-	inodeLease.volume.Unlock()
 }
 
 func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
@@ -1062,7 +1060,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 
 	// Deny all pending requests:
 
-	inodeLease.volume.Lock()
+	globals.Lock()
 
 	for nil != inodeLease.requestedList.Front() {
 		leaseRequestElement = inodeLease.requestedList.Front()
@@ -1192,11 +1190,11 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 	// Loop until inodeLease.leaseState is inodeLeaseStateNone
 
 	for inodeLeaseStateNone != inodeLease.leaseState {
-		inodeLease.volume.Unlock()
+		globals.Unlock()
 
 		select {
 		case leaseRequestOperation = <-inodeLease.requestChan:
-			inodeLease.volume.Lock()
+			globals.Lock()
 
 			switch leaseRequestOperation.LeaseRequestType {
 			case LeaseRequestTypeShared:
@@ -1340,7 +1338,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 			}
 
 		case _ = <-inodeLease.interruptTimer.C:
-			inodeLease.volume.Lock()
+			globals.Lock()
 
 			switch inodeLease.leaseState {
 			case inodeLeaseStateSharedGrantedLongAgo:
@@ -1482,11 +1480,11 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 RequestChanDrained:
 
 	delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
-	_ = inodeLease.volume.inodeLeaseLRU.Remove(inodeLease.lruElement)
+	_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 
 	inodeLease.volume.leaseHandlerWG.Done()
 
-	inodeLease.volume.Unlock()
+	globals.Unlock()
 
 	runtime.Goexit()
 }

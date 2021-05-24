@@ -174,7 +174,7 @@ const (
 type inodeLeaseStruct struct {
 	volume      *volumeStruct
 	inodeNumber uint64
-	lruElement  *list.Element // link into volumeStruct.inodeLeaseLRU
+	lruElement  *list.Element // link into globals.inodeLeaseLRU
 	leaseState  inodeLeaseStateType
 
 	requestChan chan *leaseRequestOperationStruct
@@ -218,7 +218,6 @@ type inodeTableLayoutElementStruct struct {
 }
 
 type volumeStruct struct {
-	sync.RWMutex                                                        // must globals.{R|}Lock() before volume.{R|}Lock()
 	name                      string                                    //
 	storageURL                string                                    //
 	mountMap                  map[string]*mountStruct                   // key == mountStruct.mountID
@@ -234,16 +233,16 @@ type volumeStruct struct {
 	checkPointControlChan     chan chan error                           // send chan error to chan to request a CheckPoint; close it to terminate checkPointDaemon()
 	checkPointControlWG       sync.WaitGroup                            // checkPointDeamon() indicates it is done by calling .Done() on this WG
 	inodeLeaseMap             map[uint64]*inodeLeaseStruct              // key == inodeLeaseStruct.inodeNumber
-	inodeLeaseLRU             *list.List                                // .Front() is the LRU inodeLeaseStruct.listElement
 	leaseHandlerWG            sync.WaitGroup                            // .Add(1) each inodeLease insertion into inodeLeaseMap
 	//                                                                     .Done() each inodeLease after it is removed from inodeLeaseMap
 }
 
 type globalsStruct struct {
-	sync.RWMutex                             //
+	sync.Mutex                               //
 	config          configStruct             //
 	logFile         *os.File                 // == nil if config.LogFilePath == ""
 	inodeTableCache sortedmap.BPlusTreeCache //
+	inodeLeaseLRU   *list.List               // .Front() is the LRU inodeLeaseStruct.listElement
 	volumeMap       sortedmap.LLRBTree       // key == volumeStruct.name; value == *volumeStruct
 	mountMap        map[string]*mountStruct  // key == mountStruct.mountID
 	httpClient      *http.Client             //
