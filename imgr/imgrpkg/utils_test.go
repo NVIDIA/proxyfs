@@ -143,6 +143,8 @@ func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 		"IMGR.MinLeaseDuration=250ms",
 		"IMGR.LeaseInterruptInterval=250ms",
 		"IMGR.LeaseInterruptLimit=5",
+		"IMGR.LeaseEvictLowLimit=100000",
+		"IMGR.LeaseEvictHighLimit=100010",
 
 		"IMGR.SwiftRetryDelay=100ms",
 		"IMGR.SwiftRetryExpBackoff=2",

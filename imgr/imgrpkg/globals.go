@@ -43,6 +43,8 @@ type configStruct struct {
 	MinLeaseDuration       time.Duration
 	LeaseInterruptInterval time.Duration
 	LeaseInterruptLimit    uint32
+	LeaseEvictLowLimit     uint64
+	LeaseEvictHighLimit    uint64
 
 	SwiftRetryDelay      time.Duration
 	SwiftRetryExpBackoff float64
@@ -378,6 +380,14 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		logFatal(err)
 	}
+	globals.config.LeaseEvictLowLimit, err = confMap.FetchOptionValueUint64("IMGR", "LeaseEvictLowLimit")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.LeaseEvictHighLimit, err = confMap.FetchOptionValueUint64("IMGR", "LeaseEvictHighLimit")
+	if nil != err {
+		logFatal(err)
+	}
 
 	globals.config.SwiftRetryDelay, err = confMap.FetchOptionValueDuration("IMGR", "SwiftRetryDelay")
 	if nil != err {
@@ -472,6 +482,8 @@ func uninitializeGlobals() (err error) {
 	globals.config.MinLeaseDuration = time.Duration(0)
 	globals.config.LeaseInterruptInterval = time.Duration(0)
 	globals.config.LeaseInterruptLimit = 0
+	globals.config.LeaseEvictLowLimit = 0
+	globals.config.LeaseEvictHighLimit = 0
 
 	globals.config.SwiftRetryDelay = time.Duration(0)
 	globals.config.SwiftRetryExpBackoff = 0.0
