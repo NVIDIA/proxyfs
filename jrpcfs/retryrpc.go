@@ -21,7 +21,7 @@ func retryRPCServerUp(jserver *Server) {
 	retryConfig := &retryrpc.ServerConfig{
 		LongTrim:        globals.retryRPCTTLCompleted,
 		ShortTrim:       globals.retryRPCAckTrim,
-		IPAddr:          globals.publicIPAddr,
+		DNSOrIPAddr:     globals.publicIPAddr,
 		Port:            int(globals.retryRPCPort),
 		DeadlineIO:      globals.retryRPCDeadlineIO,
 		KeepAlivePeriod: globals.retryRPCKeepAlivePeriod,
