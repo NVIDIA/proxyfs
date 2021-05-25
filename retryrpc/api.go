@@ -71,10 +71,15 @@ type ServerConfig struct {
 
 // NewServer creates the Server object
 func NewServer(config *ServerConfig) *Server {
-	server := &Server{ipaddr: config.IPAddr, port: config.Port, completedLongTTL: config.LongTrim,
-		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
-		keepAlivePeriod: config.KeepAlivePeriod, dontStartTrimmers: config.dontStartTrimmers,
-		tlsCertificate: config.TLSCertificate}
+	server := &Server{
+		ipaddr:            config.IPAddr,
+		port:              config.Port,
+		completedLongTTL:  config.LongTrim,
+		completedAckTrim:  config.ShortTrim,
+		deadlineIO:        config.DeadlineIO,
+		keepAlivePeriod:   config.KeepAlivePeriod,
+		dontStartTrimmers: config.dontStartTrimmers,
+		tlsCertificate:    config.TLSCertificate}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[uint64]*clientInfo)
 	server.completedTickerDone = make(chan bool)
