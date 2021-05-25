@@ -31,15 +31,13 @@ func configNewServer(ipAddr string, dnsName string, port int, lt time.Duration, 
 	if useTLS {
 		_ = os.Mkdir(tlsDir, os.ModePerm)
 
-		// Create certificate/CA that last for 30 days
+		// Create certificate/CA that lasts for 30 days
 		tlsCert := tlsCertsAllocate(ipAddr, dnsName, 30*24*time.Hour, tlsDir)
-
-		// TODO - rename IPAddrOrDNSName
 
 		config = &retryrpc.ServerConfig{
 			LongTrim:        lt,
 			ShortTrim:       100 * time.Millisecond,
-			IPAddr:          ipAddrOrDNS,
+			DNSOrIPAddr:     ipAddrOrDNS,
 			Port:            port,
 			DeadlineIO:      60 * time.Second,
 			KeepAlivePeriod: 60 * time.Second,
@@ -49,7 +47,7 @@ func configNewServer(ipAddr string, dnsName string, port int, lt time.Duration, 
 		config = &retryrpc.ServerConfig{
 			LongTrim:        lt,
 			ShortTrim:       100 * time.Millisecond,
-			IPAddr:          ipAddrOrDNS,
+			DNSOrIPAddr:     ipAddrOrDNS,
 			Port:            port,
 			DeadlineIO:      60 * time.Second,
 			KeepAlivePeriod: 60 * time.Second,

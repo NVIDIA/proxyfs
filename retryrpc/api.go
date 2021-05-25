@@ -33,7 +33,7 @@ type Server struct {
 	completedLongTTL time.Duration          // How long a completed request stays on queue
 	completedAckTrim time.Duration          // How frequently trim requests acked by client
 	svrMap           map[string]*methodArgs // Key: Method name
-	ipaddr           string                 // IP address server listens too
+	dnsOrIpaddr      string                 // DNS or IP address server listens too
 	port             int                    // Port of server
 	clientIDNonce    uint64                 // Nonce used to create a unique client ID
 	netListener      net.Listener           // Accepts on this to skip TLS upgrade
@@ -61,18 +61,18 @@ type Server struct {
 type ServerConfig struct {
 	LongTrim          time.Duration   // How long the results of an RPC are stored on a Server before removed
 	ShortTrim         time.Duration   // How frequently completed and ACKed RPCs results are removed from Server
-	IPAddr            string          // IP Address that Server uses to listen
+	DNSOrIPAddr       string          // DNS or IP Address that Server uses to listen
 	Port              int             // Port that Server uses to listen
 	DeadlineIO        time.Duration   // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod   time.Duration   // How frequently a KEEPALIVE is sent
 	TLSCertificate    tls.Certificate // TLS Certificate to present to Clients (or tls.Certificate{} if using TCP)
-	dontStartTrimmers bool            // Used for testing
+	dontStartTrimmers bool            // Used for testingD
 }
 
 // NewServer creates the Server object
 func NewServer(config *ServerConfig) *Server {
 	server := &Server{
-		ipaddr:            config.IPAddr,
+		dnsOrIpaddr:       config.DNSOrIPAddr,
 		port:              config.Port,
 		completedLongTTL:  config.LongTrim,
 		completedAckTrim:  config.ShortTrim,
@@ -97,7 +97,7 @@ func (server *Server) Register(retrySvr interface{}) (err error) {
 
 // Start listener
 func (server *Server) Start() (err error) {
-	hostPortStr := net.JoinHostPort(server.ipaddr, fmt.Sprintf("%d", server.port))
+	hostPortStr := net.JoinHostPort(server.dnsOrIpaddr, fmt.Sprintf("%d", server.port))
 
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{server.tlsCertificate},
@@ -314,7 +314,7 @@ type ClientCallbacks interface {
 
 // ClientConfig is used to configure a retryrpc Client
 type ClientConfig struct {
-	IPAddr                   string        // IP Address of Server
+	DNSOrIPAddr              string        // DNS name or IP Address of Server
 	Port                     int           // Port of Server
 	RootCAx509CertificatePEM []byte        // If TLS...Root certificate; If TCP... nil
 	Callbacks                interface{}   // Structure implementing ClientCallbacks
@@ -340,7 +340,7 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 	client = &Client{
 		connection: &connectionTracker{
 			state:       INITIAL,
-			hostPortStr: net.JoinHostPort(config.IPAddr, fmt.Sprintf("%d", config.Port)),
+			hostPortStr: net.JoinHostPort(config.DNSOrIPAddr, fmt.Sprintf("%d", config.Port)),
 		},
 		cb:              config.Callbacks,
 		keepAlivePeriod: config.KeepAlivePeriod,

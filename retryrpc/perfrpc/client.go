@@ -93,7 +93,7 @@ func pfsagent(agentID uint64, method string, agentWG *sync.WaitGroup, warmUpComp
 	cb.cond = sync.NewCond(&cb.Mutex)
 	if globals.useTLS {
 		clientConfig = &retryrpc.ClientConfig{
-			IPAddr:                   ipAddrOrDNS,
+			DNSOrIPAddr:              ipAddrOrDNS,
 			Port:                     globals.cs.port,
 			RootCAx509CertificatePEM: globals.tlsCerts.caCertPEMBlock,
 			Callbacks:                cb,
@@ -102,7 +102,7 @@ func pfsagent(agentID uint64, method string, agentWG *sync.WaitGroup, warmUpComp
 		}
 	} else {
 		clientConfig = &retryrpc.ClientConfig{
-			IPAddr:                   ipAddrOrDNS,
+			DNSOrIPAddr:              ipAddrOrDNS,
 			Port:                     globals.cs.port,
 			RootCAx509CertificatePEM: nil,
 			Callbacks:                cb,

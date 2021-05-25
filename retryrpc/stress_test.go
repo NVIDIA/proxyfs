@@ -357,7 +357,7 @@ func pfsagent(t *testing.T, rrSvr *Server, agentID uint64, method string, agentW
 	cb.cond = sync.NewCond(&cb.Mutex)
 	if useTLS {
 		clientConfig = &ClientConfig{
-			IPAddr:                   testIPAddr,
+			DNSOrIPAddr:              testIPAddr,
 			Port:                     testPort,
 			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
 			Callbacks:                cb,
@@ -366,7 +366,7 @@ func pfsagent(t *testing.T, rrSvr *Server, agentID uint64, method string, agentW
 		}
 	} else {
 		clientConfig = &ClientConfig{
-			IPAddr:                   testIPAddr,
+			DNSOrIPAddr:              testIPAddr,
 			Port:                     testPort,
 			RootCAx509CertificatePEM: nil,
 			Callbacks:                cb,
