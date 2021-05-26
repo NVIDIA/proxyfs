@@ -35,7 +35,7 @@ func startRetryRPCServer() (err error) {
 	retryrpcServerConfig = &retryrpc.ServerConfig{
 		LongTrim:        globals.config.RetryRPCTTLCompleted,
 		ShortTrim:       globals.config.RetryRPCAckTrim,
-		IPAddr:          globals.config.PublicIPAddr,
+		DNSOrIPAddr:     globals.config.PublicIPAddr,
 		Port:            int(globals.config.RetryRPCPort),
 		DeadlineIO:      globals.config.RetryRPCDeadlineIO,
 		KeepAlivePeriod: globals.config.RetryRPCKeepAlivePeriod,

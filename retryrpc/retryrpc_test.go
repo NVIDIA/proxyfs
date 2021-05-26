@@ -75,6 +75,7 @@ func testTLSCertsAllocate(t *testing.T) {
 		testTLSCerts.caKeyPEMBlock,
 		"",
 		"")
+
 	if nil != err {
 		t.Fatalf("icertpkg.genEndpointCert() failed: %v", err)
 	}
@@ -114,7 +115,7 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr 
 		config = &ServerConfig{
 			LongTrim:          lt,
 			ShortTrim:         100 * time.Millisecond,
-			IPAddr:            testIPAddr,
+			DNSOrIPAddr:       testIPAddr,
 			Port:              testPort,
 			DeadlineIO:        60 * time.Second,
 			KeepAlivePeriod:   60 * time.Second,
@@ -125,7 +126,7 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr 
 		config = &ServerConfig{
 			LongTrim:          lt,
 			ShortTrim:         100 * time.Millisecond,
-			IPAddr:            testIPAddr,
+			DNSOrIPAddr:       testIPAddr,
 			Port:              testPort,
 			DeadlineIO:        60 * time.Second,
 			KeepAlivePeriod:   60 * time.Second,
@@ -193,7 +194,7 @@ func testServer(t *testing.T, useTLS bool) {
 	// Now - setup a client to send requests to the server
 	if useTLS {
 		clientConfig = &ClientConfig{
-			IPAddr:                   testIPAddr,
+			DNSOrIPAddr:              testIPAddr,
 			Port:                     testPort,
 			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
 			Callbacks:                nil,
@@ -202,7 +203,7 @@ func testServer(t *testing.T, useTLS bool) {
 		}
 	} else {
 		clientConfig = &ClientConfig{
-			IPAddr:                   testIPAddr,
+			DNSOrIPAddr:              testIPAddr,
 			Port:                     testPort,
 			RootCAx509CertificatePEM: nil,
 			Callbacks:                nil,
@@ -266,7 +267,7 @@ func testBtree(t *testing.T, useTLS bool) {
 	// Setup a client - we only will be targeting the btree
 	if useTLS {
 		clientConfig = &ClientConfig{
-			IPAddr:                   testIPAddr,
+			DNSOrIPAddr:              testIPAddr,
 			Port:                     testPort,
 			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
 			Callbacks:                nil,
@@ -275,7 +276,7 @@ func testBtree(t *testing.T, useTLS bool) {
 		}
 	} else {
 		clientConfig = &ClientConfig{
-			IPAddr:                   testIPAddr,
+			DNSOrIPAddr:              testIPAddr,
 			Port:                     testPort,
 			RootCAx509CertificatePEM: nil,
 			Callbacks:                nil,

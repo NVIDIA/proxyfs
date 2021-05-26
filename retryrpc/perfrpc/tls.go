@@ -36,7 +36,7 @@ func tlsSetFileNames(tlsCerts *tlsCertsStruct, tlsDir string) {
 }
 
 // Utility function to initialize tlsCerts
-func tlsCertsAllocate(ipAddr string, ttl time.Duration, tlsDir string) (tlsCerts *tlsCertsStruct) {
+func tlsCertsAllocate(ipAddr string, dnsName string, ttl time.Duration, tlsDir string) (tlsCerts *tlsCertsStruct) {
 	var (
 		err error
 	)
@@ -63,6 +63,13 @@ func tlsCertsAllocate(ipAddr string, ttl time.Duration, tlsDir string) (tlsCerts
 		os.Exit(1)
 	}
 
+	dnsToIPAddr, lookupErr := net.LookupIP(dnsName)
+	if dnsName != "" && lookupErr != nil {
+		fmt.Printf("Unable to lookup DNS name: %v - err: %v\n", dnsName, lookupErr)
+		os.Exit(1)
+	}
+	ipAddr = dnsToIPAddr[0].String()
+
 	tlsCerts.endpointCertPEMBlock, tlsCerts.endpointKeyPEMBlock, err = icertpkg.GenEndpointCert(
 		icertpkg.GenerateKeyAlgorithmEd25519,
 		pkix.Name{
@@ -73,7 +80,7 @@ func tlsCertsAllocate(ipAddr string, ttl time.Duration, tlsDir string) (tlsCerts
 			StreetAddress: []string{},
 			PostalCode:    []string{},
 		},
-		[]string{},
+		[]string{dnsName},
 		[]net.IP{net.ParseIP(ipAddr)},
 		ttl,
 		tlsCerts.caCertPEMBlock,

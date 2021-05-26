@@ -16,21 +16,28 @@ import (
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
-func configNewServer(ipAddr string, port int, lt time.Duration, tlsDir string, dontStartTrimmers bool, useTLS bool) (rrSvr *retryrpc.Server, err error) {
+func configNewServer(ipAddr string, dnsName string, port int, lt time.Duration, tlsDir string, dontStartTrimmers bool, useTLS bool) (rrSvr *retryrpc.Server, err error) {
 	var (
-		config *retryrpc.ServerConfig
+		config      *retryrpc.ServerConfig
+		ipAddrOrDNS string
 	)
+
+	if dnsName != "" {
+		ipAddrOrDNS = dnsName
+	} else {
+		ipAddrOrDNS = ipAddr
+	}
 
 	if useTLS {
 		_ = os.Mkdir(tlsDir, os.ModePerm)
 
-		// Create certificate/CA that last for 30 days
-		tlsCert := tlsCertsAllocate(ipAddr, 30*24*time.Hour, tlsDir)
+		// Create certificate/CA that lasts for 30 days
+		tlsCert := tlsCertsAllocate(ipAddr, dnsName, 30*24*time.Hour, tlsDir)
 
 		config = &retryrpc.ServerConfig{
 			LongTrim:        lt,
 			ShortTrim:       100 * time.Millisecond,
-			IPAddr:          ipAddr,
+			DNSOrIPAddr:     ipAddrOrDNS,
 			Port:            port,
 			DeadlineIO:      60 * time.Second,
 			KeepAlivePeriod: 60 * time.Second,
@@ -40,7 +47,7 @@ func configNewServer(ipAddr string, port int, lt time.Duration, tlsDir string, d
 		config = &retryrpc.ServerConfig{
 			LongTrim:        lt,
 			ShortTrim:       100 * time.Millisecond,
-			IPAddr:          ipAddr,
+			DNSOrIPAddr:     ipAddrOrDNS,
 			Port:            port,
 			DeadlineIO:      60 * time.Second,
 			KeepAlivePeriod: 60 * time.Second,
@@ -57,12 +64,12 @@ func configNewServer(ipAddr string, port int, lt time.Duration, tlsDir string, d
 
 // TODO - should this be a goroutine with WG?????
 // want way to shutdown with curl/WS? how dump stats?
-func becomeAServer(ipAddr string, port int, tlsDir string, useTLS bool) error {
+func becomeAServer(ipAddr string, dnsName string, port int, tlsDir string, useTLS bool) error {
 
 	// Create new TestPingServer - needed for calling RPCs
 	myJrpcfs := &PerfPingServer{}
 
-	rrSvr, err := configNewServer(ipAddr, port, 10*time.Minute, tlsDir, false, useTLS)
+	rrSvr, err := configNewServer(ipAddr, dnsName, port, 10*time.Minute, tlsDir, false, useTLS)
 	if err != nil {
 		return err
 	}
@@ -99,6 +106,7 @@ func becomeAServer(ipAddr string, port int, tlsDir string, useTLS bool) error {
 type ServerSubcommand struct {
 	fs      *flag.FlagSet
 	ipAddr  string // IP Address server will use
+	dnsName string // DNS Name of server
 	port    int    // Port on which to listen
 	tlsDir  string //  Directory to read for TLS info
 	dbgport string // Debug port for pprof webserver
@@ -108,7 +116,8 @@ func NewServerCommand() *ServerSubcommand {
 	s := &ServerSubcommand{
 		fs: flag.NewFlagSet("server", flag.ContinueOnError),
 	}
-	s.fs.StringVar(&s.ipAddr, "ipaddr", "", "IP Address server will use")
+	s.fs.StringVar(&s.ipAddr, "ipaddr", "", "IP Address server will use (optional)")
+	s.fs.StringVar(&s.dnsName, "dnsname", "", "DNS Name server will use (optional)")
 	s.fs.IntVar(&s.port, "port", 0, "Port on which to listen")
 	s.fs.StringVar(&s.tlsDir, "tlsdir", "", "Directory containing TLS info")
 	s.fs.StringVar(&s.dbgport, "dbgport", "", "Debug port for pprof webserver (optional)")
@@ -126,8 +135,13 @@ func (s *ServerSubcommand) Name() string {
 
 // TODO - how dump bucketstats, etc???? do from webserver?
 func (s *ServerSubcommand) Run() (err error) {
-	if s.ipAddr == "" {
-		err = fmt.Errorf("IP Address cannot be blank")
+	if s.ipAddr == "" && s.dnsName == "" {
+		err = fmt.Errorf("Must pass either IP Address or DNS name")
+		s.fs.PrintDefaults()
+		return
+	}
+	if s.ipAddr != "" && s.dnsName != "" {
+		err = fmt.Errorf("Must pass only IP Address or DNS name")
 		s.fs.PrintDefaults()
 		return
 	}
@@ -142,11 +156,12 @@ func (s *ServerSubcommand) Run() (err error) {
 		return
 	}
 
+	// Start debug webserver if we have a debug port
 	if s.dbgport != "" {
 		hostPort := net.JoinHostPort("localhost", s.dbgport)
 		go http.ListenAndServe(hostPort, nil)
 	}
 
-	err = becomeAServer(s.ipAddr, s.port, s.tlsDir, true)
+	err = becomeAServer(s.ipAddr, s.dnsName, s.port, s.tlsDir, true)
 	return err
 }

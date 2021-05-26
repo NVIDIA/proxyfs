@@ -42,7 +42,7 @@ func doMountProxyFS() {
 	)
 
 	retryrpcConfig := &retryrpc.ClientConfig{
-		IPAddr:                   globals.config.RetryRPCPublicIPAddr,
+		DNSOrIPAddr:              globals.config.RetryRPCPublicIPAddr,
 		Port:                     int(globals.config.RetryRPCPort),
 		RootCAx509CertificatePEM: globals.retryRPCCACertPEM,
 		Callbacks:                &globals,

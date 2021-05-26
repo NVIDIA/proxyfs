@@ -70,7 +70,7 @@ func testUpCall(t *testing.T, useTLS bool) {
 
 	if useTLS {
 		clientConfig = &ClientConfig{
-			IPAddr:                   testIPAddr,
+			DNSOrIPAddr:              testIPAddr,
 			Port:                     testPort,
 			RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
 			Callbacks:                cb,
@@ -79,7 +79,7 @@ func testUpCall(t *testing.T, useTLS bool) {
 		}
 	} else {
 		clientConfig = &ClientConfig{
-			IPAddr:                   testIPAddr,
+			DNSOrIPAddr:              testIPAddr,
 			Port:                     testPort,
 			RootCAx509CertificatePEM: nil,
 			Callbacks:                cb,

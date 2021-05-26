@@ -1505,7 +1505,7 @@ func BenchmarkRpcLeaseRemote(b *testing.B) {
 	}
 
 	retryrpcClientConfig = &retryrpc.ClientConfig{
-		IPAddr:                   globals.publicIPAddr,
+		DNSOrIPAddr:              globals.publicIPAddr,
 		Port:                     int(globals.retryRPCPort),
 		RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
 		Callbacks:                testRpcLeaseClient,
@@ -1909,7 +1909,7 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) instanceGoroutine() {
 	}
 
 	retryrpcClientConfig = &retryrpc.ClientConfig{
-		IPAddr:                   globals.publicIPAddr,
+		DNSOrIPAddr:              globals.publicIPAddr,
 		Port:                     int(globals.retryRPCPort),
 		RootCAx509CertificatePEM: testTLSCerts.caCertPEMBlock,
 		Callbacks:                testRpcLeaseClient,

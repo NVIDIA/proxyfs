@@ -227,7 +227,7 @@ func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 	}
 
 	testGlobals.retryrpcClientConfig = &retryrpc.ClientConfig{
-		IPAddr:                   testIPAddr,
+		DNSOrIPAddr:              testIPAddr,
 		Port:                     testRetryRPCPort,
 		RootCAx509CertificatePEM: testGlobals.caCertPEMBlock,
 		Callbacks:                retryrpcCallbacks,

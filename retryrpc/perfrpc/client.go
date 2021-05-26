@@ -79,15 +79,21 @@ func (cb *stressMyClient) Interrupt(payload []byte) {
 func pfsagent(agentID uint64, method string, agentWG *sync.WaitGroup, warmUpCompleteWG *sync.WaitGroup, fence chan int) {
 	var (
 		clientConfig *retryrpc.ClientConfig
+		ipAddrOrDNS  string
 	)
-
 	defer agentWG.Done()
+
+	if globals.cs.dnsName != "" {
+		ipAddrOrDNS = globals.cs.dnsName
+	} else {
+		ipAddrOrDNS = globals.cs.ipAddr
+	}
 
 	cb := &stressMyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
 	if globals.useTLS {
 		clientConfig = &retryrpc.ClientConfig{
-			IPAddr:                   globals.cs.ipAddr,
+			DNSOrIPAddr:              ipAddrOrDNS,
 			Port:                     globals.cs.port,
 			RootCAx509CertificatePEM: globals.tlsCerts.caCertPEMBlock,
 			Callbacks:                cb,
@@ -96,7 +102,7 @@ func pfsagent(agentID uint64, method string, agentWG *sync.WaitGroup, warmUpComp
 		}
 	} else {
 		clientConfig = &retryrpc.ClientConfig{
-			IPAddr:                   globals.cs.ipAddr,
+			DNSOrIPAddr:              ipAddrOrDNS,
 			Port:                     globals.cs.port,
 			RootCAx509CertificatePEM: nil,
 			Callbacks:                cb,
@@ -203,6 +209,7 @@ type ClientSubcommand struct {
 	fs        *flag.FlagSet
 	clients   int    // Number of clients which will be sending messages
 	ipAddr    string // IP Address of server
+	dnsName   string // DNS Name of server
 	warmUpCnt int    // Number of messages to send to "warm up"
 	messages  int    // Number of messages to send
 	port      int    // Port on which the server is listening
@@ -216,7 +223,8 @@ func NewClientCommand() *ClientSubcommand {
 	}
 
 	cs.fs.IntVar(&cs.clients, "clients", 0, "Number of clients which will be sending a subset of messages")
-	cs.fs.StringVar(&cs.ipAddr, "ipaddr", "", "IP Address of server")
+	cs.fs.StringVar(&cs.ipAddr, "ipaddr", "", "IP Address of server (optional)")
+	cs.fs.StringVar(&cs.dnsName, "dnsname", "", "DNS Name of server (optional)")
 	cs.fs.IntVar(&cs.messages, "messages", 0, "Number of total messages to send")
 	cs.fs.IntVar(&cs.warmUpCnt, "warmupcnt", 0, "Number of total messages to send warm up client/server")
 	cs.fs.IntVar(&cs.port, "port", 0, "Port on which the server is listening")
@@ -235,8 +243,13 @@ func (cs *ClientSubcommand) Name() string {
 }
 
 func (cs *ClientSubcommand) Run() (err error) {
-	if cs.ipAddr == "" {
-		err = fmt.Errorf("IP Address cannot be blank")
+	if cs.ipAddr == "" && cs.dnsName == "" {
+		err = fmt.Errorf("Must pass either IP Address or DNS name")
+		cs.fs.PrintDefaults()
+		return
+	}
+	if cs.ipAddr != "" && cs.dnsName != "" {
+		err = fmt.Errorf("Must pass only IP Address or DNS name")
 		cs.fs.PrintDefaults()
 		return
 	}
@@ -260,6 +273,8 @@ func (cs *ClientSubcommand) Run() (err error) {
 		cs.fs.PrintDefaults()
 		return
 	}
+
+	// Start debug webserver if we have a debug port
 	if cs.dbgport != "" {
 		hostPort := net.JoinHostPort("localhost", cs.dbgport)
 		go http.ListenAndServe(hostPort, nil)
