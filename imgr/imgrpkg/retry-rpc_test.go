@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NVIDIA/proxyfs/iswift/iswiftpkg"
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
@@ -133,14 +134,9 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,1)\",,) should have failed")
 	}
 
-	// TODO: Remove this early exit skipping of following TODOs
+	// Force a need for a re-auth
 
-	if nil != err {
-		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
-		return
-	}
-
-	// TODO: Force a need for a re-auth
+	iswiftpkg.ForceReAuth()
 
 	// Attempt a GetInodeTableEntry() for RootDirInode... which should fail (re-auth required)
 
@@ -157,6 +153,11 @@ func TestRetryRPC(t *testing.T) {
 
 	// Perform a RenewMount()
 
+	err = testDoAuth()
+	if nil != err {
+		t.Fatalf("testDoAuth() failed: %v", err)
+	}
+
 	renewMountRequest = &RenewMountRequestStruct{
 		MountID:   mountResponse.MountID,
 		AuthToken: testGlobals.authToken,
@@ -166,6 +167,13 @@ func TestRetryRPC(t *testing.T) {
 	err = retryrpcClient.Send("RenewMount", renewMountRequest, renewMountResponse)
 	if nil != err {
 		t.Fatalf("retryrpcClient.Send(\"RenewMount(,)\",,) failed: %v", err)
+	}
+
+	// TODO: Remove this early exit skipping of following TODOs
+
+	if nil == err {
+		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
+		return
 	}
 
 	// Fetch a Shared Lease on RootDirInode
