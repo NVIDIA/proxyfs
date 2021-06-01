@@ -56,8 +56,6 @@ var testGlobals *testGlobalsStruct
 
 func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 	var (
-		authRequestHeaders         http.Header
-		authResponseHeaders        http.Header
 		confStrings                []string
 		err                        error
 		putAccountRequestHeaders   http.Header
@@ -183,18 +181,10 @@ func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 		t.Fatalf("iswifpkg.Start(testGlobals.confMap) failed: %v", err)
 	}
 
-	authRequestHeaders = make(http.Header)
-
-	authRequestHeaders["X-Auth-User"] = []string{testSwiftAuthUser}
-	authRequestHeaders["X-Auth-Key"] = []string{testSwiftAuthKey}
-
-	authResponseHeaders, _, err = testDoHTTPRequest("GET", testGlobals.authURL, authRequestHeaders, nil)
+	err = testDoAuth()
 	if nil != err {
-		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.authURL, authRequestHeaders) failed: %v", err)
+		t.Fatalf("testDoAuth() failed: %v", err)
 	}
-
-	testGlobals.authToken = authResponseHeaders.Get("X-Auth-Token")
-	testGlobals.accountURL = authResponseHeaders.Get("X-Storage-Url")
 
 	testGlobals.containerURL = testGlobals.accountURL + "/" + testContainer
 
@@ -308,5 +298,25 @@ func testDoHTTPRequest(method string, url string, requestHeaders http.Header, re
 	responseHeaders = httpResponse.Header
 
 	err = nil
+	return
+}
+
+func testDoAuth() (err error) {
+	var (
+		authRequestHeaders  http.Header
+		authResponseHeaders http.Header
+	)
+
+	authRequestHeaders = make(http.Header)
+
+	authRequestHeaders["X-Auth-User"] = []string{testSwiftAuthUser}
+	authRequestHeaders["X-Auth-Key"] = []string{testSwiftAuthKey}
+
+	authResponseHeaders, _, err = testDoHTTPRequest("GET", testGlobals.authURL, authRequestHeaders, nil)
+	if nil == err {
+		testGlobals.authToken = authResponseHeaders.Get("X-Auth-Token")
+		testGlobals.accountURL = authResponseHeaders.Get("X-Storage-Url")
+	}
+
 	return
 }
