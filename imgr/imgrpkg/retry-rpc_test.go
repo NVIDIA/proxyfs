@@ -169,13 +169,6 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"RenewMount(,)\",,) failed: %v", err)
 	}
 
-	// TODO: Remove this early exit skipping of following TODOs
-
-	if nil == err {
-		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
-		return
-	}
-
 	// Fetch a Shared Lease on RootDirInode
 
 	leaseRequest = &LeaseRequestStruct{
@@ -201,6 +194,13 @@ func TestRetryRPC(t *testing.T) {
 	err = retryrpcClient.Send("GetInodeTableEntry", getInodeTableEntryRequest, getInodeTableEntryResponse)
 	if nil != err {
 		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,1)\",,) failed: %v", err)
+	}
+
+	// TODO: Remove this early exit skipping of following TODOs
+
+	if nil == err {
+		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
+		return
 	}
 
 	// TODO: Attempt a PutInodeTableEntries() for RootDirInode... which should fail (only Shared Lease)
