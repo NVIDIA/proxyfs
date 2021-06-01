@@ -342,17 +342,15 @@ type InodeHeadLayoutEntryV1Struct struct {
 // that is appended.
 //
 type InodeHeadV1Struct struct {
-	InodeNumber         uint64
-	InodeType           uint8                       //    One of InodeType*
-	LinkTable           []InodeLinkTableEntryStruct //    List of Directory Entry references to this Inode
-	Size                uint64                      //    Only applicable to File Inodes
-	CreationTime        time.Time
-	ModificationTime    time.Time
-	AccessTime          time.Time
-	AttrChangeTime      time.Time
-	Mode                uint16 //                         Must be <= InodeModeMask (Note: does not include InodeType encoding)
-	UserID              uint64
-	GroupID             uint64
+	InodeNumber         uint64                         //
+	InodeType           uint8                          // One of InodeType*
+	LinkTable           []InodeLinkTableEntryStruct    // List of Directory Entry references to this Inode
+	Size                uint64                         // Only applicable to File Inodes
+	ModificationTime    time.Time                      // In POSIX terms, equivalent to st_mtim: Time of last modification
+	StatusChangeTime    time.Time                      // In POSIX terms, equivalent to st_ctim: Time of last status change
+	Mode                uint16                         // Must be <= InodeModeMask (Note: does not include InodeType encoding)
+	UserID              uint64                         //
+	GroupID             uint64                         //
 	StreamTable         []InodeStreamTableEntryStruct  // List of Alternate Data Streams for this Inode
 	PayloadObjectNumber uint64                         // For Dir & File Inodes, identifies the Object containing the root of the Directory or ExtentMap B+Tree
 	PayloadObjectOffset uint64                         // For Dir & File Inodes, starting offset in the Object of the root of the Directory or ExtentMap B+Tree

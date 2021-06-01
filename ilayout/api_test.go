@@ -86,10 +86,8 @@ func TestAPI(t *testing.T) {
 				},
 			},
 			Size:             3,
-			CreationTime:     testStartTime.AddDate(0, 0, -4),
-			ModificationTime: testStartTime.AddDate(0, 0, -3),
-			AccessTime:       testStartTime.AddDate(0, 0, -1),
-			AttrChangeTime:   testStartTime.AddDate(0, 0, -2),
+			ModificationTime: testStartTime.AddDate(0, 0, -2),
+			StatusChangeTime: testStartTime.AddDate(0, 0, -1),
 			Mode:             0o456,
 			UserID:           7,
 			GroupID:          8,
@@ -246,10 +244,8 @@ func TestAPI(t *testing.T) {
 		(testInodeHeadV1.InodeType != unmarshaledInodeHeadV1.InodeType) ||
 		(len(testInodeHeadV1.LinkTable) != len(unmarshaledInodeHeadV1.LinkTable)) ||
 		(testInodeHeadV1.Size != unmarshaledInodeHeadV1.Size) ||
-		(testInodeHeadV1.CreationTime != unmarshaledInodeHeadV1.CreationTime) ||
 		(testInodeHeadV1.ModificationTime != unmarshaledInodeHeadV1.ModificationTime) ||
-		(testInodeHeadV1.AccessTime != unmarshaledInodeHeadV1.AccessTime) ||
-		(testInodeHeadV1.AttrChangeTime != unmarshaledInodeHeadV1.AttrChangeTime) ||
+		(testInodeHeadV1.StatusChangeTime != unmarshaledInodeHeadV1.StatusChangeTime) ||
 		(testInodeHeadV1.Mode != unmarshaledInodeHeadV1.Mode) ||
 		(testInodeHeadV1.UserID != unmarshaledInodeHeadV1.UserID) ||
 		(testInodeHeadV1.GroupID != unmarshaledInodeHeadV1.GroupID) ||
@@ -268,7 +264,7 @@ func TestAPI(t *testing.T) {
 	}
 	for streamTableIndex = range testInodeHeadV1.StreamTable {
 		if (testInodeHeadV1.StreamTable[streamTableIndex].Name != unmarshaledInodeHeadV1.StreamTable[streamTableIndex].Name) ||
-			(0 != bytes.Compare(testInodeHeadV1.StreamTable[streamTableIndex].Value, unmarshaledInodeHeadV1.StreamTable[streamTableIndex].Value)) {
+			!bytes.Equal(testInodeHeadV1.StreamTable[streamTableIndex].Value, unmarshaledInodeHeadV1.StreamTable[streamTableIndex].Value) {
 			t.Fatalf("Bad unmarshaledInodeHeadV1 (%+v) - expected testInodeHeadV1 (%+v) [Case 3]", unmarshaledInodeHeadV1, testInodeHeadV1)
 		}
 	}
