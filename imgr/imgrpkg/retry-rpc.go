@@ -223,8 +223,6 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 
 	volume = mount.volume
 
-	globals.Unlock()
-
 	mount.authToken = renewMountRequest.AuthToken
 
 	_, err = swiftObjectGet(mount.volume.storageURL, mount.authToken, ilayout.CheckPointObjectNumber)
