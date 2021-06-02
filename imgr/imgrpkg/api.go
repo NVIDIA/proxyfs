@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package imgrpkg implements the server side Inode Management for ProxyFS volumes.
-// The package supports to communications protocols. The balance of the package
-// documentation will describe the Go-callable API. Note that func's listed under
-// type RetryRPCServerStruct are the RPCs issued by the client side via package
-// retryrpc connections (and, thus, not intended to be called directly).
+// While the package provides a small set of Go-callable APIs, the bulk of its
+// functionality is accessed via package retryrpc-exposed RPCs. While these RPCs
+// reference active volumes known to an imgrpkg instance, a RESTful API is provided
+// to specify those active volumes.
+//
+// Note that func's listed under type RetryRPCServerStruct are the RPCs issued by
+// the client side via package retryrpc connections (and, thus, not intended to be
+// called directly).
 //
 // To configure an imgrpkg instance, Start() is called passing, as the sole
 // argument, a package conf ConfMap. Here is a sample .conf file:
@@ -63,9 +67,8 @@
 // files, the retryrpc package will be configured to use TLS. In any event,
 // the RPCs will be available via <PublicIPAddr>:<RetryRPCPort>.
 //
-// In addition to the package retryrpc-exposed RPCs, the package also includes
-// an embedded HTTP Server (at URL http://<PrivateIPAddr>:<HTTPServerPort>)
-// responses to the following:
+// The RESTful API is provided by an embedded HTTP Server
+// (at URL http://<PrivateIPAddr>:<HTTPServerPort>) responsing to the following:
 //
 //  DELETE /volume/<volumeName>
 //
@@ -267,11 +270,33 @@ func (dummy *RetryRPCServerStruct) GetInodeTableEntry(getInodeTableEntryRequest 
 	return getInodeTableEntry(getInodeTableEntryRequest, getInodeTableEntryResponse)
 }
 
-// PutInodeTableEntriesRequestStruct is the request object for PutInodeTableEntries.
+// PutInodeTableEntryStruct is used to indicate the change to an individual
+// InodeTableEntry as part of the collection of changes in a PutInodeTablesEntries
+// request (which must have an active Exclusive Lease granted to the MountID).
+//
+type PutInodeTableEntryStruct struct {
+	InodeNumber           uint64
+	InodeHeadObjectNumber uint64
+	InodeHeadLength       uint64
+}
+
+// PutInodeTableEntriesRequestStruct is the request object for PutInodeTableEntries
+// (which must have an active Exclusive Lease for every PutInodeTableEntryStruct.InodeNumber
+// granted to the MountID).
+//
+// Note that dereferenced objects listed in the DereferencedObjectNumberArray will
+// not be deleted until the next CheckPoint is performed.
+//
+// The SuperBlockInode{ObjectCount|ObjectSize|BytesReferenced}Adjustment fields
+// are used to update the corresponding fields in the volume's SuperBlock.
 //
 type PutInodeTableEntriesRequestStruct struct {
-	MountID string
-	// TODO
+	MountID                                  string
+	UpdatedInodeTableEntryArray              []PutInodeTableEntryStruct
+	DereferencedObjectNumberArray            []uint64
+	SuperBlockInodeObjectCountAdjustment     int64
+	SuperBlockInodeObjectSizeAdjustment      int64
+	SuperBlockInodeBytesReferencedAdjustment int64
 }
 
 // PutInodeTableEntriesResponseStruct is the response object for PutInodeTableEntries.
@@ -294,9 +319,7 @@ type DeleteInodeTableEntryRequestStruct struct {
 
 // DeleteInodeTableEntryResponseStruct is the response object for DeleteInodeTableEntry.
 //
-type DeleteInodeTableEntryResponseStruct struct {
-	// TODO
-}
+type DeleteInodeTableEntryResponseStruct struct{}
 
 // DeleteInodeTableEntry requests the specified Inode information be deleted.
 // An active Exclusive Lease must be granted to the MountID. Note that
