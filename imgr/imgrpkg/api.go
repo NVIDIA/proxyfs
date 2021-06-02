@@ -3,6 +3,9 @@
 
 // Package imgrpkg implements the server side Inode Management for ProxyFS volumes.
 // The package supports to communications protocols. The balance of the package
+
+====>>> The line "The package supports to communications protocols." needs to be reworded
+
 // documentation will describe the Go-callable API. Note that func's listed under
 // type RetryRPCServerStruct are the RPCs issued by the client side via package
 // retryrpc connections (and, thus, not intended to be called directly).
@@ -71,6 +74,12 @@
 //
 // This will cause the specified <volumeName> to no longer be served. Note that
 // this does not actually affect the contents of the associated Container.
+
+Does this mean that the "root" user on the system will be able to delete an active volume?
+Is that a security concern?
+
+I have a similar concern about POST and PUT below
+
 //
 //  GET /config
 //
