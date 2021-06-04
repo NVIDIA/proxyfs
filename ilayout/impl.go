@@ -52,8 +52,13 @@ func (objectTrailer *ObjectTrailerStruct) marshalObjectTrailer() (objectTrailerB
 		return
 	}
 
-	_, err = putLEUint32ToBuf(objectTrailerBuf, curPos, objectTrailer.Length)
+	curPos, err = putLEUint32ToBuf(objectTrailerBuf, curPos, objectTrailer.Length)
 	if nil != err {
+		return
+	}
+
+	if curPos != len(objectTrailerBuf) {
+		err = fmt.Errorf("curPos != len(objectTrailerBuf)")
 		return
 	}
 
@@ -112,13 +117,14 @@ func unmarshalObjectTrailer(objectTrailerBuf []byte) (objectTrailer *ObjectTrail
 
 func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf []byte, err error) {
 	var (
-		curPos                int
-		inodeTableLayoutIndex int
-		objectTrailer         *ObjectTrailerStruct
-		objectTrailerBuf      []byte
+		curPos                              int
+		inodeTableLayoutIndex               int
+		objectTrailer                       *ObjectTrailerStruct
+		objectTrailerBuf                    []byte
+		pendingDeleteObjectNumberArrayIndex int
 	)
 
-	superBlockV1Buf = make([]byte, 8+8+8+8+(len(superBlockV1.InodeTableLayout)*(8+8+8))+8+8+8+(2+2+4))
+	superBlockV1Buf = make([]byte, 8+8+8+8+(len(superBlockV1.InodeTableLayout)*(8+8+8))+8+8+8+8+(len(superBlockV1.PendingDeleteObjectNumberArray)*8)+(2+2+4))
 
 	curPos = 0
 
@@ -174,6 +180,18 @@ func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf [
 		return
 	}
 
+	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, uint64(len(superBlockV1.PendingDeleteObjectNumberArray)))
+	if nil != err {
+		return
+	}
+
+	for pendingDeleteObjectNumberArrayIndex = 0; pendingDeleteObjectNumberArrayIndex < len(superBlockV1.PendingDeleteObjectNumberArray); pendingDeleteObjectNumberArrayIndex++ {
+		curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.PendingDeleteObjectNumberArray[pendingDeleteObjectNumberArrayIndex])
+		if nil != err {
+			return
+		}
+	}
+
 	if curPos > math.MaxUint32 {
 		err = fmt.Errorf("cannot marshal an superBlockV1Buf with > math.MaxUint32 (0x%8X) payload preceeding ObjectTrailerStruct", math.MaxUint32)
 		return
@@ -190,8 +208,13 @@ func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf [
 		return
 	}
 
-	_, err = putFixedByteSliceToBuf(superBlockV1Buf, curPos, objectTrailerBuf)
+	curPos, err = putFixedByteSliceToBuf(superBlockV1Buf, curPos, objectTrailerBuf)
 	if nil != err {
+		return
+	}
+
+	if curPos != len(superBlockV1Buf) {
+		err = fmt.Errorf("curPos != len(superBlockV1Buf)")
 		return
 	}
 
@@ -201,10 +224,12 @@ func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf [
 
 func unmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1Struct, err error) {
 	var (
-		curPos                int
-		inodeTableLayoutIndex uint64
-		inodeTableLayoutLen   uint64
-		objectTrailer         *ObjectTrailerStruct
+		curPos                              int
+		inodeTableLayoutIndex               uint64
+		inodeTableLayoutLen                 uint64
+		objectTrailer                       *ObjectTrailerStruct
+		pendingDeleteObjectNumberArrayIndex uint64
+		pendingDeleteObjectNumberArrayLen   uint64
 	)
 
 	objectTrailer, err = unmarshalObjectTrailer(superBlockV1Buf)
@@ -278,6 +303,20 @@ func unmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1St
 		return
 	}
 
+	pendingDeleteObjectNumberArrayLen, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
+	if nil != err {
+		return
+	}
+
+	superBlockV1.PendingDeleteObjectNumberArray = make([]uint64, pendingDeleteObjectNumberArrayLen)
+
+	for pendingDeleteObjectNumberArrayIndex = 0; pendingDeleteObjectNumberArrayIndex < pendingDeleteObjectNumberArrayLen; pendingDeleteObjectNumberArrayIndex++ {
+		superBlockV1.PendingDeleteObjectNumberArray[pendingDeleteObjectNumberArrayIndex], curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
+		if nil != err {
+			return
+		}
+	}
+
 	if curPos != int(objectTrailer.Length) {
 		err = fmt.Errorf("incorrect size for superBlockV1Buf")
 		return
@@ -312,8 +351,13 @@ func (inodeTableEntryValueV1 *InodeTableEntryValueV1Struct) marshalInodeTableEnt
 		return
 	}
 
-	_, err = putLEUint64ToBuf(inodeTableEntryValueV1Buf, curPos, inodeTableEntryValueV1.InodeHeadLength)
+	curPos, err = putLEUint64ToBuf(inodeTableEntryValueV1Buf, curPos, inodeTableEntryValueV1.InodeHeadLength)
 	if nil != err {
+		return
+	}
+
+	if curPos != len(inodeTableEntryValueV1Buf) {
+		err = fmt.Errorf("curPos != len(inodeTableEntryValueV1Buf)")
 		return
 	}
 
@@ -527,8 +571,13 @@ func (inodeHeadV1 *InodeHeadV1Struct) marshalInodeHeadV1() (inodeHeadV1Buf []byt
 		return
 	}
 
-	_, err = putFixedByteSliceToBuf(inodeHeadV1Buf, curPos, objectTrailerBuf)
+	curPos, err = putFixedByteSliceToBuf(inodeHeadV1Buf, curPos, objectTrailerBuf)
 	if nil != err {
+		return
+	}
+
+	if curPos != len(inodeHeadV1Buf) {
+		err = fmt.Errorf("curPos != len(inodeHeadV1Buf)")
 		return
 	}
 
@@ -716,8 +765,13 @@ func (directoryEntryValueV1 *DirectoryEntryValueV1Struct) marshalDirectoryEntryV
 		return
 	}
 
-	_, err = putLEUint8ToBuf(directoryEntryValueV1Buf, curPos, directoryEntryValueV1.InodeType)
+	curPos, err = putLEUint8ToBuf(directoryEntryValueV1Buf, curPos, directoryEntryValueV1.InodeType)
 	if nil != err {
+		return
+	}
+
+	if curPos != len(directoryEntryValueV1Buf) {
+		err = fmt.Errorf("curPos != len(directoryEntryValueV1Buf)")
 		return
 	}
 
@@ -774,8 +828,13 @@ func (extentMapEntryValueV1 *ExtentMapEntryValueV1Struct) marshalExtentMapEntryV
 		return
 	}
 
-	_, err = putLEUint64ToBuf(extentMapEntryValueV1Buf, curPos, extentMapEntryValueV1.ObjectOffset)
+	curPos, err = putLEUint64ToBuf(extentMapEntryValueV1Buf, curPos, extentMapEntryValueV1.ObjectOffset)
 	if nil != err {
+		return
+	}
+
+	if curPos != len(extentMapEntryValueV1Buf) {
+		err = fmt.Errorf("curPos != len(extentMapEntryValueV1Buf)")
 		return
 	}
 

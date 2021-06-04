@@ -183,18 +183,22 @@ type InodeTableLayoutEntryV1Struct struct {
 // count of the number of InodeTableLayoutEntryV1Struct's followed by the
 // serialization of each one.
 //
+// The PendingDeleteObjectNumberArray is serialized as a preceeding LittleEndian
+// count of the number of ObjectNumbers followed by each LittleEndian ObjectNumber.
+//
 // Note that the CheckPointV1Struct.SuperBlockLength also includes the bytes for holding
 // the ObjectTrailerStruct{ObjType: SuperBlockType, Version: SuperBlockVersionV1} that is
 // appended.
 //
 type SuperBlockV1Struct struct {
-	InodeTableRootObjectNumber uint64                          // Identifies the Object containing the root of the InodeTable
-	InodeTableRootObjectOffset uint64                          // Starting offset in the Object of the root of the InodeTable
-	InodeTableRootObjectLength uint64                          // Number of bytes in the Object of the root of the InodeTable
-	InodeTableLayout           []InodeTableLayoutEntryV1Struct // Describes the data and space occupied by the the InodeTable
-	InodeObjectCount           uint64                          // Number of Objects holding Inodes
-	InodeObjectSize            uint64                          // Sum of sizes of all Objects holding Inodes
-	InodeBytesReferenced       uint64                          // Sum of bytes referenced in all Objects holding Inodes
+	InodeTableRootObjectNumber     uint64                          // Identifies the Object containing the root of the InodeTable
+	InodeTableRootObjectOffset     uint64                          // Starting offset in the Object of the root of the InodeTable
+	InodeTableRootObjectLength     uint64                          // Number of bytes in the Object of the root of the InodeTable
+	InodeTableLayout               []InodeTableLayoutEntryV1Struct // Describes the data and space occupied by the the InodeTable
+	InodeObjectCount               uint64                          // Number of Objects holding Inodes
+	InodeObjectSize                uint64                          // Sum of sizes of all Objects holding Inodes
+	InodeBytesReferenced           uint64                          // Sum of bytes referenced in all Objects holding Inodes
+	PendingDeleteObjectNumberArray []uint64                        // List of Objects to be deleted after the this CheckPoint
 }
 
 // MarshalSuperBlockV1 encodes superBlockV1 to superBlockV1Buf.

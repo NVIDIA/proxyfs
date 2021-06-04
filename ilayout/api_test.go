@@ -52,12 +52,18 @@ func TestAPI(t *testing.T) {
 			InodeObjectCount:     4,
 			InodeObjectSize:      5,
 			InodeBytesReferenced: 6,
+			PendingDeleteObjectNumberArray: []uint64{
+				7,
+				8,
+				9,
+			},
 		}
 
 		marshaledSuperBlockV1   []byte
 		unmarshaledSuperBlockV1 *SuperBlockV1Struct
 
-		inodeTableLayoutIndex int
+		inodeTableLayoutIndex               int
+		pendingDeleteObjectNumberArrayIndex int
 
 		testInodeTableEntryValueV1 = &InodeTableEntryValueV1Struct{
 			InodeHeadObjectNumber: 2,
@@ -197,12 +203,18 @@ func TestAPI(t *testing.T) {
 	if (testSuperBlockV1.InodeTableRootObjectNumber != unmarshaledSuperBlockV1.InodeTableRootObjectNumber) ||
 		(testSuperBlockV1.InodeTableRootObjectOffset != unmarshaledSuperBlockV1.InodeTableRootObjectOffset) ||
 		(testSuperBlockV1.InodeTableRootObjectLength != unmarshaledSuperBlockV1.InodeTableRootObjectLength) ||
-		(len(testSuperBlockV1.InodeTableLayout) != len(unmarshaledSuperBlockV1.InodeTableLayout)) {
+		(len(testSuperBlockV1.InodeTableLayout) != len(unmarshaledSuperBlockV1.InodeTableLayout)) ||
+		(len(testSuperBlockV1.PendingDeleteObjectNumberArray) != len(unmarshaledSuperBlockV1.PendingDeleteObjectNumberArray)) {
 		t.Fatalf("Bad unmarshaledSuperBlockV1 (%+v) - expected testSuperBlockV1 (%+v) [Case 1]", unmarshaledSuperBlockV1, testSuperBlockV1)
 	}
 	for inodeTableLayoutIndex = range testSuperBlockV1.InodeTableLayout {
 		if testSuperBlockV1.InodeTableLayout[inodeTableLayoutIndex] != unmarshaledSuperBlockV1.InodeTableLayout[inodeTableLayoutIndex] {
 			t.Fatalf("Bad unmarshaledSuperBlockV1 (%+v) - expected testSuperBlockV1 (%+v) [Case 2]", unmarshaledSuperBlockV1, testSuperBlockV1)
+		}
+	}
+	for pendingDeleteObjectNumberArrayIndex = range testSuperBlockV1.PendingDeleteObjectNumberArray {
+		if testSuperBlockV1.PendingDeleteObjectNumberArray[pendingDeleteObjectNumberArrayIndex] != unmarshaledSuperBlockV1.PendingDeleteObjectNumberArray[pendingDeleteObjectNumberArrayIndex] {
+			t.Fatalf("Bad unmarshaledSuperBlockV1 (%+v) - expected testSuperBlockV1 (%+v) [Case 3]", unmarshaledSuperBlockV1, testSuperBlockV1)
 		}
 	}
 

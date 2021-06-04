@@ -65,7 +65,7 @@ func TestHTTPServer(t *testing.T) {
 	if nil != err {
 		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL/ilayout.CheckPointObjectNumber, getRequestHeaders, nil) failed: %v", err)
 	}
-	if "0000000000000001 0000000000000003 0000000000000058 0000000000000003" != string(responseBody[:]) {
+	if "0000000000000001 0000000000000003 0000000000000060 0000000000000003" != string(responseBody[:]) {
 		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL/ilayout.CheckPointObjectNumber, getRequestHeaders, nil) returned unexpected Object List: \"%s\"", string(responseBody[:]))
 	}
 
