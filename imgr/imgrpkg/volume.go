@@ -59,7 +59,7 @@ func (dummy *globalsStruct) DumpValue(value sortedmap.Value) (valueAsString stri
 
 	valueAsVolume, ok = value.(*volumeStruct)
 	if ok {
-		valueAsString = fmt.Sprintf("%s", valueAsVolume.storageURL)
+		valueAsString = valueAsVolume.storageURL
 		err = nil
 	} else {
 		err = fmt.Errorf("volumeMap's DumpValue(%v) called for non-*volumeStruct", value)
@@ -95,7 +95,7 @@ func deleteVolume(volumeName string) (err error) {
 	// The following is only temporary...
 	// TODO: Actually gracefully unmount clients, block new mounts, and lazily remove it
 
-	if 0 != len(volumeAsStruct.mountMap) {
+	if len(volumeAsStruct.mountMap) != 0 {
 		logFatalf("No support for deleting actively mounted volume \"%s\"", volumeName)
 	}
 
@@ -266,17 +266,17 @@ func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksSt
 }
 
 func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
-	err = fmt.Errorf("Not implemented")
+	err = fmt.Errorf("not implemented")
 	return
 }
 
 func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
-	err = fmt.Errorf("Not implemented")
+	err = fmt.Errorf("not implemented")
 	return
 }
 
 func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
-	err = fmt.Errorf("Not implemented")
+	err = fmt.Errorf("not implemented")
 	return
 }
 
@@ -325,7 +325,7 @@ func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksSt
 }
 
 func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
-	err = fmt.Errorf("Not implemented")
+	err = fmt.Errorf("not implemented")
 	return
 }
 
@@ -364,7 +364,7 @@ func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksSt
 }
 
 func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
-	err = fmt.Errorf("Not implemented")
+	err = fmt.Errorf("not implemented")
 	return
 }
 
@@ -416,17 +416,17 @@ func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCal
 }
 
 func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
-	err = fmt.Errorf("Not implemented")
+	err = fmt.Errorf("not implemented")
 	return
 }
 
 func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
-	err = fmt.Errorf("Not implemented")
+	err = fmt.Errorf("not implemented")
 	return
 }
 
 func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
-	err = fmt.Errorf("Not implemented")
+	err = fmt.Errorf("not implemented")
 	return
 }
 
@@ -475,7 +475,7 @@ func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCal
 }
 
 func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
-	err = fmt.Errorf("Not implemented")
+	err = fmt.Errorf("not implemented")
 	return
 }
 
@@ -497,7 +497,7 @@ func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCal
 }
 
 func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
-	err = fmt.Errorf("Not implemented")
+	err = fmt.Errorf("not implemented")
 	return
 }
 
@@ -714,20 +714,21 @@ func putVolume(name string, storageURL string) (err error) {
 	)
 
 	volume = &volumeStruct{
-		name:                      name,
-		storageURL:                storageURL,
-		mountMap:                  make(map[string]*mountStruct),
-		healthyMountList:          list.New(),
-		leasesExpiredMountList:    list.New(),
-		authTokenExpiredMountList: list.New(),
-		deleting:                  false,
-		checkPoint:                nil,
-		superBlock:                nil,
-		inodeTable:                nil,
-		inodeTableLayout:          nil,
-		pendingObjectDeleteSet:    make(map[uint64]struct{}),
-		checkPointControlChan:     nil,
-		inodeLeaseMap:             make(map[uint64]*inodeLeaseStruct),
+		name:                          name,
+		storageURL:                    storageURL,
+		mountMap:                      make(map[string]*mountStruct),
+		healthyMountList:              list.New(),
+		leasesExpiredMountList:        list.New(),
+		authTokenExpiredMountList:     list.New(),
+		deleting:                      false,
+		checkPoint:                    nil,
+		superBlock:                    nil,
+		inodeTable:                    nil,
+		inodeTableLayout:              nil,
+		activeObjectNumberDeleteList:  list.New(),
+		pendingObjectNumberDeleteList: list.New(),
+		checkPointControlChan:         nil,
+		inodeLeaseMap:                 make(map[uint64]*inodeLeaseStruct),
 	}
 
 	globals.Lock()
@@ -760,14 +761,14 @@ func (volume *volumeStruct) checkPointDaemon(checkPointControlChan chan chan err
 		checkPointIntervalTimer = time.NewTimer(globals.config.CheckPointInterval)
 
 		select {
-		case _ = <-checkPointIntervalTimer.C:
+		case <-checkPointIntervalTimer.C:
 			err = volume.doCheckPoint()
 			if nil != err {
 				logWarnf("checkPointIntervalTimer-triggered doCheckPoint() failed: %v", err)
 			}
 		case checkPointResponseChan, more = <-checkPointControlChan:
 			if !checkPointIntervalTimer.Stop() {
-				_ = <-checkPointIntervalTimer.C
+				<-checkPointIntervalTimer.C
 			}
 
 			if more {

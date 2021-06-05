@@ -24,9 +24,9 @@ func startRetryRPCServer() (err error) {
 		tlsCertificate       tls.Certificate
 	)
 
-	if "" == globals.config.RetryRPCCertFilePath { // && "" == globals.config.RetryRPCKeyFilePath
+	if globals.config.RetryRPCCertFilePath == "" { // && globals.config.RetryRPCKeyFilePath == ""
 		tlsCertificate = tls.Certificate{}
-	} else { // ("" != globals.config.RetryRPCCertFilePath) && ("" != globals.config.RetryRPCKeyFilePath)
+	} else { // (globals.config.RetryRPCCertFilePath != "") && (globals.config.RetryRPCKeyFilePath != "")
 		tlsCertificate, err = tls.LoadX509KeyPair(globals.config.RetryRPCCertFilePath, globals.config.RetryRPCKeyFilePath)
 		if nil != err {
 			return
@@ -74,20 +74,21 @@ func stopRetryRPCServer() (err error) {
 
 func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountResponse *MountResponseStruct) (err error) {
 	var (
-		alreadyInGlobalsMountMap  bool
-		inodeTableEntryInMemory   *inodeTableLayoutElementStruct
-		inodeTableEntryOnDisk     ilayout.InodeTableLayoutEntryV1Struct
-		lastCheckPoint            *ilayout.CheckPointV1Struct
-		lastCheckPointAsByteSlice []byte
-		lastCheckPointAsString    string
-		mount                     *mountStruct
-		mountIDAsByteArray        []byte
-		mountIDAsString           string
-		ok                        bool
-		startTime                 time.Time = time.Now()
-		superBlockAsByteSlice     []byte
-		volume                    *volumeStruct
-		volumeAsValue             sortedmap.Value
+		alreadyInGlobalsMountMap            bool
+		inodeTableEntryInMemory             *inodeTableLayoutElementStruct
+		inodeTableEntryOnDisk               ilayout.InodeTableLayoutEntryV1Struct
+		lastCheckPoint                      *ilayout.CheckPointV1Struct
+		lastCheckPointAsByteSlice           []byte
+		lastCheckPointAsString              string
+		mount                               *mountStruct
+		mountIDAsByteArray                  []byte
+		mountIDAsString                     string
+		ok                                  bool
+		superBlockPendingDeleteObjectNumber uint64
+		startTime                           time.Time = time.Now()
+		superBlockAsByteSlice               []byte
+		volume                              *volumeStruct
+		volumeAsValue                       sortedmap.Value
 	)
 
 	defer func() {
@@ -183,6 +184,10 @@ retryGenerateMountID:
 			}
 
 			volume.inodeTableLayout[inodeTableEntryOnDisk.ObjectNumber] = inodeTableEntryInMemory
+		}
+
+		for _, superBlockPendingDeleteObjectNumber = range volume.superBlock.PendingDeleteObjectNumberArray {
+			volume.activeObjectNumberDeleteList.PushBack(superBlockPendingDeleteObjectNumber)
 		}
 
 		volume.checkPointControlChan = make(chan chan error)

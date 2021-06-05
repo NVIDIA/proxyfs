@@ -145,24 +145,24 @@ func swiftObjectGet(storageURL string, authToken string, objectNumber uint64) (b
 			return
 		}
 
-		if "" != authToken {
+		if authToken != "" {
 			httpRequest.Header["X-Auth-Token"] = []string{authToken}
 		}
 
 		httpResponse, err = globals.httpClient.Do(httpRequest)
 		if nil != err {
-			err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v\n", storageURL, err)
+			err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v", storageURL, err)
 			return
 		}
 
 		buf, err = ioutil.ReadAll(httpResponse.Body)
 		if nil != err {
-			err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v\n", err)
+			err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v", err)
 			return
 		}
 		err = httpResponse.Body.Close()
 		if nil != err {
-			err = fmt.Errorf("httpResponse.Body.Close() failed: %v\n", err)
+			err = fmt.Errorf("httpResponse.Body.Close() failed: %v", err)
 			return
 		}
 
@@ -210,24 +210,24 @@ func swiftObjectGetRange(storageURL string, authToken string, objectNumber uint6
 
 		httpRequest.Header["Range"] = []string{rangeHeaderValue}
 
-		if "" != authToken {
+		if authToken != "" {
 			httpRequest.Header["X-Auth-Token"] = []string{authToken}
 		}
 
 		httpResponse, err = globals.httpClient.Do(httpRequest)
 		if nil != err {
-			err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v\n", storageURL, err)
+			err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v", storageURL, err)
 			return
 		}
 
 		buf, err = ioutil.ReadAll(httpResponse.Body)
 		if nil != err {
-			err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v\n", err)
+			err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v", err)
 			return
 		}
 		err = httpResponse.Body.Close()
 		if nil != err {
-			err = fmt.Errorf("httpResponse.Body.Close() failed: %v\n", err)
+			err = fmt.Errorf("httpResponse.Body.Close() failed: %v", err)
 			return
 		}
 
@@ -275,24 +275,24 @@ func swiftObjectGetTail(storageURL string, authToken string, objectNumber uint64
 
 		httpRequest.Header["Range"] = []string{rangeHeaderValue}
 
-		if "" != authToken {
+		if authToken != "" {
 			httpRequest.Header["X-Auth-Token"] = []string{authToken}
 		}
 
 		httpResponse, err = globals.httpClient.Do(httpRequest)
 		if nil != err {
-			err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v\n", storageURL, err)
+			err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v", storageURL, err)
 			return
 		}
 
 		buf, err = ioutil.ReadAll(httpResponse.Body)
 		if nil != err {
-			err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v\n", err)
+			err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v", err)
 			return
 		}
 		err = httpResponse.Body.Close()
 		if nil != err {
-			err = fmt.Errorf("httpResponse.Body.Close() failed: %v\n", err)
+			err = fmt.Errorf("httpResponse.Body.Close() failed: %v", err)
 			return
 		}
 
@@ -338,24 +338,24 @@ func swiftObjectPut(storageURL string, authToken string, objectNumber uint64, bo
 			return
 		}
 
-		if "" != authToken {
+		if authToken != "" {
 			httpRequest.Header["X-Auth-Token"] = []string{authToken}
 		}
 
 		httpResponse, err = globals.httpClient.Do(httpRequest)
 		if nil != err {
-			err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v\n", storageURL, err)
+			err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v", storageURL, err)
 			return
 		}
 
 		_, err = ioutil.ReadAll(httpResponse.Body)
 		if nil != err {
-			err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v\n", err)
+			err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v", err)
 			return
 		}
 		err = httpResponse.Body.Close()
 		if nil != err {
-			err = fmt.Errorf("httpResponse.Body.Close() failed: %v\n", err)
+			err = fmt.Errorf("httpResponse.Body.Close() failed: %v", err)
 			return
 		}
 
