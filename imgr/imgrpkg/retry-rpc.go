@@ -349,8 +349,6 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 		return
 	}
 
-	volume = mount.volume
-
 	if mount.authTokenHasExpired() {
 		globals.Unlock()
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
@@ -363,6 +361,8 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 		err = fmt.Errorf("%s %016X", EMissingLease, getInodeTableEntryRequest.InodeNumber)
 		return
 	}
+
+	volume = mount.volume
 
 	inodeTableEntryValueRaw, ok, err = volume.inodeTable.GetByKey(getInodeTableEntryRequest.InodeNumber)
 	if nil != err {
@@ -390,14 +390,79 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 
 func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesResponse *PutInodeTableEntriesResponseStruct) (err error) {
 	var (
-		startTime time.Time = time.Now()
+		dereferencedObjectNumber uint64
+		inodeTableEntryValue     *ilayout.InodeTableEntryValueV1Struct
+		leaseRequest             *leaseRequestStruct
+		mount                    *mountStruct
+		ok                       bool
+		putInodeTableEntry       PutInodeTableEntryStruct
+		startTime                time.Time = time.Now()
+		volume                   *volumeStruct
 	)
 
 	defer func() {
 		globals.stats.PutInodeTableEntriesUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	return fmt.Errorf(ETODO + " putInodeTableEntries")
+	globals.Lock()
+
+	mount, ok = globals.mountMap[putInodeTableEntriesRequest.MountID]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("%s %s", EUnknownMountID, putInodeTableEntriesRequest.MountID)
+		return
+	}
+
+	if mount.authTokenHasExpired() {
+		globals.Unlock()
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
+		return
+	}
+
+	for _, putInodeTableEntry = range putInodeTableEntriesRequest.UpdatedInodeTableEntryArray {
+		leaseRequest, ok = mount.leaseRequestMap[putInodeTableEntry.InodeNumber]
+		if !ok || (leaseRequestStateExclusiveGranted != leaseRequest.requestState) {
+			globals.Unlock()
+			err = fmt.Errorf("%s %016X", EMissingLease, putInodeTableEntry.InodeNumber)
+			return
+		}
+	}
+
+	volume = mount.volume
+
+	for _, putInodeTableEntry = range putInodeTableEntriesRequest.UpdatedInodeTableEntryArray {
+		inodeTableEntryValue = &ilayout.InodeTableEntryValueV1Struct{
+			InodeHeadObjectNumber: putInodeTableEntry.InodeHeadObjectNumber,
+			InodeHeadLength:       putInodeTableEntry.InodeHeadLength,
+		}
+
+		ok, err = volume.inodeTable.PatchByKey(putInodeTableEntry.InodeNumber, inodeTableEntryValue)
+		if nil != err {
+			logFatalf("volume.inodeTable.PatchByKey(putInodeTableEntry.InodeNumber,) failed: %v", err)
+		}
+		if !ok {
+			ok, err = volume.inodeTable.Put(putInodeTableEntry.InodeNumber, inodeTableEntryValue)
+			if nil != err {
+				logFatalf("volume.inodeTable.Put(putInodeTableEntry.InodeNumber,) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("volume.inodeTable.Put(putInodeTableEntry.InodeNumber,) returned !ok")
+			}
+		}
+	}
+
+	volume.superBlock.InodeObjectCount = uint64(int64(volume.superBlock.InodeObjectCount) + putInodeTableEntriesRequest.SuperBlockInodeObjectCountAdjustment)
+	volume.superBlock.InodeObjectSize = uint64(int64(volume.superBlock.InodeObjectSize) + putInodeTableEntriesRequest.SuperBlockInodeObjectSizeAdjustment)
+	volume.superBlock.InodeBytesReferenced = uint64(int64(volume.superBlock.InodeBytesReferenced) + putInodeTableEntriesRequest.SuperBlockInodeBytesReferencedAdjustment)
+
+	for _, dereferencedObjectNumber = range putInodeTableEntriesRequest.DereferencedObjectNumberArray {
+		_ = volume.pendingObjectNumberDeleteList.PushBack(dereferencedObjectNumber)
+	}
+
+	globals.Unlock()
+
+	err = nil
+	return
 }
 
 func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *DeleteInodeTableEntryResponseStruct) (err error) {

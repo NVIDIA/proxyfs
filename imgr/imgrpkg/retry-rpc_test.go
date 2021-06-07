@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/proxyfs/iswift/iswiftpkg"
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
@@ -42,6 +43,8 @@ func TestRetryRPC(t *testing.T) {
 		mountRequest                           *MountRequestStruct
 		mountResponse                          *MountResponseStruct
 		postRequestBody                        string
+		putInodeTableEntriesRequest            *PutInodeTableEntriesRequestStruct
+		putInodeTableEntriesResponse           *PutInodeTableEntriesResponseStruct
 		putRequestBody                         string
 		renewMountRequest                      *RenewMountRequestStruct
 		renewMountResponse                     *RenewMountResponseStruct
@@ -125,13 +128,13 @@ func TestRetryRPC(t *testing.T) {
 
 	getInodeTableEntryRequest = &GetInodeTableEntryRequestStruct{
 		MountID:     mountResponse.MountID,
-		InodeNumber: 1,
+		InodeNumber: ilayout.RootDirInodeNumber,
 	}
 	getInodeTableEntryResponse = &GetInodeTableEntryResponseStruct{}
 
 	err = retryrpcClient.Send("GetInodeTableEntry", getInodeTableEntryRequest, getInodeTableEntryResponse)
 	if nil == err {
-		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,1)\",,) should have failed")
+		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,ilayout.RootDirInodeNumber)\",,) should have failed")
 	}
 
 	// Force a need for a re-auth
@@ -142,13 +145,13 @@ func TestRetryRPC(t *testing.T) {
 
 	getInodeTableEntryRequest = &GetInodeTableEntryRequestStruct{
 		MountID:     mountResponse.MountID,
-		InodeNumber: 1,
+		InodeNumber: ilayout.RootDirInodeNumber,
 	}
 	getInodeTableEntryResponse = &GetInodeTableEntryResponseStruct{}
 
 	err = retryrpcClient.Send("GetInodeTableEntry", getInodeTableEntryRequest, getInodeTableEntryResponse)
 	if nil == err {
-		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,1)\",,) should have failed")
+		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,ilayout.RootDirInodeNumber)\",,) should have failed")
 	}
 
 	// Perform a RenewMount()
@@ -173,27 +176,79 @@ func TestRetryRPC(t *testing.T) {
 
 	leaseRequest = &LeaseRequestStruct{
 		MountID:          mountResponse.MountID,
-		InodeNumber:      1,
+		InodeNumber:      ilayout.RootDirInodeNumber,
 		LeaseRequestType: LeaseRequestTypeShared,
 	}
 	leaseResponse = &LeaseResponseStruct{}
 
 	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
 	if nil != err {
-		t.Fatalf("retryrpcClient.Send(\"Lease(,1,LeaseRequestTypeShared)\",,) failed: %v", err)
+		t.Fatalf("retryrpcClient.Send(\"Lease(,ilayout.RootDirInodeNumber,LeaseRequestTypeShared)\",,) failed: %v", err)
 	}
 
 	// Perform a GetInodeTableEntry() for RootDirInode
 
 	getInodeTableEntryRequest = &GetInodeTableEntryRequestStruct{
 		MountID:     mountResponse.MountID,
-		InodeNumber: 1,
+		InodeNumber: ilayout.RootDirInodeNumber,
 	}
 	getInodeTableEntryResponse = &GetInodeTableEntryResponseStruct{}
 
 	err = retryrpcClient.Send("GetInodeTableEntry", getInodeTableEntryRequest, getInodeTableEntryResponse)
 	if nil != err {
-		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,1)\",,) failed: %v", err)
+		t.Fatalf("retryrpcClient.Send(\"GetInodeTableEntry(,ilayout.RootDirInodeNumber)\",,) failed: %v", err)
+	}
+
+	// Attempt a PutInodeTableEntries() for RootDirInode... which should fail (only Shared Lease)
+
+	putInodeTableEntriesRequest = &PutInodeTableEntriesRequestStruct{
+		MountID: mountResponse.MountID,
+		UpdatedInodeTableEntryArray: []PutInodeTableEntryStruct{
+			{
+				InodeNumber:           ilayout.RootDirInodeNumber,
+				InodeHeadObjectNumber: getInodeTableEntryResponse.InodeHeadObjectNumber,
+				InodeHeadLength:       getInodeTableEntryResponse.InodeHeadLength,
+			},
+		},
+	}
+	putInodeTableEntriesResponse = &PutInodeTableEntriesResponseStruct{}
+
+	err = retryrpcClient.Send("PutInodeTableEntries", putInodeTableEntriesRequest, putInodeTableEntriesResponse)
+	if nil == err {
+		t.Fatalf("retryrpcClient.Send(\"PutInodeTableEntries(,{ilayout.RootDirInodeNumber,,})\",,) should have failed")
+	}
+
+	// Perform a Lease Promote on RootDirInode
+
+	leaseRequest = &LeaseRequestStruct{
+		MountID:          mountResponse.MountID,
+		InodeNumber:      ilayout.RootDirInodeNumber,
+		LeaseRequestType: LeaseRequestTypePromote,
+	}
+	leaseResponse = &LeaseResponseStruct{}
+
+	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Lease(,ilayout.RootDirInodeNumber,LeaseRequestTypePromote)\",,) failed: %v", err)
+	}
+
+	// Perform a PutInodeTableEntries() on RootDirInode
+
+	putInodeTableEntriesRequest = &PutInodeTableEntriesRequestStruct{
+		MountID: mountResponse.MountID,
+		UpdatedInodeTableEntryArray: []PutInodeTableEntryStruct{
+			{
+				InodeNumber:           ilayout.RootDirInodeNumber,
+				InodeHeadObjectNumber: getInodeTableEntryResponse.InodeHeadObjectNumber,
+				InodeHeadLength:       getInodeTableEntryResponse.InodeHeadLength,
+			},
+		},
+	}
+	putInodeTableEntriesResponse = &PutInodeTableEntriesResponseStruct{}
+
+	err = retryrpcClient.Send("PutInodeTableEntries", putInodeTableEntriesRequest, putInodeTableEntriesResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"PutInodeTableEntries(,{ilayout.RootDirInodeNumber,,})\",,) failed: %v", err)
 	}
 
 	// TODO: Remove this early exit skipping of following TODOs
@@ -202,24 +257,6 @@ func TestRetryRPC(t *testing.T) {
 		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
 		return
 	}
-
-	// TODO: Attempt a PutInodeTableEntries() for RootDirInode... which should fail (only Shared Lease)
-
-	// Perform a Lease Promote on RootDirInode
-
-	leaseRequest = &LeaseRequestStruct{
-		MountID:          mountResponse.MountID,
-		InodeNumber:      1,
-		LeaseRequestType: LeaseRequestTypePromote,
-	}
-	leaseResponse = &LeaseResponseStruct{}
-
-	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
-	if nil != err {
-		t.Fatalf("retryrpcClient.Send(\"Lease(,1,LeaseRequestTypePromote)\",,) failed: %v", err)
-	}
-
-	// TODO: Perform a PutInodeTableEntries() on RootDirInode
 
 	// TODO: Create a FileInode (set LinkCount to 0 & no dir entry)... with small amount of data
 

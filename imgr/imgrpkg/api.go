@@ -284,19 +284,19 @@ type PutInodeTableEntryStruct struct {
 // (which must have an active Exclusive Lease for every PutInodeTableEntryStruct.InodeNumber
 // granted to the MountID).
 //
-// Note that dereferenced objects listed in the DereferencedObjectNumberArray will
-// not be deleted until the next CheckPoint is performed.
-//
 // The SuperBlockInode{ObjectCount|ObjectSize|BytesReferenced}Adjustment fields
 // are used to update the corresponding fields in the volume's SuperBlock.
+//
+// Note that dereferenced objects listed in the DereferencedObjectNumberArray will
+// not be deleted until the next CheckPoint is performed.
 //
 type PutInodeTableEntriesRequestStruct struct {
 	MountID                                  string
 	UpdatedInodeTableEntryArray              []PutInodeTableEntryStruct
-	DereferencedObjectNumberArray            []uint64
 	SuperBlockInodeObjectCountAdjustment     int64
 	SuperBlockInodeObjectSizeAdjustment      int64
 	SuperBlockInodeBytesReferencedAdjustment int64
+	DereferencedObjectNumberArray            []uint64
 }
 
 // PutInodeTableEntriesResponseStruct is the response object for PutInodeTableEntries.
