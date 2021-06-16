@@ -80,6 +80,8 @@ func testSetup() []func() {
 		testConfMap            conf.ConfMap
 	)
 
+	fmt.Printf("BEFORE CALL TO gob.Register!!!!!!\n")
+
 	// register some RPC types to gob so it can encode/decode them efficiently
 	gob.Register(&LeaseRequest{})
 	gob.Register(&LeaseReply{})

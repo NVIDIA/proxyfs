@@ -89,6 +89,7 @@ func TestEncodeDecodeJSON(t *testing.T) {
 }
 */
 
+/*
 // TODO - remove this
 // Test that the request and reply decode functions match the encode functions
 func TestEncodeDecodeGob(t *testing.T) {
@@ -96,6 +97,7 @@ func TestEncodeDecodeGob(t *testing.T) {
 		encodeLeaseRequestGob, encodeLeaseReplyGob,
 		decodeLeaseRequestGob, decodeLeaseReplyGob)
 }
+*/
 
 // BenchmarkRpcLeaseEncodeBinary emulates the Lease request/reply RPC encoding
 // by building the structures and simply calling the routines that do a binary
