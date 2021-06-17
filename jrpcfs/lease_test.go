@@ -56,6 +56,11 @@ type testRpcLeaseClientStruct struct {
 	t                *testing.T
 }
 
+type benchmarkRpcServerStats struct {
+	UnmarshalRequestUsec bucketstats.BucketLog2Round
+	MarshalReplyUsec     bucketstats.BucketLog2Round
+}
+
 type benchmarkRpcShortcutRequestMethodOnlyStruct struct { // preceeded by a uint32 encoding length in LittleEndian form
 	Method string
 }
@@ -1148,9 +1153,19 @@ func benchmarkRpcLeaseShortcut(b *testing.B, useTLS bool) {
 	doneWG.Wait()
 }
 
+type ServerStats struct {
+	RequestUnmarshalUsec           bucketstats.BucketLog2Round
+	RpcMountRequestUnmarshalUsec   bucketstats.BucketLog2Round
+	RpcMountReplyMarshalUsec       bucketstats.BucketLog2Round
+	RpcLeaseRequestUnmarshalUsec   bucketstats.BucketLog2Round
+	RpcLeaseReplyMarshalUsec       bucketstats.BucketLog2Round
+	RpcUnmountRequestUnmarshalUsec bucketstats.BucketLog2Round
+	RpcUnmountReplyMarshalUsec     bucketstats.BucketLog2Round
+}
+
 func benchmarkRpcLeaseShortcutServer(useTLS bool, doneWG *sync.WaitGroup) {
 	var (
-		benchmarkRpcShortcutRequestMethodOnly *benchmarkRpcShortcutRequestMethodOnlyStruct
+		benchmarkRpcShortcutRequestMethodOnly benchmarkRpcShortcutRequestMethodOnlyStruct
 		err                                   error
 		jserver                               *Server
 		leaseReply                            *LeaseReply
@@ -1175,7 +1190,17 @@ func benchmarkRpcLeaseShortcutServer(useTLS bool, doneWG *sync.WaitGroup) {
 		unmountReplyWrapped                   *benchmarkRpcShortcutUnmountReplyStruct
 		unmountRequest                        *UnmountRequest
 		unmountRequestWrapped                 *benchmarkRpcShortcutUnmountRequestStruct
+		serverStats                           ServerStats
 	)
+
+	bucketstats.Register("benchmark", "shortcutServer", &serverStats)
+	defer func() {
+		/* TODO - uncomment if the bucketstats should be dumped
+		fmt.Printf("%s\n",
+			bucketstats.SprintStats(bucketstats.StatFormatParsable1, "benchmark", "shortcutServer"))
+		*/
+		bucketstats.UnRegister("benchmark", "shortcutServer")
+	}()
 
 	jserver = NewServer()
 
@@ -1235,9 +1260,10 @@ func benchmarkRpcLeaseShortcutServer(useTLS bool, doneWG *sync.WaitGroup) {
 			panic(fmt.Errorf("netConn.Read(requestBuf) returned n == %v (expected %v)", n, requestLen))
 		}
 
-		benchmarkRpcShortcutRequestMethodOnly = &benchmarkRpcShortcutRequestMethodOnlyStruct{}
+		startTime := time.Now()
+		err = json.Unmarshal(requestBuf, &benchmarkRpcShortcutRequestMethodOnly)
+		serverStats.RequestUnmarshalUsec.Add(uint64(time.Since(startTime).Microseconds()))
 
-		err = json.Unmarshal(requestBuf, benchmarkRpcShortcutRequestMethodOnly)
 		if nil != err {
 			panic(fmt.Errorf("json.Unmarshal(requestBuf, benchmarkRpcShortcutRequestMethodOnly) failed: %v", err))
 		}
@@ -1246,7 +1272,10 @@ func benchmarkRpcLeaseShortcutServer(useTLS bool, doneWG *sync.WaitGroup) {
 		case "RpcMountByAccountName":
 			mountByAccountNameRequestWrapped = &benchmarkRpcShortcutMountByAccountNameRequestStruct{}
 
+			startTime = time.Now()
 			err = json.Unmarshal(requestBuf, mountByAccountNameRequestWrapped)
+			serverStats.RpcMountRequestUnmarshalUsec.Add(uint64(time.Since(startTime).Microseconds()))
+
 			if nil != err {
 				panic(fmt.Errorf("json.Unmarshal(requestBuf, mountByAccountNameRequestWrapped) failed: %v", err))
 			}
@@ -1261,14 +1290,18 @@ func benchmarkRpcLeaseShortcutServer(useTLS bool, doneWG *sync.WaitGroup) {
 				Reply: mountByAccountNameReply,
 			}
 
+			startTime = time.Now()
 			replyBuf, err = json.Marshal(mountByAccountNameReplyWrapped)
+			serverStats.RpcMountReplyMarshalUsec.Add(uint64(time.Since(startTime).Microseconds()))
 			if nil != err {
 				panic(fmt.Errorf("json.Marshal(mountByAccountNameReplyWrapped) failed"))
 			}
 		case "RpcLease":
 			leaseRequestWrapped = &benchmarkRpcShortcutLeaseRequestStruct{}
 
+			startTime = time.Now()
 			err = json.Unmarshal(requestBuf, leaseRequestWrapped)
+			serverStats.RpcLeaseRequestUnmarshalUsec.Add(uint64(time.Since(startTime).Microseconds()))
 			if nil != err {
 				panic(fmt.Errorf("json.Unmarshal(requestBuf, leaseRequestWrapped) failed: %v", err))
 			}
@@ -1283,14 +1316,18 @@ func benchmarkRpcLeaseShortcutServer(useTLS bool, doneWG *sync.WaitGroup) {
 				Reply: leaseReply,
 			}
 
+			startTime = time.Now()
 			replyBuf, err = json.Marshal(leaseReplyWrapped)
+			serverStats.RpcLeaseReplyMarshalUsec.Add(uint64(time.Since(startTime).Microseconds()))
 			if nil != err {
 				panic(fmt.Errorf("json.Marshal(leaseReplyWrapped) failed"))
 			}
 		case "RpcUnmount":
 			unmountRequestWrapped = &benchmarkRpcShortcutUnmountRequestStruct{}
 
+			startTime = time.Now()
 			err = json.Unmarshal(requestBuf, unmountRequestWrapped)
+			serverStats.RpcUnmountRequestUnmarshalUsec.Add(uint64(time.Since(startTime).Microseconds()))
 			if nil != err {
 				panic(fmt.Errorf("json.Unmarshal(requestBuf, unmountRequestWrapped) failed: %v", err))
 			}
@@ -1305,7 +1342,9 @@ func benchmarkRpcLeaseShortcutServer(useTLS bool, doneWG *sync.WaitGroup) {
 				Reply: unmountReply,
 			}
 
+			startTime = time.Now()
 			replyBuf, err = json.Marshal(unmountReplyWrapped)
+			serverStats.RpcUnmountReplyMarshalUsec.Add(uint64(time.Since(startTime).Microseconds()))
 			if nil != err {
 				panic(fmt.Errorf("json.Marshal(unmountReplyWrapped) failed"))
 			}
