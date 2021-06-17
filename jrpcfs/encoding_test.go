@@ -73,7 +73,6 @@ type encodeLeaseReplyFunc func(leaseReply *LeaseReply, jreply *jsonReply) (hdrBy
 // Decode a LeaseRequest from binary, json, or some other form.
 type decodeLeaseReplyFunc func(hdrBytes []byte, jsonBytes []byte) (leaseReply *LeaseReply, jreply *jsonReply)
 
-/* TODO - remove this
 // Test that the request and reply decode functions match the encode functions
 func TestEncodeDecodeBinary(t *testing.T) {
 	testEncodeDecodeFunctions(t,
@@ -87,17 +86,13 @@ func TestEncodeDecodeJSON(t *testing.T) {
 		encodeLeaseRequestJson, encodeLeaseReplyJson,
 		decodeLeaseRequestJson, decodeLeaseReplyJson)
 }
-*/
 
-/*
-// TODO - remove this
 // Test that the request and reply decode functions match the encode functions
 func TestEncodeDecodeGob(t *testing.T) {
 	testEncodeDecodeFunctions(t,
 		encodeLeaseRequestGob, encodeLeaseReplyGob,
 		decodeLeaseRequestGob, decodeLeaseReplyGob)
 }
-*/
 
 // BenchmarkRpcLeaseEncodeBinary emulates the Lease request/reply RPC encoding
 // by building the structures and simply calling the routines that do a binary
@@ -1023,12 +1018,8 @@ func decodeLeaseRequestGob(hdrBytes []byte, gobBytes []byte) (leaseReq *LeaseReq
 	}
 
 	// now unmarshal the jsonRequest fields using gob (can't fail)
-	// TODO - uncomment this
-	// _, _ = decodeLeaseRequestGobBuffer.Write(gobBytes)
-	_, err = decodeLeaseRequestGobBuffer.Write(gobBytes)
+	_, _ = decodeLeaseRequestGobBuffer.Write(gobBytes)
 	err = decodeLeaseRequestGobDecoder.Decode(jreq)
-	// TODO - remove this
-	fmt.Printf("=========================gobBytes: %v err: %v\n", gobBytes, err)
 	if err != nil {
 		panic("decodeLeaseRequestGobDecoder.Decode")
 	}
