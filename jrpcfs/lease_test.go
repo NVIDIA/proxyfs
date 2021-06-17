@@ -1190,14 +1190,15 @@ func benchmarkRpcLeaseShortcutServer(useTLS bool, doneWG *sync.WaitGroup) {
 		unmountReplyWrapped                   *benchmarkRpcShortcutUnmountReplyStruct
 		unmountRequest                        *UnmountRequest
 		unmountRequestWrapped                 *benchmarkRpcShortcutUnmountRequestStruct
-		// serverBucketStatsMethodOnly           benchmarkRpcServerStats
-		serverStats ServerStats
+		serverStats                           ServerStats
 	)
 
 	bucketstats.Register("benchmark", "shortcutServer", &serverStats)
 	defer func() {
-		//fmt.Printf("%s\n",
-		//	bucketstats.SprintStats(bucketstats.StatFormatParsable1, "benchmark", "shortcutServer"))
+		/* TODO - uncomment if the bucketstats should be dumped
+		fmt.Printf("%s\n",
+			bucketstats.SprintStats(bucketstats.StatFormatParsable1, "benchmark", "shortcutServer"))
+		*/
 		bucketstats.UnRegister("benchmark", "shortcutServer")
 	}()
 
