@@ -14,12 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NVIDIA/proxyfs/logger"
 	"golang.org/x/sys/unix"
 )
-
-// Variable to control debug output
-var printDebugLogs bool = false
 
 // TODO - test if Register has been called???
 
@@ -49,7 +45,7 @@ func (server *Server) run() {
 		}
 		if err != nil {
 			if !server.halting {
-				logger.ErrorfWithError(err, "net.Accept failed for Retry RPC listener")
+				server.logger.Printf("net.Accept failed for Retry RPC listener - err: %v\n", err)
 			}
 			server.listenersWG.Done()
 			return
@@ -76,7 +72,7 @@ func (server *Server) run() {
 		ci, err := server.getClientIDAndWait(cCtx)
 		if err != nil {
 			// Socket already had an error - just loop back
-			logger.Warnf("getClientIDAndWait() from client addr: %v returned err: %v\n", conn.RemoteAddr(), err)
+			server.logger.Printf("getClientIDAndWait() from client addr: %v returned err: %v\n", conn.RemoteAddr(), err)
 
 			// Sleep to block over active clients from pounding on us
 			time.Sleep(1 * time.Second)
@@ -89,10 +85,10 @@ func (server *Server) run() {
 		go func(myCi *clientInfo, myCCtx *connCtx, myConn net.Conn, myElm *list.Element) {
 			defer server.goroutineWG.Done()
 
-			logger.Infof("Servicing client: %v address: %v", myCi.myUniqueID, myConn.RemoteAddr())
+			server.logger.Printf("Servicing client: %v address: %v\n", myCi.myUniqueID, myConn.RemoteAddr())
 			server.serviceClient(myCi, myCCtx)
 
-			logger.Infof("Closing client: %v address: %v", myCi.myUniqueID, myConn.RemoteAddr())
+			server.logger.Printf("Closing client: %v address: %v\n", myCi.myUniqueID, myConn.RemoteAddr())
 			server.closeClient(myConn, myElm)
 
 			// The clientInfo for this client will first be trimmed and then later
@@ -113,7 +109,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 	jReq := jsonRequest{}
 	unmarErr := json.Unmarshal(buf, &jReq)
 	if unmarErr != nil {
-		logger.Errorf("Unmarshal of buf failed with err: %v\n", unmarErr)
+		server.logger.Printf("Unmarshal of buf failed with err: %v\n", unmarErr)
 		return
 	}
 
@@ -220,8 +216,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 	}
 
 	if (msgType != PassID) && (msgType != AskMyUniqueID) {
-		err = fmt.Errorf("Server expecting msgType PassID or AskMyUniqueID and received: %v", msgType)
-		logger.PanicfWithError(err, "")
+		server.logger.Fatalf("Server expecting msgType PassID or AskMyUniqueID and received: %v\n", msgType)
 		return
 	}
 
@@ -231,7 +226,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		var connUniqueID uint64
 		err = json.Unmarshal(buf, &connUniqueID)
 		if err != nil {
-			logger.PanicfWithError(err, "Unmarshal returned error")
+			server.logger.Fatalf("Unmarshal returned error: %v", err)
 			return
 		}
 
@@ -243,7 +238,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 			// TODO - tell the client they need to panic since it is better for the client to
 			// panic then the server.
 			err = fmt.Errorf("Server - msgType PassID but can't find uniqueID in perClientInfo")
-			logger.PanicfWithError(err, "getClientIDAndWait() buf: %v connUniqueID: %v err: %+v", buf, connUniqueID, err)
+			server.logger.Fatalf("getClientIDAndWait() buf: %v connUniqueID: %v err: %+v", buf, connUniqueID, err)
 			server.Unlock()
 		} else {
 			server.Unlock()
@@ -295,7 +290,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		var e error
 		localIOR.JResult, e = json.Marshal(newUniqueID)
 		if e != nil {
-			logger.PanicfWithError(e, "Marshal of newUniqueID: %v failed with err: %v", newUniqueID, err)
+			server.logger.Fatalf("Marshal of newUniqueID: %v failed with err: %v", newUniqueID, e)
 		}
 		setupHdrReply(&localIOR, ReturnUniqueID)
 
@@ -333,8 +328,7 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 		}
 
 		if msgType != RPC {
-			err := fmt.Errorf("serviceClient() received invalid msgType: %v - dropping", msgType)
-			logger.PanicfWithError(err, "")
+			server.logger.Fatalf("serviceClient() received invalid msgType: %v", msgType)
 			continue
 		}
 
@@ -379,7 +373,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, ci *clientInfo, jReq *js
 		sReq.Params[0] = dummyReq
 		err = json.Unmarshal(buf, &sReq)
 		if err != nil {
-			logger.PanicfWithError(err, "Unmarshal sReq: %+v", sReq)
+			server.logger.Fatalf("Unmarshal sReq: %+v err: %v", sReq, err)
 			return
 		}
 		req := reflect.ValueOf(dummyReq)
@@ -406,7 +400,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, ci *clientInfo, jReq *js
 		} else {
 			e, ok := errInter.(error)
 			if !ok {
-				logger.PanicfWithError(err, "Call returnValues invalid cast errInter: %+v", errInter)
+				server.logger.Fatalf("Call returnValues invalid cast errInter: %+v", errInter)
 			}
 			jReply.ErrStr = e.Error()
 		}
@@ -420,7 +414,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, ci *clientInfo, jReq *js
 	// Convert response into JSON for return trip
 	ior.JResult, err = json.Marshal(jReply)
 	if err != nil {
-		logger.PanicfWithError(err, "Unable to marshal jReply: %+v", jReply)
+		server.logger.Fatalf("Unable to marshal jReply: %+v err: %v", jReply, err)
 	}
 
 	return
@@ -449,7 +443,7 @@ func (server *Server) returnResults(ior *ioReply, cCtx *connCtx) {
 	cCtx.conn.SetDeadline(time.Now().Add(server.deadlineIO))
 	cnt, e := cCtx.conn.Write(ior.JResult)
 	if e != nil {
-		logger.Infof("returnResults() returned err: %v cnt: %v length of JResult: %v", e, cnt, len(ior.JResult))
+		server.logger.Printf("returnResults() returned err: %v cnt: %v length of JResult: %v\n", e, cnt, len(ior.JResult))
 	}
 	cCtx.Unlock()
 }
@@ -499,12 +493,12 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 			if ci.isEmpty() && ci.cCtx.serviceClientExited {
 				ci.unregsiterMethodStats(server)
 				delete(server.perClientInfo, key)
-				logger.Infof("Trim - DELETE inactive clientInfo with ID: %v", ci.myUniqueID)
+				server.logger.Printf("Trim - DELETE inactive clientInfo with ID: %v\n", ci.myUniqueID)
 			}
 			ci.cCtx.Unlock()
 			ci.Unlock()
 		}
-		logger.Infof("Trimmed completed RetryRpcs - Total: %v", totalItems)
+		server.logger.Printf("Trimmed completed RetryRpcs - Total: %v\n", totalItems)
 	} else {
 		for k, ci := range server.perClientInfo {
 			n := server.trimAClientBasedACK(k, ci)
@@ -562,7 +556,7 @@ func (server *Server) trimTLLBased(ci *clientInfo, t time.Time) (numItems int) {
 		}
 	}
 	s := ci.stats
-	logger.Infof("ID: %v largestReplySize: %v largestReplySizeMethod: %v longest RPC: %v longest RPC Method: %v",
+	server.logger.Printf("ID: %v largestReplySize: %v largestReplySizeMethod: %v longest RPC: %v longest RPC Method: %v\n",
 		ci.myUniqueID, s.largestReplySize, s.largestReplySizeMethod, s.longestRPC, s.longestRPCMethod)
 
 	ci.Unlock()

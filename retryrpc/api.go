@@ -16,6 +16,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"log"
 	"net"
 	"reflect"
 	"strconv"
@@ -23,7 +24,6 @@ import (
 	"time"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
-	"github.com/NVIDIA/proxyfs/logger"
 	"github.com/google/btree"
 )
 
@@ -54,6 +54,7 @@ type Server struct {
 	deadlineIO           time.Duration
 	keepAlivePeriod      time.Duration
 	completedDoneWG      sync.WaitGroup
+	logger               *log.Logger
 	dontStartTrimmers    bool // Used for testing
 }
 
@@ -66,7 +67,8 @@ type ServerConfig struct {
 	DeadlineIO        time.Duration   // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod   time.Duration   // How frequently a KEEPALIVE is sent
 	TLSCertificate    tls.Certificate // TLS Certificate to present to Clients (or tls.Certificate{} if using TCP)
-	dontStartTrimmers bool            // Used for testingD
+	dontStartTrimmers bool            // Used for testing
+	logger            *log.Logger
 }
 
 // NewServer creates the Server object
@@ -79,7 +81,11 @@ func NewServer(config *ServerConfig) *Server {
 		deadlineIO:        config.DeadlineIO,
 		keepAlivePeriod:   config.KeepAlivePeriod,
 		dontStartTrimmers: config.dontStartTrimmers,
+		logger:            config.logger,
 		tlsCertificate:    config.TLSCertificate}
+	if server.logger == nil {
+		panic("logger cannot be nil!\n")
+	}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[uint64]*clientInfo)
 	server.completedTickerDone = make(chan bool)
@@ -177,7 +183,7 @@ func (server *Server) SendCallback(clientID uint64, msg []byte) {
 	server.Lock()
 	lci, ok := server.perClientInfo[clientID]
 	if !ok {
-		fmt.Printf("SERVER: SendCallback() - unable to find client UniqueID: %v\n", clientID)
+		server.logger.Printf("SERVER: SendCallback() - unable to find client UniqueID: %v\n", clientID)
 		server.Unlock()
 		return
 	}
@@ -202,12 +208,12 @@ func (server *Server) Close() {
 	if len(server.tlsCertificate.Certificate) == 0 {
 		err := server.netListener.Close()
 		if err != nil {
-			logger.Errorf("server.netListener.Close() returned err: %v", err)
+			server.logger.Printf("server.netListener.Close() returned err: %v\n", err)
 		}
 	} else {
 		err := server.tlsListener.Close()
 		if err != nil {
-			logger.Errorf("server.tlsListener.Close() returned err: %v", err)
+			server.logger.Printf("server.tlsListener.Close() returned err: %v\n", err)
 		}
 	}
 
@@ -303,6 +309,7 @@ type Client struct {
 	// trimmed
 	bt          *btree.BTree   // btree of requestID's acked
 	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
+	logger      *log.Logger
 	stats       clientSideStatsInfo
 }
 
@@ -320,6 +327,7 @@ type ClientConfig struct {
 	Callbacks                interface{}   // Structure implementing ClientCallbacks
 	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod          time.Duration // How frequently a KEEPALIVE is sent
+	logger                   *log.Logger
 }
 
 // TODO - pass loggers to Cient and Server objects
@@ -345,6 +353,11 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 		cb:              config.Callbacks,
 		keepAlivePeriod: config.KeepAlivePeriod,
 		deadlineIO:      config.DeadlineIO,
+		logger:          config.logger,
+	}
+
+	if client.logger == nil {
+		panic("logger cannot be nil!\n")
 	}
 
 	client.outstandingRequest = make(map[requestID]*reqCtx)

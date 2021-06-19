@@ -4,9 +4,11 @@
 package retryrpc
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509/pkix"
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"testing"
@@ -31,7 +33,14 @@ type testTLSCertsStruct struct {
 	endpointTLSCert      tls.Certificate
 }
 
-var testTLSCerts *testTLSCertsStruct
+func newLogger() *log.Logger {
+	return log.New(&logBuf, "", 0)
+}
+
+var (
+	logBuf       bytes.Buffer
+	testTLSCerts *testTLSCertsStruct
+)
 
 // Utility function to initialize testTLSCerts
 func testTLSCertsAllocate(t *testing.T) {
@@ -121,6 +130,7 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr 
 			KeepAlivePeriod:   60 * time.Second,
 			TLSCertificate:    testTLSCerts.endpointTLSCert,
 			dontStartTrimmers: dontStartTrimmers,
+			logger:            newLogger(),
 		}
 	} else {
 		config = &ServerConfig{
@@ -132,6 +142,7 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr 
 			KeepAlivePeriod:   60 * time.Second,
 			TLSCertificate:    tls.Certificate{},
 			dontStartTrimmers: dontStartTrimmers,
+			logger:            newLogger(),
 		}
 	}
 
@@ -200,6 +211,7 @@ func testServer(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
+			logger:                   newLogger(),
 		}
 	} else {
 		clientConfig = &ClientConfig{
@@ -209,6 +221,7 @@ func testServer(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
+			logger:                   newLogger(),
 		}
 	}
 	rrClnt, newErr := NewClient(clientConfig)
@@ -273,6 +286,7 @@ func testBtree(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
+			logger:                   newLogger(),
 		}
 	} else {
 		clientConfig = &ClientConfig{
@@ -282,6 +296,7 @@ func testBtree(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
+			logger:                   newLogger(),
 		}
 	}
 	client, newErr := NewClient(clientConfig)
