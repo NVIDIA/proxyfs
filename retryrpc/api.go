@@ -67,8 +67,8 @@ type ServerConfig struct {
 	DeadlineIO        time.Duration   // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod   time.Duration   // How frequently a KEEPALIVE is sent
 	TLSCertificate    tls.Certificate // TLS Certificate to present to Clients (or tls.Certificate{} if using TCP)
-	dontStartTrimmers bool            // Used for testing
-	logger            *log.Logger
+	Logger            *log.Logger
+	dontStartTrimmers bool // Used for testing
 }
 
 // NewServer creates the Server object
@@ -81,7 +81,7 @@ func NewServer(config *ServerConfig) *Server {
 		deadlineIO:        config.DeadlineIO,
 		keepAlivePeriod:   config.KeepAlivePeriod,
 		dontStartTrimmers: config.dontStartTrimmers,
-		logger:            config.logger,
+		logger:            config.Logger,
 		tlsCertificate:    config.TLSCertificate}
 	if server.logger == nil {
 		panic("logger cannot be nil!\n")
@@ -327,7 +327,7 @@ type ClientConfig struct {
 	Callbacks                interface{}   // Structure implementing ClientCallbacks
 	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod          time.Duration // How frequently a KEEPALIVE is sent
-	logger                   *log.Logger
+	Logger                   *log.Logger
 }
 
 // TODO - pass loggers to Cient and Server objects
@@ -353,7 +353,7 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 		cb:              config.Callbacks,
 		keepAlivePeriod: config.KeepAlivePeriod,
 		deadlineIO:      config.DeadlineIO,
-		logger:          config.logger,
+		logger:          config.Logger,
 	}
 
 	if client.logger == nil {

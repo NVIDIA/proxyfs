@@ -129,8 +129,8 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr 
 			DeadlineIO:        60 * time.Second,
 			KeepAlivePeriod:   60 * time.Second,
 			TLSCertificate:    testTLSCerts.endpointTLSCert,
+			Logger:            newLogger(),
 			dontStartTrimmers: dontStartTrimmers,
-			logger:            newLogger(),
 		}
 	} else {
 		config = &ServerConfig{
@@ -141,8 +141,8 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr 
 			DeadlineIO:        60 * time.Second,
 			KeepAlivePeriod:   60 * time.Second,
 			TLSCertificate:    tls.Certificate{},
+			Logger:            newLogger(),
 			dontStartTrimmers: dontStartTrimmers,
-			logger:            newLogger(),
 		}
 	}
 
@@ -211,7 +211,7 @@ func testServer(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
-			logger:                   newLogger(),
+			Logger:                   newLogger(),
 		}
 	} else {
 		clientConfig = &ClientConfig{
@@ -221,7 +221,7 @@ func testServer(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
-			logger:                   newLogger(),
+			Logger:                   newLogger(),
 		}
 	}
 	rrClnt, newErr := NewClient(clientConfig)
@@ -286,7 +286,7 @@ func testBtree(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
-			logger:                   newLogger(),
+			Logger:                   newLogger(),
 		}
 	} else {
 		clientConfig = &ClientConfig{
@@ -296,7 +296,7 @@ func testBtree(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
-			logger:                   newLogger(),
+			Logger:                   newLogger(),
 		}
 	}
 	client, newErr := NewClient(clientConfig)

@@ -363,7 +363,7 @@ func pfsagent(t *testing.T, rrSvr *Server, agentID uint64, method string, agentW
 			Callbacks:                cb,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
-			logger:                   newLogger(),
+			Logger:                   newLogger(),
 		}
 	} else {
 		clientConfig = &ClientConfig{
@@ -373,7 +373,7 @@ func pfsagent(t *testing.T, rrSvr *Server, agentID uint64, method string, agentW
 			Callbacks:                cb,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
-			logger:                   newLogger(),
+			Logger:                   newLogger(),
 		}
 	}
 	client, err := NewClient(clientConfig)

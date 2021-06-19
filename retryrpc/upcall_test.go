@@ -76,7 +76,7 @@ func testUpCall(t *testing.T, useTLS bool) {
 			Callbacks:                cb,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
-			logger:                   newLogger(),
+			Logger:                   newLogger(),
 		}
 	} else {
 		clientConfig = &ClientConfig{
@@ -86,7 +86,7 @@ func testUpCall(t *testing.T, useTLS bool) {
 			Callbacks:                cb,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
-			logger:                   newLogger(),
+			Logger:                   newLogger(),
 		}
 	}
 	rrClnt, newErr := NewClient(clientConfig)
