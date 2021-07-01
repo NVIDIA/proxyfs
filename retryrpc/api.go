@@ -11,6 +11,7 @@ package retryrpc
 // a response.
 
 import (
+	"bytes"
 	"container/list"
 	"context"
 	"crypto/tls"
@@ -54,8 +55,8 @@ type Server struct {
 	deadlineIO           time.Duration
 	keepAlivePeriod      time.Duration
 	completedDoneWG      sync.WaitGroup
-	logger               *log.Logger
-	dontStartTrimmers    bool // Used for testing
+	logger               *log.Logger // If nil, defaults to log.New()
+	dontStartTrimmers    bool        // Used for testing
 }
 
 // ServerConfig is used to configure a retryrpc Server
@@ -67,8 +68,8 @@ type ServerConfig struct {
 	DeadlineIO        time.Duration   // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod   time.Duration   // How frequently a KEEPALIVE is sent
 	TLSCertificate    tls.Certificate // TLS Certificate to present to Clients (or tls.Certificate{} if using TCP)
-	Logger            *log.Logger
-	dontStartTrimmers bool // Used for testing
+	Logger            *log.Logger     // If nil, defaults to log.New()
+	dontStartTrimmers bool            // Used for testing
 }
 
 // NewServer creates the Server object
@@ -84,7 +85,8 @@ func NewServer(config *ServerConfig) *Server {
 		logger:            config.Logger,
 		tlsCertificate:    config.TLSCertificate}
 	if server.logger == nil {
-		panic("logger cannot be nil!\n")
+		var logBuf bytes.Buffer
+		server.logger = log.New(&logBuf, "", 0)
 	}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[uint64]*clientInfo)
@@ -309,12 +311,15 @@ type Client struct {
 	// trimmed
 	bt          *btree.BTree   // btree of requestID's acked
 	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
-	logger      *log.Logger
+	logger      *log.Logger    // If nil, defaults to log.New()
 	stats       clientSideStatsInfo
 }
 
 // ClientCallbacks contains the methods required when supporting
 // callbacks from the Server.
+//
+// NOTE: It is assumed that ALL Interrupt() routines will eventually
+// return.   Failure to do so will cause client.Close() to hang!
 type ClientCallbacks interface {
 	Interrupt(payload []byte)
 }
@@ -327,10 +332,8 @@ type ClientConfig struct {
 	Callbacks                interface{}   // Structure implementing ClientCallbacks
 	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod          time.Duration // How frequently a KEEPALIVE is sent
-	Logger                   *log.Logger
+	Logger                   *log.Logger   // If nil, defaults to log.New()
 }
-
-// TODO - pass loggers to Cient and Server objects
 
 // NewClient returns a Client structure
 //
@@ -357,7 +360,8 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 	}
 
 	if client.logger == nil {
-		panic("logger cannot be nil!\n")
+		var logBuf bytes.Buffer
+		client.logger = log.New(&logBuf, "", 0)
 	}
 
 	client.outstandingRequest = make(map[requestID]*reqCtx)
