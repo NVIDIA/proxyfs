@@ -11,11 +11,13 @@ package retryrpc
 // a response.
 
 import (
+	"bytes"
 	"container/list"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"log"
 	"net"
 	"reflect"
 	"strconv"
@@ -23,7 +25,6 @@ import (
 	"time"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
-	"github.com/NVIDIA/proxyfs/logger"
 	"github.com/google/btree"
 )
 
@@ -54,7 +55,8 @@ type Server struct {
 	deadlineIO           time.Duration
 	keepAlivePeriod      time.Duration
 	completedDoneWG      sync.WaitGroup
-	dontStartTrimmers    bool // Used for testing
+	logger               *log.Logger // If nil, defaults to log.New()
+	dontStartTrimmers    bool        // Used for testing
 }
 
 // ServerConfig is used to configure a retryrpc Server
@@ -66,7 +68,8 @@ type ServerConfig struct {
 	DeadlineIO        time.Duration   // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod   time.Duration   // How frequently a KEEPALIVE is sent
 	TLSCertificate    tls.Certificate // TLS Certificate to present to Clients (or tls.Certificate{} if using TCP)
-	dontStartTrimmers bool            // Used for testingD
+	Logger            *log.Logger     // If nil, defaults to log.New()
+	dontStartTrimmers bool            // Used for testing
 }
 
 // NewServer creates the Server object
@@ -79,7 +82,12 @@ func NewServer(config *ServerConfig) *Server {
 		deadlineIO:        config.DeadlineIO,
 		keepAlivePeriod:   config.KeepAlivePeriod,
 		dontStartTrimmers: config.dontStartTrimmers,
+		logger:            config.Logger,
 		tlsCertificate:    config.TLSCertificate}
+	if server.logger == nil {
+		var logBuf bytes.Buffer
+		server.logger = log.New(&logBuf, "", 0)
+	}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[uint64]*clientInfo)
 	server.completedTickerDone = make(chan bool)
@@ -177,7 +185,7 @@ func (server *Server) SendCallback(clientID uint64, msg []byte) {
 	server.Lock()
 	lci, ok := server.perClientInfo[clientID]
 	if !ok {
-		fmt.Printf("SERVER: SendCallback() - unable to find client UniqueID: %v\n", clientID)
+		server.logger.Printf("SERVER: SendCallback() - unable to find client UniqueID: %v\n", clientID)
 		server.Unlock()
 		return
 	}
@@ -202,12 +210,12 @@ func (server *Server) Close() {
 	if len(server.tlsCertificate.Certificate) == 0 {
 		err := server.netListener.Close()
 		if err != nil {
-			logger.Errorf("server.netListener.Close() returned err: %v", err)
+			server.logger.Printf("server.netListener.Close() returned err: %v\n", err)
 		}
 	} else {
 		err := server.tlsListener.Close()
 		if err != nil {
-			logger.Errorf("server.tlsListener.Close() returned err: %v", err)
+			server.logger.Printf("server.tlsListener.Close() returned err: %v\n", err)
 		}
 	}
 
@@ -303,11 +311,15 @@ type Client struct {
 	// trimmed
 	bt          *btree.BTree   // btree of requestID's acked
 	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
+	logger      *log.Logger    // If nil, defaults to log.New()
 	stats       clientSideStatsInfo
 }
 
 // ClientCallbacks contains the methods required when supporting
 // callbacks from the Server.
+//
+// NOTE: It is assumed that ALL Interrupt() routines will eventually
+// return.   Failure to do so will cause client.Close() to hang!
 type ClientCallbacks interface {
 	Interrupt(payload []byte)
 }
@@ -320,9 +332,8 @@ type ClientConfig struct {
 	Callbacks                interface{}   // Structure implementing ClientCallbacks
 	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
 	KeepAlivePeriod          time.Duration // How frequently a KEEPALIVE is sent
+	Logger                   *log.Logger   // If nil, defaults to log.New()
 }
-
-// TODO - pass loggers to Cient and Server objects
 
 // NewClient returns a Client structure
 //
@@ -345,6 +356,12 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 		cb:              config.Callbacks,
 		keepAlivePeriod: config.KeepAlivePeriod,
 		deadlineIO:      config.DeadlineIO,
+		logger:          config.Logger,
+	}
+
+	if client.logger == nil {
+		var logBuf bytes.Buffer
+		client.logger = log.New(&logBuf, "", 0)
 	}
 
 	client.outstandingRequest = make(map[requestID]*reqCtx)

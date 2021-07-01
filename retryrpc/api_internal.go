@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
-	"github.com/NVIDIA/proxyfs/logger"
 )
 
 // PayloadProtocols defines the supported protocols for the payload
@@ -258,10 +257,6 @@ func buildINeedIDRequest() (iinreq *internalINeedIDRequest, err error) {
 }
 
 func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, msgType MsgType, err error) {
-	if printDebugLogs {
-		logger.Infof("conn: %v", conn)
-	}
-
 	// Read in the header of the request first
 	var hdr ioHeader
 

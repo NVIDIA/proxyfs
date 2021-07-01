@@ -4,9 +4,11 @@
 package retryrpc
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509/pkix"
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"testing"
@@ -31,7 +33,14 @@ type testTLSCertsStruct struct {
 	endpointTLSCert      tls.Certificate
 }
 
-var testTLSCerts *testTLSCertsStruct
+func newLogger() *log.Logger {
+	return log.New(&logBuf, "", 0)
+}
+
+var (
+	logBuf       bytes.Buffer
+	testTLSCerts *testTLSCertsStruct
+)
 
 // Utility function to initialize testTLSCerts
 func testTLSCertsAllocate(t *testing.T) {
@@ -120,6 +129,7 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr 
 			DeadlineIO:        60 * time.Second,
 			KeepAlivePeriod:   60 * time.Second,
 			TLSCertificate:    testTLSCerts.endpointTLSCert,
+			Logger:            newLogger(),
 			dontStartTrimmers: dontStartTrimmers,
 		}
 	} else {
@@ -131,6 +141,7 @@ func getNewServer(lt time.Duration, dontStartTrimmers bool, useTLS bool) (rrSvr 
 			DeadlineIO:        60 * time.Second,
 			KeepAlivePeriod:   60 * time.Second,
 			TLSCertificate:    tls.Certificate{},
+			Logger:            newLogger(),
 			dontStartTrimmers: dontStartTrimmers,
 		}
 	}
@@ -200,6 +211,7 @@ func testServer(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
+			Logger:                   newLogger(),
 		}
 	} else {
 		clientConfig = &ClientConfig{
@@ -209,6 +221,7 @@ func testServer(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
+			Logger:                   newLogger(),
 		}
 	}
 	rrClnt, newErr := NewClient(clientConfig)
@@ -273,6 +286,7 @@ func testBtree(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
+			Logger:                   newLogger(),
 		}
 	} else {
 		clientConfig = &ClientConfig{
@@ -282,6 +296,7 @@ func testBtree(t *testing.T, useTLS bool) {
 			Callbacks:                nil,
 			DeadlineIO:               60 * time.Second,
 			KeepAlivePeriod:          60 * time.Second,
+			Logger:                   newLogger(),
 		}
 	}
 	client, newErr := NewClient(clientConfig)

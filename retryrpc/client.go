@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
-	"github.com/NVIDIA/proxyfs/logger"
 	"github.com/google/btree"
 )
 
@@ -81,10 +80,9 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 			client.Unlock()
 			connectionRetryCount++
 			if connectionRetryCount > ConnectionRetryLimit {
-				err = fmt.Errorf("In send(), ConnectionRetryLimit (%v) on calling dial() exceeded", ConnectionRetryLimit)
-				logger.PanicfWithError(err, "")
+				client.logger.Fatalf("In send(), ConnectionRetryLimit (%v) on calling dial() exceeded", ConnectionRetryLimit)
 			}
-			logger.Warnf("initialDial() failed; retrying: %v", err)
+			client.logger.Printf("initialDial() failed; retrying: %v\n", err)
 			time.Sleep(connectionRetryDelay)
 			connectionRetryDelay *= ConnectionRetryDelayMultiplier
 			client.Lock()
@@ -101,8 +99,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 
 	if client.halting {
 		client.Unlock()
-		e := fmt.Errorf("Calling retryrpc.Send() without dialing")
-		logger.PanicfWithError(e, "")
+		client.logger.Fatalf("Calling retryrpc.Send() without dialing")
 		return
 	}
 	client.currentRequestID++
@@ -113,8 +110,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	// Setup ioreq to write structure on socket to server
 	ioreq, err := buildIoRequest(&jreq)
 	if err != nil {
-		e := fmt.Errorf("Client buildIoRequest returned err: %v", err)
-		logger.PanicfWithError(e, "")
+		client.logger.Fatalf("Client buildIoRequest returned err: %v", err)
 		return err
 	}
 
@@ -224,9 +220,7 @@ func (client *Client) notifyReply(buf []byte, genNum uint64, recvResponse time.T
 		// Don't have ctx to reply.  Assume read garbage on socket and
 		// reconnect.
 
-		// TODO - make log message
-		e := fmt.Errorf("notifyReply failed to unmarshal buf: %+v err: %v", string(buf), err)
-		fmt.Printf("%v\n", e)
+		client.logger.Printf("notifyReply failed to unmarshal buf: %+v err: %v\n", string(buf), err)
 		client.retransmit(genNum)
 		return
 	}
@@ -260,8 +254,7 @@ func (client *Client) notifyReply(buf []byte, genNum uint64, recvResponse time.T
 	m := svrResponse{Result: ctx.rpcReply}
 	unmarshalErr := json.Unmarshal(buf, &m)
 	if unmarshalErr != nil {
-		e := fmt.Errorf("notifyReply failed to unmarshal buf: %v err: %v ctx: %v", string(buf), unmarshalErr, ctx)
-		fmt.Printf("%v\n", e)
+		client.logger.Printf("notifyReply failed to unmarshal buf: %v err: %v ctx: %v\n", string(buf), unmarshalErr, ctx)
 
 		// Assume read garbage on socket - close the socket and reconnect
 		// Drop client lock since retransmit() will acquire it.
@@ -375,7 +368,7 @@ func (client *Client) readReplies(nC net.Conn, callingGenNum uint64) {
 			client.stats.UpcallCalled.Add(1)
 
 		default:
-			fmt.Printf("CLIENT - invalid msgType: %v\n", msgType)
+			client.logger.Printf("CLIENT - invalid msgType: %v\n", msgType)
 		}
 	}
 }
@@ -424,8 +417,7 @@ func (client *Client) retransmit(genNum uint64) {
 		client.Unlock()
 		connectionRetryCount++
 		if connectionRetryCount > ConnectionRetryLimit {
-			err = fmt.Errorf("In retransmit(), ConnectionRetryLimit (%v) on calling dial() exceeded", ConnectionRetryLimit)
-			logger.PanicfWithError(err, "")
+			client.logger.Fatalf("In retransmit(), ConnectionRetryLimit (%v) on calling dial() exceeded", ConnectionRetryLimit)
 		}
 		time.Sleep(connectionRetryDelay)
 		connectionRetryDelay *= ConnectionRetryDelayMultiplier
@@ -455,8 +447,7 @@ func (client *Client) getMyUniqueID() (err error) {
 	// Setup ioreq to write structure on socket to server
 	iinreq, err := buildINeedIDRequest()
 	if err != nil {
-		e := fmt.Errorf("Client buildINeedIDRequest returned err: %v", err)
-		logger.PanicfWithError(e, "")
+		client.logger.Fatalf("Client buildINeedIDRequest returned err: %v", err)
 		return err
 	}
 
@@ -486,8 +477,7 @@ func (client *Client) sendMyInfo() (err error) {
 	// Setup ioreq to write structure on socket to server
 	isreq, err := buildSetIDRequest(client.myUniqueID)
 	if err != nil {
-		e := fmt.Errorf("Client buildSetIDRequest returned err: %v", err)
-		logger.PanicfWithError(e, "")
+		client.logger.Fatalf("Client buildSetIDRequest returned err: %v", err)
 		return err
 	}
 
@@ -603,14 +593,13 @@ func (client *Client) readClientID(callingGenNum uint64) (myUniqueID uint64, err
 	}
 
 	if msgType != ReturnUniqueID {
-		err = fmt.Errorf("CLIENT - invalid msgType: %v", msgType)
-		logger.PanicfWithError(err, "")
+		client.logger.Fatalf("CLIENT - invalid msgType: %v", msgType)
 		return
 	}
 
 	err = json.Unmarshal(buf, &myUniqueID)
 	if err != nil {
-		logger.PanicfWithError(err, "Unmarshal of buf: %v to myUniqueID failed with err: %v", buf, err)
+		client.logger.Fatalf("Unmarshal of buf: %v to myUniqueID failed with err: %v", buf, err)
 	}
 	return
 }
