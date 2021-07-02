@@ -24,7 +24,8 @@ require (
 	github.com/spf13/afero v1.6.0 // indirect
 	github.com/spf13/cobra v1.1.3 // indirect
 	github.com/stretchr/testify v1.5.1
-	go.etcd.io/etcd v0.5.0-alpha.5.0.20200401174654-e694b7bb0875
+	//go.etcd.io/etcd v0.5.0-alpha.5.0.20200401174654-e694b7bb0875
+	go.etcd.io/etcd v3.3.25+incompatible
 	go.uber.org/multierr v1.5.0 // indirect
 	go.uber.org/zap v1.10.1-0.20190619185213-853ac185800f
 	golang.org/x/net v0.0.0-20190813141303-74dc4d7220e7
