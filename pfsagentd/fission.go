@@ -50,6 +50,7 @@ func performMountFUSE() {
 		globals.config.FUSEMountPointPath, // mountpointDirPath string
 		pfsagentFuseSubtype,               // fuseSubtype       string
 		globals.config.FUSEMaxWrite,       // initOutMaxWrite   uint32
+		globals.config.FUSEAllowOther,     // allowOther        bool
 		&globals,                          // callbacks         fission.Callbacks
 		newLogger(),                       // logger            *log.Logger
 		globals.fissionErrChan)            // errChan           chan error

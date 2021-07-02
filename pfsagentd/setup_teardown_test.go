@@ -124,6 +124,7 @@ func testSetup(t *testing.T) {
 		"Agent.FUSEMaxBackground=100",
 		"Agent.FUSECongestionThreshhold=0",
 		"Agent.FUSEMaxWrite=131072", // Linux max... 128KiB is good enough for testing
+		"Agent.FUSEAllowOther=false",
 		"Agent.RetryRPCPublicIPAddr=" + testProxyFSDaemonIPAddr,
 		"Agent.RetryRPCPort=" + testRetryRPCPort,
 		"Agent.RetryRPCDeadlineIO=60s",

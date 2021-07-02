@@ -70,6 +70,7 @@ type configStruct struct {
 	FUSEMaxBackground            uint16
 	FUSECongestionThreshhold     uint16
 	FUSEMaxWrite                 uint32
+	FUSEAllowOther               bool
 	RetryRPCPublicIPAddr         string
 	RetryRPCPort                 uint16
 	RetryRPCDeadlineIO           time.Duration
@@ -631,6 +632,11 @@ func initializeGlobals(confMap conf.ConfMap) {
 	}
 
 	globals.config.FUSEMaxWrite, err = confMap.FetchOptionValueUint32("Agent", "FUSEMaxWrite")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.FUSEAllowOther, err = confMap.FetchOptionValueBool("Agent", "FUSEAllowOther")
 	if nil != err {
 		logFatal(err)
 	}
