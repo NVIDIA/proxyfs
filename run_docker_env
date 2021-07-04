@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (c) 2016-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
+import argparse
+import os
+import shlex
+import subprocess
+
+BUILD = "build"
+PULL = "pull"
+IMAGE_CHOICES = [BUILD, PULL]
+SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "image",
+        type=str,
+        # nargs="1",
+        choices=IMAGE_CHOICES,
+        help="whether we should build or pull an image",
+    )
+    parser.add_argument(
+        "--proxyfs-tag", help="ProxyFS tag or branch to use", required=False, type=str,
+    )
+    args = parser.parse_args()
+    if args.image == BUILD:
+        cmd = (
+            "docker build "
+            "-t docker-swift-proxyfs "
+            ". "
+            "-f docker/swift-proxyfs/Dockerfile-swift-proxyfs "
+        )
+        if args.proxyfs_tag:
+            cmd += f"--build-arg PROXYFS_TAG={args.proxyfs_tag}"
+        print(f"+ {cmd}")
+        subprocess.run(shlex.split(cmd))
+
+        cmd = (
+            "docker run "
+            "--cap-add SYS_ADMIN "
+            "--device /dev/fuse "
+            "-d "
+            "-it "
+            "--rm "
+            "-p 8080:8080 "
+            "-p 8090:8090 "
+            "-p 15346:15346 "
+            f"-v {SCRIPT_DIR}:/gopathroot/src/github.com/NVIDIA/proxyfs "
+            "docker-swift-proxyfs"
+        )
+        print(f"+ {cmd}")
+        subprocess.run(shlex.split(cmd))
+    else:
+        cmd = (
+            "docker run "
+            "--cap-add SYS_ADMIN "
+            "--device /dev/fuse "
+            "-d "
+            "-it "
+            "--rm "
+            "-p 8080:8080 "
+            "-p 8090:8090 "
+            "-p 15346:15346 "
+            f"-v {SCRIPT_DIR}:/gopathroot/src/github.com/NVIDIA/proxyfs "
+            "nvidia/docker-swift-proxyfs"
+        )
+        print(f"+ {cmd}")
+        subprocess.run(shlex.split(cmd))
