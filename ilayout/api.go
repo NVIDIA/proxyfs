@@ -13,6 +13,26 @@
 // in the file system) is ever written twice except for the CheckPoint described
 // below.
 //
+// To achieve uniqueness of entities like Object Names, it is expected there is
+// an isomorhic mapping from Object Numbers to/from Object Names. Uniqueness is
+// achieved by utilizing a nonce sequence of 64-bit numbers, starting at zero
+// and incrementing by one. The rate of creation of nonce-identified entities
+// (like Objects) is certainly slow enough such that just remembering the highest
+// nonce utilized is sufficient to ensure no nonce value is ever reused.
+//
+// Converting a nonce-assigned Object Number to/from an Object Name could be
+// accomplished by simply converting between the 64-bit binary value and the
+// corresponding 16 Hex Digit string. Unfortunately, some solutions (e.g.
+// OpenStack Swift) address the challenge of very large Buckets/Containers via
+// a prefix-based sharding operation. In essence, some string prefix of all
+// Object Names in a particular shard will be common and no Objects Names with
+// that same prefix will be in any other shard. Ideally, once a Bucket/Container
+// has been sharded, new Objects placed in the shards will be evenly distributed
+// (so as to keep each shard roughly the same size baring unbalanced deletions).
+// Hence, the conversion of a slowly monitonically increasing sequence of
+// Object Numbers is best served by reversing the digits in the corresponding
+// Object Names.
+//
 // At the top level, the file system periodically checkpoints. This enables the
 // file system to be complemented by the extreme scale of such Object Store
 // systems despite such often suffering long latencies and coarse granularity
@@ -571,5 +591,43 @@ func GetFixedByteSliceFromBuf(buf []byte, curPos int, byteSlice []byte) (nextPos
 //
 func PutFixedByteSliceToBuf(buf []byte, curPos int, byteSlice []byte) (nextPos int, err error) {
 	nextPos, err = putFixedByteSliceToBuf(buf, curPos, byteSlice)
+	return
+}
+
+// GetObjectNameAsByteSlice returns the isomorphically mapped objectName as
+// a []byte given a uint64 objectNumber.
+//
+func GetObjectNameAsByteSlice(objectNumber uint64) (objectName []byte) {
+	objectName = getObjectNameAsByteSlice(objectNumber)
+	return
+}
+
+// GetObjectNameAsString returns the isomorphically mapped objectName as
+// a string given a uint64 objectNumber.
+//
+func GetObjectNameAsString(objectNumber uint64) (objectName string) {
+	objectName = getObjectNameAsString(objectNumber)
+	return
+}
+
+// GetObjectNumberFromByteSlice returns the isomorphically mapped uint64 objectNumber
+// given a []byte objectName.
+//
+// An error will result if objectName is not of the proper length or contains
+// invalid characters.
+//
+func GetObjectNumberFromByteSlice(objectName []byte) (objectNumber uint64, err error) {
+	objectNumber, err = getObjectNumberFromByteSlice(objectName)
+	return
+}
+
+// GetObjectNumberFromString returns the isomorphically mapped uint64 objectNumber
+// given a string objectName.
+//
+// An error will result if objectName is not of the proper length or contains
+// invalid characters.
+//
+func GetObjectNumberFromString(objectName string) (objectNumber uint64, err error) {
+	objectNumber, err = getObjectNumberFromString(objectName)
 	return
 }

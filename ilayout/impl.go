@@ -1118,3 +1118,88 @@ func putFixedByteSliceToBuf(buf []byte, curPos int, byteSlice []byte) (nextPos i
 	err = nil
 	return
 }
+
+func getObjectNameAsByteSlice(objectNumber uint64) (objectName []byte) {
+	var (
+		objectNameDigit uint8
+		objectNameIndex int
+	)
+
+	objectName = make([]byte, 16)
+
+	for objectNameIndex = 0; objectNameIndex < 16; objectNameIndex++ {
+		objectNameDigit = uint8(objectNumber & 0xF)
+
+		if objectNameDigit < 0xA {
+			objectNameDigit += byte('0')
+		} else {
+			objectNameDigit += byte('A') - 0xA
+		}
+
+		objectName[objectNameIndex] = objectNameDigit
+
+		objectNumber = objectNumber >> 4
+	}
+
+	return
+}
+
+func getObjectNameAsString(objectNumber uint64) (objectName string) {
+	var (
+		objectNameAsByteSlice []byte = getObjectNameAsByteSlice(objectNumber)
+	)
+
+	objectName = string(objectNameAsByteSlice[:])
+
+	return
+}
+
+func getObjectNumberFromByteSlice(objectName []byte) (objectNumber uint64, err error) {
+	var (
+		objectNameDigit uint8
+		objectNameIndex int
+	)
+
+	if len(objectName) != 16 {
+		err = fmt.Errorf("incorrect len(objectName) [%d] - expected 16", len(objectName))
+		return
+	}
+
+	objectNumber = 0
+
+	for objectNameIndex = 15; objectNameIndex >= 0; objectNameIndex-- {
+		objectNameDigit = objectName[objectNameIndex]
+
+		if objectNameDigit < byte('0') {
+			err = fmt.Errorf("invalid character as index %d [0x%02X] - must be one of \"0123456789ABCDEF\"", objectNameIndex, objectNameDigit)
+			return
+		} else if objectNameDigit <= byte('9') {
+			objectNameDigit -= byte('0')
+		} else if objectNameDigit < byte('A') {
+			err = fmt.Errorf("invalid character as index %d [0x%02X] - must be one of \"0123456789ABCDEF\"", objectNameIndex, objectNameDigit)
+			return
+		} else if objectNameDigit <= byte('F') {
+			objectNameDigit -= byte('A') - 0xA
+		} else {
+			err = fmt.Errorf("invalid character as index %d [0x%02X] - must be one of \"0123456789ABCDEF\"", objectNameIndex, objectNameDigit)
+			return
+		}
+
+		objectNumber = objectNumber << 4
+
+		objectNumber |= uint64(objectNameDigit)
+	}
+
+	err = nil
+	return
+}
+
+func getObjectNumberFromString(objectName string) (objectNumber uint64, err error) {
+	var (
+		objectNameAsByteSlice []byte = []byte(objectName)
+	)
+
+	objectNumber, err = getObjectNumberFromByteSlice(objectNameAsByteSlice)
+
+	return
+}

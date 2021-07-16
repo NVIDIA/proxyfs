@@ -153,6 +153,26 @@ func TestAPI(t *testing.T) {
 		unmarshaledExtentMapEntryValueV1                      *ExtentMapEntryValueV1Struct
 		unmarshaledExtentMapEntryValueV1BytesConsumed         int
 		unmarshaledExtentMapEntryValueV1BytesConsumedExpected = int(8 + 8 + 8 + 8)
+
+		testObjectNumber = uint64(0x0123456789ABCDEF)
+
+		testObjectGoodNameAsByteSlice = []byte{'F', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0'}
+		testObjectBad1NameAsByteSlice = []byte{'/', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0'}
+		testObjectBad2NameAsByteSlice = []byte{':', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0'}
+		testObjectBad3NameAsByteSlice = []byte{'@', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0'}
+		testObjectBad4NameAsByteSlice = []byte{'[', 'E', 'D', 'C', 'B', 'A', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0'}
+		testObjectBad5NameAsByteSlice = []byte{'F', 'E', 'D'}
+
+		testObjectGoodNameAsString = "FEDCBA9876543210"
+		testObjectBad1NameAsString = "/EDCBA9876543210"
+		testObjectBad2NameAsString = ":EDCBA9876543210"
+		testObjectBad3NameAsString = "@EDCBA9876543210"
+		testObjectBad4NameAsString = "[EDCBA9876543210"
+		testObjectBad5NameAsString = "FED"
+
+		unmarshaledObjectNumber        uint64
+		marshaledObjectNameAsByteSlice []byte
+		marshaledObjectNameAsString    string
 	)
 
 	marshaledCheckPointV1, err = testCheckPointV1.MarshalCheckPointV1()
@@ -316,5 +336,81 @@ func TestAPI(t *testing.T) {
 	}
 	if unmarshaledExtentMapEntryValueV1BytesConsumed != unmarshaledExtentMapEntryValueV1BytesConsumedExpected {
 		t.Fatalf("Bad unmarshaledExtentMapEntryValueV1BytesConsumed (%v) - expected %v", unmarshaledExtentMapEntryValueV1BytesConsumed, unmarshaledExtentMapEntryValueV1BytesConsumedExpected)
+	}
+
+	marshaledObjectNameAsByteSlice = GetObjectNameAsByteSlice(testObjectNumber)
+	if !bytes.Equal(marshaledObjectNameAsByteSlice, testObjectGoodNameAsByteSlice) {
+		t.Fatalf("Bad return from GetObjectNameAsByteSlice()")
+	}
+
+	marshaledObjectNameAsString = GetObjectNameAsString(testObjectNumber)
+	if marshaledObjectNameAsString != testObjectGoodNameAsString {
+		t.Fatalf("Bad return from GetObjectNameAsString()")
+	}
+
+	unmarshaledObjectNumber, err = GetObjectNumberFromByteSlice(testObjectGoodNameAsByteSlice)
+	if nil != err {
+		t.Fatalf("GetObjectNumberFromByteSlice(testObjectGoodNameAsByteSlice) failed: %v", err)
+	}
+	if unmarshaledObjectNumber != testObjectNumber {
+		t.Fatalf("GetObjectNumberFromByteSlice(testObjectGoodNameAsByteSlice) returned unexpected objectNumber")
+	}
+
+	_, err = GetObjectNumberFromByteSlice(testObjectBad1NameAsByteSlice)
+	if nil == err {
+		t.Fatalf("GetObjectNumberFromByteSlice(testObjectBad1NameAsByteSlice) unexpectedly succeeded")
+	}
+
+	_, err = GetObjectNumberFromByteSlice(testObjectBad2NameAsByteSlice)
+	if nil == err {
+		t.Fatalf("GetObjectNumberFromByteSlice(testObjectBad2NameAsByteSlice) unexpectedly succeeded")
+	}
+
+	_, err = GetObjectNumberFromByteSlice(testObjectBad3NameAsByteSlice)
+	if nil == err {
+		t.Fatalf("GetObjectNumberFromByteSlice(testObjectBad3NameAsByteSlice) unexpectedly succeeded")
+	}
+
+	_, err = GetObjectNumberFromByteSlice(testObjectBad4NameAsByteSlice)
+	if nil == err {
+		t.Fatalf("GetObjectNumberFromByteSlice(testObjectBad4NameAsByteSlice) unexpectedly succeeded")
+	}
+
+	_, err = GetObjectNumberFromByteSlice(testObjectBad5NameAsByteSlice)
+	if nil == err {
+		t.Fatalf("GetObjectNumberFromByteSlice(testObjectBad5NameAsByteSlice) unexpectedly succeeded")
+	}
+
+	unmarshaledObjectNumber, err = GetObjectNumberFromString(testObjectGoodNameAsString)
+	if nil != err {
+		t.Fatalf("GetObjectNumberFromString(testObjectGoodNameAsString) failed: %v", err)
+	}
+	if unmarshaledObjectNumber != testObjectNumber {
+		t.Fatalf("GetObjectNumberFromString(testObjectGoodNameAsString) returned unexpected objectNumber")
+	}
+
+	_, err = GetObjectNumberFromString(testObjectBad1NameAsString)
+	if nil == err {
+		t.Fatalf("GetObjectNumberFromString(testObjectBad1NameAsString) unexpectedly succeeded")
+	}
+
+	_, err = GetObjectNumberFromString(testObjectBad2NameAsString)
+	if nil == err {
+		t.Fatalf("GetObjectNumberFromString(testObjectBad2NameAsString) unexpectedly succeeded")
+	}
+
+	_, err = GetObjectNumberFromString(testObjectBad3NameAsString)
+	if nil == err {
+		t.Fatalf("GetObjectNumberFromString(testObjectBad3NameAsString) unexpectedly succeeded")
+	}
+
+	_, err = GetObjectNumberFromString(testObjectBad4NameAsString)
+	if nil == err {
+		t.Fatalf("GetObjectNumberFromString(testObjectBad4NameAsString) unexpectedly succeeded")
+	}
+
+	_, err = GetObjectNumberFromString(testObjectBad5NameAsString)
+	if nil == err {
+		t.Fatalf("GetObjectNumberFromString(testObjectBad5NameAsString) unexpectedly succeeded")
 	}
 }
