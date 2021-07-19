@@ -38,7 +38,7 @@ func TestHTTPServer(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GET /volume [case 1] failed: %v", err)
 	}
-	if "[]" != string(responseBody[:]) {
+	if string(responseBody[:]) != "[]" {
 		t.Fatalf("GET /volume [case 1] should have returned \"[]\" - it returned \"%s\"", string(responseBody[:]))
 	}
 
@@ -57,7 +57,7 @@ func TestHTTPServer(t *testing.T) {
 	if nil != err {
 		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL, getRequestHeaders, nil) failed: %v", err)
 	}
-	if "0000000000000000\n0000000000000002\n0000000000000003\n" != string(responseBody[:]) {
+	if string(responseBody[:]) != ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber)+"\n"+ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber+2)+"\n"+ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber+3)+"\n" {
 		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL, getRequestHeaders, nil) returned unexpected Object List: \"%s\"", string(responseBody[:]))
 	}
 
@@ -65,7 +65,7 @@ func TestHTTPServer(t *testing.T) {
 	if nil != err {
 		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL/ilayout.CheckPointObjectNumber, getRequestHeaders, nil) failed: %v", err)
 	}
-	if "0000000000000001 0000000000000003 0000000000000060 0000000000000003" != string(responseBody[:]) {
+	if string(responseBody[:]) != fmt.Sprintf("%016X %016X %016X %016X", ilayout.CheckPointVersionV1, ilayout.CheckPointObjectNumber+3, 96, ilayout.CheckPointObjectNumber+3) {
 		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL/ilayout.CheckPointObjectNumber, getRequestHeaders, nil) returned unexpected Object List: \"%s\"", string(responseBody[:]))
 	}
 
@@ -105,7 +105,7 @@ func TestHTTPServer(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GET /volume [case 3] failed: %v", err)
 	}
-	if "[]" != string(responseBody[:]) {
+	if string(responseBody[:]) != "[]" {
 		t.Fatalf("GET /volume [case 3] should have returned \"[]\" - it returned \"%s\"", string(responseBody[:]))
 	}
 

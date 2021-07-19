@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"time"
+
+	"github.com/NVIDIA/proxyfs/ilayout"
 )
 
 func startSwiftClient() (err error) {
@@ -74,7 +76,7 @@ func swiftObjectDelete(storageURL string, authToken string, objectNumber uint64)
 		globals.stats.SwiftObjectDeleteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	objectURL = fmt.Sprintf("%s/%016X", storageURL, objectNumber)
+	objectURL = storageURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
 
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
@@ -135,7 +137,7 @@ func swiftObjectGet(storageURL string, authToken string, objectNumber uint64) (b
 		globals.stats.SwiftObjectGetUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	objectURL = fmt.Sprintf("%s/%016X", storageURL, objectNumber)
+	objectURL = storageURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
 
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
@@ -197,7 +199,8 @@ func swiftObjectGetRange(storageURL string, authToken string, objectNumber uint6
 		globals.stats.SwiftObjectGetRangeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	objectURL = fmt.Sprintf("%s/%016X", storageURL, objectNumber)
+	objectURL = storageURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
+
 	rangeHeaderValue = fmt.Sprintf("bytes=%d-%d", objectOffset, (objectOffset + objectLength - 1))
 
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
@@ -262,7 +265,8 @@ func swiftObjectGetTail(storageURL string, authToken string, objectNumber uint64
 		globals.stats.SwiftObjectGetTailUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	objectURL = fmt.Sprintf("%s/%016X", storageURL, objectNumber)
+	objectURL = storageURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
+
 	rangeHeaderValue = fmt.Sprintf("bytes=-%d", objectLength)
 
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
@@ -326,7 +330,7 @@ func swiftObjectPut(storageURL string, authToken string, objectNumber uint64, bo
 		globals.stats.SwiftObjectPutUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	objectURL = fmt.Sprintf("%s/%016X", storageURL, objectNumber)
+	objectURL = storageURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
 
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
