@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/NVIDIA/proxyfs/conf"
-	"github.com/NVIDIA/proxyfs/emswift/emswiftpkg"
+	"github.com/NVIDIA/proxyfs/iswift/iswiftpkg"
 )
 
 func TestSwiftAuth(t *testing.T) {
@@ -16,17 +16,13 @@ func TestSwiftAuth(t *testing.T) {
 		authToken   string
 		confMap     conf.ConfMap
 		confStrings = []string{
-			"EMSWIFT.AuthIPAddr=127.0.0.1",
-			"EMSWIFT.AuthTCPPort=9997",
-			"EMSWIFT.JRPCIPAddr=127.0.0.1",
-			"EMSWIFT.JRPCTCPPort=9998",
-			"EMSWIFT.NoAuthIPAddr=127.0.0.1",
-			"EMSWIFT.NoAuthTCPPort=9999",
-			"EMSWIFT.MaxAccountNameLength=256",
-			"EMSWIFT.MaxContainerNameLength=256",
-			"EMSWIFT.MaxObjectNameLength=1024",
-			"EMSWIFT.AccountListingLimit=10000",
-			"EMSWIFT.ContainerListingLimit=10000",
+			"ISWIFT.SwiftProxyIPAddr=127.0.0.1",
+			"ISWIFT.SwiftProxyTCPPort=9997",
+			"ISWIFT.MaxAccountNameLength=256",
+			"ISWIFT.MaxContainerNameLength=256",
+			"ISWIFT.MaxObjectNameLength=1024",
+			"ISWIFT.AccountListingLimit=10000",
+			"ISWIFT.ContainerListingLimit=10000",
 		}
 		err        error
 		storageURL string
@@ -37,9 +33,9 @@ func TestSwiftAuth(t *testing.T) {
 		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned unexpected error: %v", err)
 	}
 
-	err = emswiftpkg.Start(confMap)
+	err = iswiftpkg.Start(confMap)
 	if nil != err {
-		t.Fatalf("emswiftpkg.Start(confMap) returned unexpected error: %v", err)
+		t.Fatalf("iswiftpkg.Start(confMap) returned unexpected error: %v", err)
 	}
 
 	authInJSON = "{" +
@@ -54,12 +50,12 @@ func TestSwiftAuth(t *testing.T) {
 	if nil == err {
 		t.Logf("authToken: %s", authToken)
 		t.Logf("storageURL: %s", storageURL)
-		err = emswiftpkg.Stop()
+		err = iswiftpkg.Stop()
 		if nil != err {
-			t.Fatalf("emswiftpkg.Stop() returned unexpected error: %v", err)
+			t.Fatalf("iswiftpkg.Stop() returned unexpected error: %v", err)
 		}
 	} else {
-		_ = emswiftpkg.Stop()
+		_ = iswiftpkg.Stop()
 		t.Fatalf("PerformAuth failed: %v", err)
 	}
 }
