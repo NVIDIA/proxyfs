@@ -13,8 +13,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/google/btree"
+
+	"github.com/NVIDIA/proxyfs/bucketstats"
 )
 
 const (

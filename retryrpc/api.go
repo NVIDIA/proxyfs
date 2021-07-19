@@ -24,8 +24,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/google/btree"
+
+	"github.com/NVIDIA/proxyfs/bucketstats"
 )
 
 // Server tracks the state of the server
