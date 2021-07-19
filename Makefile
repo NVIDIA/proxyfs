@@ -1,6 +1,27 @@
 # Copyright (c) 2015-2021, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 
+# Rework reduces the list of active packages/programs/etc... to:
+#
+# bucketstats
+# conf
+# emswift
+# emswift/emswiftpkg
+# iauth
+# iauth/iauth-swift
+# icert
+# icert/icertpkg
+# iclient
+# iclient/iclientpkg
+# ilayout
+# imgr
+# imgr/imgrpkg
+# iswift
+# iswift/iswiftpkg
+# retryrpc
+# utils
+# version
+
 gopregeneratesubdirs = \
 	make-static-content
 
