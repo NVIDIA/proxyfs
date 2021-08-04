@@ -3,4 +3,7 @@
 
 gosubdir := github.com/NVIDIA/proxyfs/iswift
 
+generatedfiles := \
+	iswift
+
 include ../GoMakefile

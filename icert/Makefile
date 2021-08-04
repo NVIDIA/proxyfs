@@ -3,4 +3,7 @@
 
 gosubdir := github.com/NVIDIA/proxyfs/icert
 
+generatedfiles := \
+	icert
+
 include ../GoMakefile

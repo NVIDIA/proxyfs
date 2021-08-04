@@ -3,17 +3,20 @@
 
 # GoPlugInMakefile is a template to be included by Go PlugIn Makefile's in this repo
 
-all: version fmt generate install test
+all: version fmt generate build test
 
-.PHONY: all bench clean cover fmt generate get install test
+.PHONY: all bench build clean cover fmt generate get test
 
 bench:
 	go test -bench $(gosubdir)
 
+build:
+	@set -e; \
+	go build -buildmode=plugin $(gosubdir)
+
 clean:
 	@set -e; \
 	go clean -i $(gosubdir); \
-	rm -f $(GOPATH)/bin/$(plugin); \
 	for generatedfile in $(generatedfiles); do \
 		rm -f $$generatedfile; \
 	done
@@ -26,11 +29,6 @@ fmt:
 
 generate:
 	go generate $(gosubdir)
-
-install:
-	@set -e; \
-	go build -buildmode=plugin $(gosubdir); \
-	cp $(plugin) $(GOPATH)/bin/.
 
 test:
 	go test -vet all $(gosubdir)

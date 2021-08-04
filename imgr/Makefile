@@ -3,4 +3,7 @@
 
 gosubdir := github.com/NVIDIA/proxyfs/imgr
 
+generatedfiles := \
+	imgr
+
 include ../GoMakefile

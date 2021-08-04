@@ -3,12 +3,15 @@
 
 # GoMakefile is a template to be included by Go package Makefile's in this repo
 
-all: version fmt generate install test
+all: version fmt generate build test
 
-.PHONY: all bench clean cover fmt generate get install test
+.PHONY: all bench build clean cover fmt generate get test
 
 bench:
 	go test -bench $(gosubdir)
+
+build:
+	go build -gcflags "-N -l" $(gosubdir)
 
 clean:
 	@set -e; \
@@ -25,9 +28,6 @@ fmt:
 
 generate:
 	go generate $(gosubdir)
-
-install:
-	go install -gcflags "-N -l" $(gosubdir)
 
 test:
 	go test -vet all $(gosubdir)

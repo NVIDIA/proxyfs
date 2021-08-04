@@ -3,4 +3,7 @@
 
 gosubdir := github.com/NVIDIA/proxyfs/iclient
 
+generatedfiles := \
+	iclient
+
 include ../GoMakefile

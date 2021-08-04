@@ -24,6 +24,7 @@ CommonVolume.rlog
 
 # specific binaries
 jrpcfs/test/client
+go-acc
 
 # Folders
 _obj

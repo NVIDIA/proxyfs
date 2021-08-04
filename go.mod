@@ -37,6 +37,7 @@ require (
 	github.com/prometheus/client_golang v1.11.0 // indirect
 	github.com/sirupsen/logrus v1.8.1
 	github.com/soheilhy/cmux v0.1.5 // indirect
+	github.com/spf13/cast v1.4.0 // indirect
 	github.com/spf13/cobra v1.2.1 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
