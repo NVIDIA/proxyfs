@@ -34,19 +34,11 @@ or the [ProxyFS Slack group](https://proxyfs.slack.com), which you can join thro
 
 ## How to get the code
 
-* Define your GOPATH as desired (where your bin/, /pkg, and /src/
-  directory trees will appear)
-* cd $GOPATH
-* mkdir -p src/github.com/NVIDIA
-* cd src/github.com/NVIDIA
 * git clone git@github.com:NVIDIA/proxyfs.git
 * cd ProxyFS
 
 ## How to run unit tests (in your Development Environment)
 
-* Install/update to at least Go 1.8.3
-* Ensure $GOPATH/bin is in your $PATH
-* cd $GOPATH/src/github.com/NVIDIA/proxyfs
 * make
 
 ## License
