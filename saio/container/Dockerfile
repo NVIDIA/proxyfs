@@ -162,6 +162,8 @@ RUN chmod 666 /var/log/proxyfsd/proxyfsd.log
 RUN wget -nv $GolangURL
 RUN tar -C /usr/local -xzf $GolangBasename
 
+ENV PATH $PATH:/usr/local/go/bin
+
 RUN yum install -y make fuse
 
 RUN mkdir -p /opt/ProxyFS/GOPATH/src/github.com/NVIDIA
@@ -173,7 +175,7 @@ RUN git checkout $ProxyFS_Version
 RUN cd pfs_middleware  && python setup.py develop
 RUN cd meta_middleware && python setup.py develop
 
-RUN make version pre-generate generate install
+RUN make version generate build
 
 WORKDIR /opt/ProxyFS
 
