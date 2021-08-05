@@ -14,9 +14,7 @@ set -x
 # Core files will be compressed with xz... use unxz to uncompress them
 #
 # To install the delve debugger, you will need to `go get -u github.com/go-delve/delve/cmd/dlv`
-#  - Note that this will compete with the version of dlv installed for your host GOPATH
-#  - As such, delve is not installed during provisioning
-#  - Instead, an alias for the above, `gogetdlv`, would be issued as and when needed inside this VM
+#  - An alias for the above, `gogetdlv`, should be issued if and when needed inside this VM
 
 sed -i '/DefaultLimitCORE=/c\DefaultLimitCORE=infinity' /etc/systemd/system.conf
 
@@ -110,9 +108,7 @@ pip install --upgrade 'pip<21.0'
 pip install requests
 yum -y install json-c-devel
 yum -y install fuse
-echo "export GOPATH=/vagrant" >> ~vagrant/.bash_profile
-echo "export PATH=\$PATH:\$GOPATH/bin" >> ~vagrant/.bash_profile
-echo "alias cdpfs=\"cd \$GOPATH/src/github.com/NVIDIA/proxyfs\"" >> ~vagrant/.bash_profile
+echo "alias cdpfs=\"cd /vagrant/src/github.com/NVIDIA/proxyfs\"" >> ~vagrant/.bash_profile
 echo "alias goclean=\"go clean;go clean --cache;go clean --testcache\"" >> ~vagrant/.bash_profile
 echo "alias gogetdlv=\"go get -u github.com/go-delve/delve/cmd/dlv\"" >> ~vagrant/.bash_profile
 echo "user_allow_other" >> /etc/fuse.conf

@@ -162,15 +162,12 @@ RUN chmod 666 /var/log/proxyfsd/proxyfsd.log
 RUN wget -nv $GolangURL
 RUN tar -C /usr/local -xzf $GolangBasename
 
-ENV GOPATH /opt/ProxyFS/GOPATH
-ENV PATH   $PATH:/usr/local/go/bin:$GOPATH/bin
-
 RUN yum install -y make fuse
 
-RUN mkdir -p $GOPATH/src/github.com/NVIDIA
-WORKDIR $GOPATH/src/github.com/NVIDIA
+RUN mkdir -p /opt/ProxyFS/GOPATH/src/github.com/NVIDIA
+WORKDIR /opt/ProxyFS/GOPATH/src/github.com/NVIDIA
 RUN git clone https://github.com/NVIDIA/proxyfs.git
-WORKDIR $GOPATH/src/github.com/NVIDIA/proxyfs
+WORKDIR /opt/ProxyFS/GOPATH/src/github.com/NVIDIA/proxyfs
 RUN git checkout $ProxyFS_Version
 
 RUN cd pfs_middleware  && python setup.py develop

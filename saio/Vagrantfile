@@ -11,6 +11,7 @@
 #  6) ../Makefile will be ready to be executed after `cdpfs` inside the VM
 #  7) As GOPATH is effectively shared between Host and VM, builds in the two environments
 #     will collide in the contents of the $GOPATH/bin (only executables, not libraries)
+#  8) With GOPATH now deprecated, much of the above concerns need to be modified (or ignored)
 
 Vagrant.configure(2) do |config|
   config.vm.box = "centos-74-minimal-20180727"
