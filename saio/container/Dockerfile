@@ -4,7 +4,7 @@
 FROM centos:7.4.1708
 
 ARG SwiftVersion
-ARG GolangVersion=1.15.5
+ARG GolangVersion=1.16.6
 ARG ProxyFS_Version=stable
 
 ENV GolangBasename "go${GolangVersion}.linux-amd64.tar.gz"
