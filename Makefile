@@ -26,11 +26,13 @@ gobindirs = \
 godirsforci = $(gopkgdirs) $(goplugindirs) $(gobindirs);
 godirpathsforci = $(addprefix github.com/NVIDIA/proxyfs/,$(godirsforci))
 
-all: version fmt generate build test
+all: version fmt generate test build
 
-ci: version fmt generate build test cover
+ci: version fmt generate test cover build
 
-.PHONY: all bench build ci clean cover fmt generate test version
+minimal: version generate build
+
+.PHONY: all bench build ci clean cover fmt generate minimal test version
 
 bench:
 	@set -e; \
