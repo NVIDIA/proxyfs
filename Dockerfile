@@ -1,7 +1,7 @@
 # To build this image:
 #
 #   docker build                                                    \
-#          --target {development|production|}                       \
+#          [--target {development|production}]                      \
 #          [--build-arg GolangVersion=<X.YY.Z>]                     \
 #          [--build-arg ProxyFSVersion=<branch-name-or-tag-or-SHA>] \
 #          [--build-arg MakeTarget={|all|ci|minimal}]               \
