@@ -84,6 +84,7 @@ type statsStruct struct {
 	DeleteVolumeUsecs  bucketstats.BucketLog2Round // DELETE /volume/<volumeName>
 	GetConfigUsecs     bucketstats.BucketLog2Round // GET /config
 	GetStatsUsecs      bucketstats.BucketLog2Round // GET /stats
+	GetVersionUsecs    bucketstats.BucketLog2Round // GET /version
 	GetVolumeListUsecs bucketstats.BucketLog2Round // GET /volume
 	GetVolumeUsecs     bucketstats.BucketLog2Round // GET /volume/<volumeName>
 	PostVolumeUsecs    bucketstats.BucketLog2Round // POST /volume/<volumeName>

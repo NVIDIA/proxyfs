@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/version"
 )
 
 const (
@@ -152,6 +153,8 @@ func serveHTTPGet(responseWriter http.ResponseWriter, request *http.Request, req
 		serveHTTPGetOfConfig(responseWriter, request)
 	case "/stats" == requestPath:
 		serveHTTPGetOfStats(responseWriter, request)
+	case "/version" == requestPath:
+		serveHTTPGetOfVersion(responseWriter, request)
 	case strings.HasPrefix(requestPath, "/volume"):
 		serveHTTPGetOfVolume(responseWriter, request, requestPath)
 	default:
@@ -205,6 +208,27 @@ func serveHTTPGetOfStats(responseWriter http.ResponseWriter, request *http.Reque
 	responseWriter.WriteHeader(http.StatusOK)
 
 	_, err = responseWriter.Write([]byte(statsAsString))
+	if nil != err {
+		logWarnf("responseWriter.Write([]byte(statsAsString)) failed: %v", err)
+	}
+}
+
+func serveHTTPGetOfVersion(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		err       error
+		startTime time.Time
+	)
+
+	startTime = time.Now()
+	defer func() {
+		globals.stats.GetVersionUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(version.ProxyFSVersion)))
+	responseWriter.Header().Set("Content-Type", "text/plain")
+	responseWriter.WriteHeader(http.StatusOK)
+
+	_, err = responseWriter.Write([]byte(version.ProxyFSVersion))
 	if nil != err {
 		logWarnf("responseWriter.Write([]byte(statsAsString)) failed: %v", err)
 	}

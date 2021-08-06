@@ -59,18 +59,14 @@ func main() {
 		panic(err.Error())
 	}
 
-	proxyfsVersionString = os.Getenv("PROXYFS_VERSION")
+	gitDescribeCmd = exec.Command("git", "describe", "--tags")
 
-	if "" == proxyfsVersionString {
-		gitDescribeCmd = exec.Command("git", "describe", "--tags")
-
-		gitDescribeOutput, err = gitDescribeCmd.Output()
-		if nil != err {
-			panic(err.Error())
-		}
-
-		proxyfsVersionString = string(gitDescribeOutput[:len(gitDescribeOutput)-1])
+	gitDescribeOutput, err = gitDescribeCmd.Output()
+	if nil != err {
+		panic(err.Error())
 	}
+
+	proxyfsVersionString = string(gitDescribeOutput[:len(gitDescribeOutput)-1])
 
 	_, err = dstFile.Write([]byte(fmt.Sprintf("const ProxyFSVersion = `%v`\n", proxyfsVersionString)))
 	if nil != err {
