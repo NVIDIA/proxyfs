@@ -12,15 +12,26 @@
 #       1) builds an image capable of building all elements
 #       2) since the make isn't run, MakeTarget is ignored
 #     --target production:
-#       1) a make clean is performed to clean out context dir copy
-#       2) MakeTarget defaults to blank (equivalent to "all")
-#       3) ensure MakeTarget actually builds imgr
-#       4) this is the default image
-#       5) image will likely need to customize imgr.conf
+#       1) this is the default image
+#       2) imgr image actually build in --target pre-production
+#       3) imgr.conf will likely need to customized
+#     --build-arg GolangVersion:
+#       1) identifies Golang version
+#       2) default specified in ARG GolangVersion line in --target base
+#     --build-arg MakeTarget:
+#       1) identifies Makefile target(s) to build (following make clean)
+#       2) defaults to blank (equivalent to "all")
+#       3) used in --target pre-production
+#       4) hence applicable to --target production
+#       4) ensure MakeTarget actually builds imgr
 #     --no-cache:
 #       1) tells Docker to ignore cached images that might be stale
 #       2) useful due to Docker not understanding changes to build-args
 #       3) useful due to Docker not understanding changes to context dir
+#     -t:
+#       1) provides a name REPOSITORY:TAG for the built image
+#       2) if no tag is specified, TAG will be "latest"
+#       3) if no repository is specified, only the IMAGE ID will identify the built image
 #
 # To run the resultant image:
 #
@@ -46,12 +57,17 @@ ARG MakeTarget
 RUN apk add --no-cache libc6-compat
 
 FROM base as development
+RUN apk add --no-cache bind-tools
 RUN apk add --no-cache curl
 RUN apk add --no-cache gcc
 RUN apk add --no-cache git
 RUN apk add --no-cache jq
 RUN apk add --no-cache libc-dev
 RUN apk add --no-cache make
+RUN apk add --no-cache tar
+RUN curl -sSL https://github.com/coreos/etcd/releases/download/v3.5.0/etcd-v3.5.0-linux-amd64.tar.gz \
+    | tar -vxz -C /usr/local/bin --strip=1 etcd-v3.5.0-linux-amd64/etcd etcd-v3.5.0-linux-amd64/etcdctl \
+    && chown root:root /usr/local/bin/etcd /usr/local/bin/etcdctl
 ENV GolangBasename "go${GolangVersion}.linux-amd64.tar.gz"
 ENV GolangURL      "https://golang.org/dl/${GolangBasename}"
 WORKDIR /tmp

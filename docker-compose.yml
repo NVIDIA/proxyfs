@@ -1,0 +1,57 @@
+# To build the `development` service
+#
+#   docker compose build [--no-cache]
+#
+#   Notes:
+#     --no-cache
+#       1) tells Docker to ignore cached images that might be stale
+#       2) useful due to Docker not understanding changes to build-args
+#       3) useful due to Docker not understanding changes to context dir
+#
+# To run the resultant application:
+#
+#   docker compose up [-d|--detach]
+#
+#   Notes:
+#     -d|--detach:
+#       1) tells docker compose to detach from running containers
+#       2) if supplied:
+#          a) stop application with `docker compose down`
+#          b) containers are removed upon application down
+#       3) if not supplied:
+#          a) stop application with ^C
+#          b) containers are left in "exited" state upon application down
+#
+# To stop the resultant application:
+#
+#   docker comose down
+
+version: '3.8'
+
+services:
+  etcd:
+    image: bitnami/etcd:3.5.0
+    expose:
+      - 2379                                  # etcdctl --endpoints http://etcd:2379
+      - 2380
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+  swift:
+    image: dockerswiftaio/docker-swift:2.27.0
+    expose:
+      - 8080                                  # curl http://swift:8080/info
+  development:
+    build:
+      context: .
+      target: development
+    depends_on:
+      - etcd
+      - swift
+    expose:
+      - 15346                                 # IMGR.HTTPServerPort
+      - 32356                                 # IMGR.RetryRPCPort
+    volumes:
+      - type: bind
+        source: .
+        target: /src
+    command: ["top"]
