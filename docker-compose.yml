@@ -10,7 +10,7 @@
 #
 # To run the resultant application:
 #
-#   docker compose up [-d|--detach]
+#   docker compose up [-d|--detach] [{development|production}]
 #
 #   Notes:
 #     -d|--detach:
@@ -21,10 +21,12 @@
 #       3) if not supplied:
 #          a) stop application with ^C
 #          b) containers are left in "exited" state upon application down
+#     development: tells docker compose to only bring up development service (w/ dependencies)
+#     production:  tells docker compose to only bring up production  service (w/ dependencies)
 #
 # To stop the resultant application:
 #
-#   docker comose down
+#   docker compose down
 
 version: '3.8'
 
@@ -55,3 +57,14 @@ services:
         source: .
         target: /src
     command: ["top"]
+  production:
+    build:
+      context: .
+      target: production
+    depends_on:
+      - etcd
+      - swift
+    expose:
+      - 15346                                 # IMGR.HTTPServerPort
+      - 32356                                 # IMGR.RetryRPCPort
+ 

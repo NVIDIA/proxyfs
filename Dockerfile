@@ -13,8 +13,7 @@
 #       2) since the make isn't run, MakeTarget is ignored
 #     --target production:
 #       1) this is the default image
-#       2) imgr image actually build in --target pre-production
-#       3) imgr.conf will likely need to customized
+#       2) imgr image actually built in --target pre-production
 #     --build-arg GolangVersion:
 #       1) identifies Golang version
 #       2) default specified in ARG GolangVersion line in --target base
@@ -36,14 +35,16 @@
 # To run the resultant image:
 #
 #   docker run                                            \
+#          [-d|--detach]                                  \
 #          [-it]                                          \
 #          [--rm]                                         \
 #          [--mount src="$(pwd)",target="/src",type=bind] \
 #          <image id>|<repository>[:<tag>]
 #
 #   Notes:
-#     -it:  tells Docker to run container interactively
-#     --rm: tells Docker to destroy container upon exit
+#     -d|--detach: tells Docker to detach from running container 
+#     -it:         tells Docker to run container interactively
+#     --rm:        tells Docker to destroy container upon exit
 #     --mount:
 #       1) bind mounts the context into /src in the container
 #       2) /src will be a read-write'able equivalent to the context dir
@@ -85,6 +86,9 @@ RUN make clean
 RUN make $MakeTarget
 
 FROM base as production
+COPY --from=pre-production /src/icert/icert ./
+RUN ./icert -ca -ed25519 -caCert caCert.pem -caKey caKey.pem -ttl 3560
+RUN ./icert -ed25519 -caCert caCert.pem -caKey caKey.pem -ttl 3560 -cert cert.pem -key key.pem -dns production
 COPY --from=pre-production /src/imgr/imgr ./
-COPY --from=pre-production /src/imgr/imgr.conf ./
-CMD ["./imgr", "imgr.conf"]
+COPY --from=pre-production /src/imgr/production.conf ./
+CMD ["./imgr", "production.conf"]
