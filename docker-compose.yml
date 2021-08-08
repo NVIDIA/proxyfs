@@ -7,10 +7,11 @@
 #       1) tells Docker to ignore cached images that might be stale
 #       2) useful due to Docker not understanding changes to build-args
 #       3) useful due to Docker not understanding changes to context dir
+#       4) finer grained alternative to previously running docker builder prune
 #
 # To run the resultant application:
 #
-#   docker compose up [-d|--detach] [{development|production}]
+#   docker compose up [-d|--detach] [{dev|imgr|iclient}]
 #
 #   Notes:
 #     -d|--detach:
@@ -21,8 +22,9 @@
 #       3) if not supplied:
 #          a) stop application with ^C
 #          b) containers are left in "exited" state upon application down
-#     development: tells docker compose to only bring up development service (w/ dependencies)
-#     production:  tells docker compose to only bring up production  service (w/ dependencies)
+#     dev:     tells docker compose to only bring up dev     service (w/ dependencies)
+#     imgr:    tells docker compose to only bring up imgr    service (w/ dependencies)
+#     iclient: tells docker compose to only bring up iclient service (w/ dependencies)
 #
 # To stop the resultant application:
 #
@@ -31,6 +33,10 @@
 version: '3.8'
 
 services:
+  swift:
+    image: dockerswiftaio/docker-swift:2.27.0
+    expose:
+      - 8080                                  # curl http://swift:8080/info
   etcd:
     image: bitnami/etcd:3.5.0
     expose:
@@ -38,14 +44,10 @@ services:
       - 2380
     environment:
       - ALLOW_NONE_AUTHENTICATION=yes
-  swift:
-    image: dockerswiftaio/docker-swift:2.27.0
-    expose:
-      - 8080                                  # curl http://swift:8080/info
-  development:
+  dev:
     build:
       context: .
-      target: development
+      target: dev
     depends_on:
       - etcd
       - swift
@@ -56,15 +58,24 @@ services:
       - type: bind
         source: .
         target: /src
-    command: ["top"]
-  production:
+    command: ["sleep", "10000"]
+  imgr:
     build:
       context: .
-      target: production
+      target: imgr
     depends_on:
-      - etcd
       - swift
+      - etcd
     expose:
       - 15346                                 # IMGR.HTTPServerPort
       - 32356                                 # IMGR.RetryRPCPort
+    command: ["./imgr", "imgr.conf"]
+  iclient:
+    build:
+      context: .
+      target: iclient
+    depends_on:
+      - swift
+      - imgr
+    command: ["./iclient.sh"]
  

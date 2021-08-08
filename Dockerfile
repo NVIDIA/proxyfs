@@ -1,32 +1,41 @@
 # To build this image:
 #
 #   docker build                                      \
-#          [--target {development|production}]        \
+#          --target {base|dev|build|imgr|iclient}     \
 #          [--build-arg GolangVersion=<X.YY.Z>]       \
 #          [--build-arg MakeTarget={|all|ci|minimal}] \
 #          [--no-cache]                               \
 #          [-t <repository>[:<tag>]]                  .
 #
 #   Notes:
-#     --target development:
+#     --target base:
+#       1) provides a clean/small base image for the rest to leverage
+#       2) only addition is libc6-compat to enable Golang runtime compatibility
+#     --target dev:
 #       1) builds an image capable of building all elements
-#       2) since the make isn't run, MakeTarget is ignored
-#     --target production:
-#       1) this is the default image
-#       2) imgr image actually built in --target pre-production
+#       2) /src is shared with context dir of host
+#     --target build:
+#       1) clones the context dir at /src
+#       2) performs a make clean to clear out non-source-controlled artifacts
+#       3) performs a make $MakeTarget
+#     --target imgr:
+#       1) builds an image containing imgr (assuming --target build built imgr)
+#       2) creates TLS cert/key files (both CA and node)
+#     --target iclient:
+#       1) builds an image containing iclient (assuming --target build built iclient)
+#       2) copies CA cert from imgr           (assuming --target build built icert)
 #     --build-arg GolangVersion:
 #       1) identifies Golang version
 #       2) default specified in ARG GolangVersion line in --target base
 #     --build-arg MakeTarget:
 #       1) identifies Makefile target(s) to build (following make clean)
 #       2) defaults to blank (equivalent to "all")
-#       3) used in --target pre-production
-#       4) hence applicable to --target production
-#       4) ensure MakeTarget actually builds imgr
+#       3) only used in --target build
 #     --no-cache:
 #       1) tells Docker to ignore cached images that might be stale
 #       2) useful due to Docker not understanding changes to build-args
 #       3) useful due to Docker not understanding changes to context dir
+#       4) if running a sequence of builds, consider instead docker builder prune
 #     -t:
 #       1) provides a name REPOSITORY:TAG for the built image
 #       2) if no tag is specified, TAG will be "latest"
@@ -49,24 +58,24 @@
 #       1) bind mounts the context into /src in the container
 #       2) /src will be a read-write'able equivalent to the context dir
 #       3) only useful for --target development
-#       4) /src will be a local copy instead for --target pre-production
-#       5) /src doesn't exist for --target production
+#       4) /src will be a local copy instead for --target build
+#       5) /src doesn't exist for --target build
 
 FROM alpine:3.14.0 as base
 ARG GolangVersion=1.16.7
 ARG MakeTarget
 RUN apk add --no-cache libc6-compat
 
-FROM base as development
-RUN apk add --no-cache bind-tools
-RUN apk add --no-cache curl
-RUN apk add --no-cache gcc
-RUN apk add --no-cache git
-RUN apk add --no-cache jq
-RUN apk add --no-cache libc-dev
-RUN apk add --no-cache make
-RUN apk add --no-cache tar
-RUN curl -sSL https://github.com/coreos/etcd/releases/download/v3.5.0/etcd-v3.5.0-linux-amd64.tar.gz \
+FROM base as dev
+RUN apk add --no-cache bind-tools \
+                       curl       \
+                       gcc        \
+                       git        \
+                       jq         \
+                       libc-dev   \
+                       make       \
+                       tar
+RUN curl -sSL https://github.com/coreos/etcd/releases/download/v3.5.0/etcd-v3.5.0-linux-amd64.tar.gz    \
     | tar -vxz -C /usr/local/bin --strip=1 etcd-v3.5.0-linux-amd64/etcd etcd-v3.5.0-linux-amd64/etcdctl \
     && chown root:root /usr/local/bin/etcd /usr/local/bin/etcdctl
 ENV GolangBasename "go${GolangVersion}.linux-amd64.tar.gz"
@@ -78,17 +87,23 @@ ENV PATH $PATH:/usr/local/go/bin
 VOLUME /src
 WORKDIR /src
 
-FROM development as pre-production
+FROM dev as build
 VOLUME /src
 COPY . /src
 WORKDIR /src
 RUN make clean
 RUN make $MakeTarget
 
-FROM base as production
-COPY --from=pre-production /src/icert/icert ./
+FROM base as imgr
+COPY --from=build /src/icert/icert ./
 RUN ./icert -ca -ed25519 -caCert caCert.pem -caKey caKey.pem -ttl 3560
-RUN ./icert -ed25519 -caCert caCert.pem -caKey caKey.pem -ttl 3560 -cert cert.pem -key key.pem -dns production
-COPY --from=pre-production /src/imgr/imgr ./
-COPY --from=pre-production /src/imgr/production.conf ./
-CMD ["./imgr", "production.conf"]
+RUN ./icert -ed25519 -caCert caCert.pem -caKey caKey.pem -ttl 3560 -cert cert.pem -key key.pem -dns imgr
+COPY --from=build /src/imgr/imgr      ./
+COPY --from=build /src/imgr/imgr.conf ./
+
+FROM imgr as iclient
+RUN rm caKey.pem cert.pem key.pem imgr imgr.conf
+COPY --from=build /src/iclient/iclient      ./
+COPY --from=build /src/iclient/iclient.conf ./
+COPY --from=build /src/iclient/iclient.sh   ./
+RUN apk add --no-cache curl

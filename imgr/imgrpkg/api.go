@@ -15,8 +15,8 @@
 // argument, a package conf ConfMap. Here is a sample .conf file:
 //
 //  [IMGR]
-//  PublicIPAddr:                         172.28.128.2
-//  PrivateIPAddr:                        172.28.128.2
+//  PublicIPAddr:                         127.0.0.1
+//  PrivateIPAddr:                        127.0.0.1
 //  RetryRPCPort:                         32356
 //  HTTPServerPort:                       15346
 //
