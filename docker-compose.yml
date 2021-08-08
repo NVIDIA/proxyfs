@@ -3,11 +3,13 @@
 #   docker compose build [--no-cache]
 #
 #   Notes:
-#     --no-cache
+#     --no-cache:
 #       1) tells Docker to ignore cached images that might be stale
 #       2) useful due to Docker not understanding changes to build-args
 #       3) useful due to Docker not understanding changes to context dir
 #       4) finer grained alternative to previously running docker builder prune
+#     Images built will be named "proxyfs_<service>:latest"
+#     Use docker tag SOURCE_IMAGE[:TAG] TARGET_IMAGE[:TAG] to create an alias
 #
 # To run the resultant application:
 #
@@ -25,6 +27,7 @@
 #     dev:     tells docker compose to only bring up dev     service (w/ dependencies)
 #     imgr:    tells docker compose to only bring up imgr    service (w/ dependencies)
 #     iclient: tells docker compose to only bring up iclient service (w/ dependencies)
+#     Containers launched have been named the same as their corresponding service name
 #
 # To stop the resultant application:
 #
