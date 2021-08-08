@@ -35,25 +35,47 @@ version: '3.8'
 services:
   swift:
     image: dockerswiftaio/docker-swift:2.27.0
+    container_name: proxyfs_swift
     expose:
       - 8080                                  # curl http://swift:8080/info
+    ports:
+      - target: 8080
+        published: 8080
+        protocol: tcp
+        mode: host
   etcd:
     image: bitnami/etcd:3.5.0
+    container_name: proxyfs_etcd
     expose:
-      - 2379                                  # etcdctl --endpoints http://etcd:2379
-      - 2380
+      - 2379                                  # etcdctl --endpoints=etcd:2379
+    ports:
+      - target: 2379
+        published: 2379                       # etcdctl [--endpoints=localhost:2379]
+        protocol: tcp
+        mode: host
     environment:
       - ALLOW_NONE_AUTHENTICATION=yes
   dev:
     build:
       context: .
       target: dev
+    container_name: proxyfs_dev
     depends_on:
       - etcd
       - swift
     expose:
-      - 15346                                 # IMGR.HTTPServerPort
       - 32356                                 # IMGR.RetryRPCPort
+      - 15346                                 # IMGR.HTTPServerPort
+    ports:
+      - target: 32356
+        published: 32356
+        protocol: tcp
+        mode: host
+    ports:
+      - target: 15346
+        published: 15346
+        protocol: tcp
+        mode: host
     volumes:
       - type: bind
         source: .
@@ -63,17 +85,29 @@ services:
     build:
       context: .
       target: imgr
+    container_name: proxyfs_imgr
     depends_on:
       - swift
       - etcd
     expose:
-      - 15346                                 # IMGR.HTTPServerPort
       - 32356                                 # IMGR.RetryRPCPort
+      - 15346                                 # IMGR.HTTPServerPort
+    ports:
+      - target: 32356
+        published: 32356
+        protocol: tcp
+        mode: host
+    ports:
+      - target: 15346
+        published: 15346
+        protocol: tcp
+        mode: host
     command: ["./imgr", "imgr.conf"]
   iclient:
     build:
       context: .
       target: iclient
+    container_name: proxyfs_iclient
     depends_on:
       - swift
       - imgr
