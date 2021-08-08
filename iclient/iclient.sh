@@ -15,10 +15,12 @@ DollarQuestionMark=1
 while [ "$DollarQuestionMark" != "0" ]
 do
   sleep 1
-  curl imgr:15346/version -f > /dev/null -s
+  curl -f imgr:15346/version > /dev/null -s
   DollarQuestionMark=$?
 done
 
-curl -v -s imgr:15346/volume -X POST -d "{\"StorageURL\":\"http://swift:8080/v1/AUTH_test/con\",\"AuthToken\":\"$AuthToken\"}"
+curl -v -s -f imgr:15346/volume -X POST -d "{\"StorageURL\":\"http://swift:8080/v1/AUTH_test/con\",\"AuthToken\":\"$AuthToken\"}"
+
+curl -v -s -f imgr:15346/volume/testvol -X PUT -d "{\"StorageURL\":\"http://swift:8080/v1/AUTH_test/con\"}"
 
 sleep 10000

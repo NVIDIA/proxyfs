@@ -13,7 +13,7 @@
 #
 # To run the resultant application:
 #
-#   docker compose up [-d|--detach] [{dev|imgr|iclient}]
+#   docker compose up [-d|--detach] {dev|imgr|iclient}
 #
 #   Notes:
 #     -d|--detach:
@@ -27,6 +27,8 @@
 #     dev:     tells docker compose to only bring up dev     service (w/ dependencies)
 #     imgr:    tells docker compose to only bring up imgr    service (w/ dependencies)
 #     iclient: tells docker compose to only bring up iclient service (w/ dependencies)
+#     Precisely one of {dev|imgr|iclient} must be specied... default (all) will conflict
+#     If no service is specified, services dev and imgr published ports will collide
 #     Containers launched have been named the same as their corresponding service name
 #
 # To stop the resultant application:
