@@ -6,13 +6,8 @@ Integrated File and Object Access for Swift Object Storage
 
 ## Synopsis
 
-ProxyFS is a hierarchical file system that provides integrated file
-and object API access for data stored with
-[Swift object storage](http://swift.openstack.org) for the same
-data. It supports SMB and NFS along with AWS S3 and Swift object
-protocols. We call this "bi-modal access", and it means that filesystem
-clients and mount and read/write data that is simultaneously accessible
-to object API clients.
+ProxyFS is a disributed read/write hierarchical POSIX file system layered on top of 
+[Swift object storage](http://swift.openstack.org).
 
 ## How to Contribute
 
@@ -35,11 +30,13 @@ or the [ProxyFS Slack group](https://proxyfs.slack.com), which you can join thro
 ## How to get the code
 
 * git clone git@github.com:NVIDIA/proxyfs.git
-* cd ProxyFS
+* cd proxyfs
 
 ## How to run unit tests (in your Development Environment)
 
-* make
+* [Host shell] docker compose build
+* [Host shell] docker compose up -d dev
+* [dev  shell] make
 
 ## License
 
