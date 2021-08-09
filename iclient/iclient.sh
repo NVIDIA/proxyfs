@@ -15,7 +15,7 @@ DollarQuestionMark=1
 while [ "$DollarQuestionMark" != "0" ]
 do
   sleep 1
-  curl -f imgr:15346/version > /dev/null -s
+  curl -s -f imgr:15346/version > /dev/null
   DollarQuestionMark=$?
 done
 
