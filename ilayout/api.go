@@ -380,7 +380,8 @@ type InodeHeadV1Struct struct {
 	PayloadObjectOffset uint64                         // For Dir & File Inodes, starting offset in the Object of the root of the Directory or ExtentMap B+Tree
 	PayloadObjectLength uint64                         // For Dir & File Inodes, number of bytes in the Object of the root of the Directory or ExtentMap B+Tree
 	SymLinkTarget       string                         // For SymLink Inodes, the target of the link
-	Layout              []InodeHeadLayoutEntryV1Struct // Describes the data and space occupied by the the InodeTable
+	Layout              []InodeHeadLayoutEntryV1Struct // For Dir  Inodes, describes the data and space occupied by the Payload-described B+Tree
+	//                                                    For File Inodes, describes the data and space occupied by the Payload-described B+Tree as well as the File's contents
 }
 
 // MarshalInodeHeadV1 encodes inodeHeadV1 to inodeHeadV1Buf.

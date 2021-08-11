@@ -81,14 +81,18 @@ type chunkedPutContextStruct struct {
 }
 
 type statsStruct struct {
-	DeleteVolumeUsecs  bucketstats.BucketLog2Round // DELETE /volume/<volumeName>
-	GetConfigUsecs     bucketstats.BucketLog2Round // GET /config
-	GetStatsUsecs      bucketstats.BucketLog2Round // GET /stats
-	GetVersionUsecs    bucketstats.BucketLog2Round // GET /version
-	GetVolumeListUsecs bucketstats.BucketLog2Round // GET /volume
-	GetVolumeUsecs     bucketstats.BucketLog2Round // GET /volume/<volumeName>
-	PostVolumeUsecs    bucketstats.BucketLog2Round // POST /volume/<volumeName>
-	PutVolumeUsecs     bucketstats.BucketLog2Round // PUT /volume/<volumeName>
+	DeleteVolumeUsecs          bucketstats.BucketLog2Round // DELETE /volume/<VolumeName>
+	GetConfigUsecs             bucketstats.BucketLog2Round // GET /config
+	GetStatsUsecs              bucketstats.BucketLog2Round // GET /stats
+	GetVersionUsecs            bucketstats.BucketLog2Round // GET /version
+	GetVolumeInodeUsecs        bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>
+	GetVolumeInodeLayoutUsecs  bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>/layout
+	GetVolumeInodePayloadUsecs bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>/payload
+	GetVolumeLayoutUsecs       bucketstats.BucketLog2Round // GET /volume/<VolumeName>/layout
+	GetVolumeListUsecs         bucketstats.BucketLog2Round // GET /volume
+	GetVolumeUsecs             bucketstats.BucketLog2Round // GET /volume/<VolumeName>
+	PostVolumeUsecs            bucketstats.BucketLog2Round // POST /volume/<VolumeName>
+	PutVolumeUsecs             bucketstats.BucketLog2Round // PUT /volume/<VolumeName>
 
 	AdjustInodeTableEntryOpenCountUsecs bucketstats.BucketLog2Round // (*RetryRPCServerStruct).AdjustInodeTableEntryOpenCount()
 	DeleteInodeTableEntryUsecs          bucketstats.BucketLog2Round // (*RetryRPCServerStruct).DeleteInodeTableEntry()

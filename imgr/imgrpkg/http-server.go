@@ -302,10 +302,16 @@ func serveHTTPGetOfVersion(responseWriter http.ResponseWriter, request *http.Req
 
 func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	var (
-		err          error
-		jsonToReturn []byte
-		pathSplit    []string
-		startTime    time.Time
+		err                      error
+		inodeNumberAs16HexDigits string
+		inodeNumberAsUint64      uint64
+		jsonToReturn             []byte
+		mustBeInode              string
+		mustBeLayout             string
+		mustBeLayoutOrPayload    string
+		pathSplit                []string
+		startTime                time.Time
+		volumeName               string
 	)
 
 	startTime = time.Now()
@@ -314,6 +320,8 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 	switch len(pathSplit) {
 	case 2:
+		// Form: /volume
+
 		defer func() {
 			globals.stats.GetVolumeListUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 		}()
@@ -329,11 +337,15 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			logWarnf("responseWriter.Write(jsonToReturn) failed: %v", err)
 		}
 	case 3:
+		// Form: /volume/<VolumeName>
+
 		defer func() {
 			globals.stats.GetVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 		}()
 
-		jsonToReturn, err = getVolumeAsJSON(pathSplit[2])
+		volumeName = pathSplit[2]
+
+		jsonToReturn, err = getVolumeAsJSON(volumeName)
 		if nil == err {
 			responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(jsonToReturn)))
 			responseWriter.Header().Set("Content-Type", "application/json")
@@ -345,6 +357,80 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			}
 		} else {
 			responseWriter.WriteHeader(http.StatusNotFound)
+		}
+	case 4:
+		// Form: /volume/<VolumeName>/layout
+
+		volumeName = pathSplit[2]
+		mustBeLayout = pathSplit[3]
+
+		switch mustBeLayout {
+		case "layout":
+			defer func() {
+				globals.stats.GetVolumeLayoutUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+			}()
+
+			// TODO
+		default:
+			responseWriter.WriteHeader(http.StatusBadRequest)
+		}
+	case 5:
+		// Form: /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>
+
+		volumeName = pathSplit[2]
+		mustBeInode = pathSplit[3]
+		inodeNumberAs16HexDigits = pathSplit[4]
+
+		switch mustBeInode {
+		case "inode":
+			inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAs16HexDigits, 16, 64)
+			if nil != err {
+				responseWriter.WriteHeader(http.StatusBadRequest)
+			} else {
+				fmt.Println("UNDO: inodeNumberAsUint64:", inodeNumberAsUint64)
+				defer func() {
+					globals.stats.GetVolumeInodeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+				}()
+
+				// TODO
+			}
+		default:
+			responseWriter.WriteHeader(http.StatusBadRequest)
+		}
+	case 6:
+		// Form: /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>/layout
+		// Form: /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>/payload
+
+		volumeName = pathSplit[2]
+		mustBeInode = pathSplit[3]
+		inodeNumberAs16HexDigits = pathSplit[4]
+		mustBeLayoutOrPayload = pathSplit[5]
+
+		switch mustBeInode {
+		case "inode":
+			inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAs16HexDigits, 16, 64)
+			if nil != err {
+				responseWriter.WriteHeader(http.StatusBadRequest)
+			} else {
+				switch mustBeLayoutOrPayload {
+				case "layout":
+					defer func() {
+						globals.stats.GetVolumeInodeLayoutUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+					}()
+
+					// TODO
+				case "payload":
+					defer func() {
+						globals.stats.GetVolumeInodePayloadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+					}()
+
+					// TODO
+				default:
+					responseWriter.WriteHeader(http.StatusBadRequest)
+				}
+			}
+		default:
+			responseWriter.WriteHeader(http.StatusBadRequest)
 		}
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
