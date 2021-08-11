@@ -126,6 +126,18 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 	}
 	lastCheckPointAsString = string(lastCheckPointAsByteSlice[:])
 
+	lastCheckPoint, err = ilayout.UnmarshalCheckPointV1(lastCheckPointAsString)
+	if nil != err {
+		logFatalf("ilayout.UnmarshalCheckPointV1(lastCheckPointAsString==\"%s\") failed: %v", lastCheckPointAsString, err)
+	}
+
+	superBlockAsByteSlice, err = swiftObjectGetTail(volume.storageURL, mountRequest.AuthToken, lastCheckPoint.SuperBlockObjectNumber, lastCheckPoint.SuperBlockLength)
+	if nil != err {
+		globals.Unlock()
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, mountRequest.AuthToken)
+		return
+	}
+
 retryGenerateMountID:
 
 	mountIDAsByteArray = utils.FetchRandomByteSlice(mountIDByteArrayLen)
@@ -153,17 +165,7 @@ retryGenerateMountID:
 	globals.mountMap[mountIDAsString] = mount
 
 	if nil == volume.checkPointControlChan {
-		lastCheckPoint, err = ilayout.UnmarshalCheckPointV1(lastCheckPointAsString)
-		if nil != err {
-			logFatalf("ilayout.UnmarshalCheckPointV1(lastCheckPointAsString==\"%s\") failed: %v", lastCheckPointAsString, err)
-		}
-
 		volume.checkPoint = lastCheckPoint
-
-		superBlockAsByteSlice, err = swiftObjectGetTail(volume.storageURL, mountRequest.AuthToken, volume.checkPoint.SuperBlockObjectNumber, volume.checkPoint.SuperBlockLength)
-		if nil != err {
-			logFatalf("swiftObjectGetTail(volume.storageURL, mountRequest.AuthToken, volume.checkPoint.SuperBlockObjectNumber, volume.checkPoint.SuperBlockLength) failed: %v", err)
-		}
 
 		volume.superBlock, err = ilayout.UnmarshalSuperBlockV1(superBlockAsByteSlice)
 		if nil != err {
