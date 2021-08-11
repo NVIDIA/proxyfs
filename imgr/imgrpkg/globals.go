@@ -85,9 +85,9 @@ type statsStruct struct {
 	GetConfigUsecs             bucketstats.BucketLog2Round // GET /config
 	GetStatsUsecs              bucketstats.BucketLog2Round // GET /stats
 	GetVersionUsecs            bucketstats.BucketLog2Round // GET /version
-	GetVolumeInodeUsecs        bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>
-	GetVolumeInodeLayoutUsecs  bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>/layout
-	GetVolumeInodePayloadUsecs bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>/payload
+	GetVolumeInodeUsecs        bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>
+	GetVolumeInodeLayoutUsecs  bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>/layout
+	GetVolumeInodePayloadUsecs bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>/payload
 	GetVolumeLayoutUsecs       bucketstats.BucketLog2Round // GET /volume/<VolumeName>/layout
 	GetVolumeListUsecs         bucketstats.BucketLog2Round // GET /volume
 	GetVolumeUsecs             bucketstats.BucketLog2Round // GET /volume/<VolumeName>

@@ -17,6 +17,7 @@ import (
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/version"
+	"github.com/NVIDIA/sortedmap"
 )
 
 const (
@@ -300,18 +301,35 @@ func serveHTTPGetOfVersion(responseWriter http.ResponseWriter, request *http.Req
 	}
 }
 
+type volumeGETStruct struct {
+	Name                   string
+	StorageURL             string
+	HealthyMounts          uint64
+	LeasesExpiredMounts    uint64
+	AuthTokenExpiredMounts uint64
+}
+
 func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	var (
-		err                      error
-		inodeNumberAs16HexDigits string
-		inodeNumberAsUint64      uint64
-		jsonToReturn             []byte
-		mustBeInode              string
-		mustBeLayout             string
-		mustBeLayoutOrPayload    string
-		pathSplit                []string
-		startTime                time.Time
-		volumeName               string
+		err                    error
+		inodeNumberAsHexDigits string
+		inodeNumberAsUint64    uint64
+		mustBeInode            string
+		mustBeLayout           string
+		mustBeLayoutOrPayload  string
+		ok                     bool
+		pathSplit              []string
+		startTime              time.Time
+		toReturnTODO           string
+		volumeAsStruct         *volumeStruct
+		volumeAsValue          sortedmap.Value
+		volumeGET              *volumeGETStruct
+		volumeGETAsJSON        []byte
+		volumeGETList          []*volumeGETStruct
+		volumeGETListIndex     int
+		volumeGETListAsJSON    []byte
+		volumeGETListLen       int
+		volumeName             string
 	)
 
 	startTime = time.Now()
@@ -326,15 +344,52 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			globals.stats.GetVolumeListUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 		}()
 
-		jsonToReturn = getVolumeListAsJSON()
+		globals.Lock()
 
-		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(jsonToReturn)))
+		volumeGETListLen, err = globals.volumeMap.Len()
+		if nil != err {
+			logFatal(err)
+		}
+
+		volumeGETList = make([]*volumeGETStruct, volumeGETListLen)
+
+		for volumeGETListIndex = 0; volumeGETListIndex < volumeGETListLen; volumeGETListIndex++ {
+			_, volumeAsValue, ok, err = globals.volumeMap.GetByIndex(volumeGETListIndex)
+			if nil != err {
+				logFatal(err)
+			}
+			if !ok {
+				logFatalf("globals.volumeMap[] len (%d) is wrong", volumeGETListLen)
+			}
+
+			volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
+			if !ok {
+				logFatalf("globals.volumeMap[%d] was not a *volumeStruct", volumeGETListIndex)
+			}
+
+			volumeGETList[volumeGETListIndex] = &volumeGETStruct{
+				Name:                   volumeAsStruct.name,
+				StorageURL:             volumeAsStruct.storageURL,
+				HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
+				LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
+				AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
+			}
+		}
+
+		globals.Unlock()
+
+		volumeGETListAsJSON, err = json.Marshal(volumeGETList)
+		if nil != err {
+			logFatal(err)
+		}
+
+		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeGETListAsJSON)))
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, err = responseWriter.Write(jsonToReturn)
+		_, err = responseWriter.Write(volumeGETListAsJSON)
 		if nil != err {
-			logWarnf("responseWriter.Write(jsonToReturn) failed: %v", err)
+			logWarnf("responseWriter.Write(volumeGETListAsJSON) failed: %v", err)
 		}
 	case 3:
 		// Form: /volume/<VolumeName>
@@ -345,17 +400,44 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 		volumeName = pathSplit[2]
 
-		jsonToReturn, err = getVolumeAsJSON(volumeName)
-		if nil == err {
-			responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(jsonToReturn)))
+		globals.Lock()
+
+		volumeAsValue, ok, err = globals.volumeMap.GetByKey(volumeName)
+		if nil != err {
+			logFatal(err)
+		}
+
+		if ok {
+			volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
+			if !ok {
+				logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
+			}
+
+			volumeGET = &volumeGETStruct{
+				Name:                   volumeAsStruct.name,
+				StorageURL:             volumeAsStruct.storageURL,
+				HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
+				LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
+				AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
+			}
+
+			globals.Unlock()
+
+			volumeGETAsJSON, err = json.Marshal(volumeGET)
+			if nil != err {
+				logFatal(err)
+			}
+
+			responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeGETAsJSON)))
 			responseWriter.Header().Set("Content-Type", "application/json")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			_, err = responseWriter.Write(jsonToReturn)
+			_, err = responseWriter.Write(volumeGETAsJSON)
 			if nil != err {
-				logWarnf("responseWriter.Write(jsonToReturn) failed: %v", err)
+				logWarnf("responseWriter.Write(volumeGETAsJSON) failed: %v", err)
 			}
 		} else {
+			globals.Unlock()
 			responseWriter.WriteHeader(http.StatusNotFound)
 		}
 	case 4:
@@ -370,45 +452,100 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				globals.stats.GetVolumeLayoutUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 			}()
 
-			// TODO
+			globals.Lock()
+
+			volumeAsValue, ok, err = globals.volumeMap.GetByKey(volumeName)
+			if nil != err {
+				logFatal(err)
+			}
+
+			if ok {
+				volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
+				if !ok {
+					logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
+				}
+
+				toReturnTODO = fmt.Sprintf("TODO: GET /volume/%s/layout", volumeAsStruct.name)
+
+				globals.Unlock()
+
+				responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(toReturnTODO)))
+				responseWriter.Header().Set("Content-Type", "text/plain")
+				responseWriter.WriteHeader(http.StatusOK)
+
+				_, err = responseWriter.Write([]byte(toReturnTODO))
+				if nil != err {
+					logWarnf("responseWriter.Write([]byte(toReturnTODO)) failed: %v", err)
+				}
+			} else {
+				globals.Unlock()
+				responseWriter.WriteHeader(http.StatusNotFound)
+			}
 		default:
 			responseWriter.WriteHeader(http.StatusBadRequest)
 		}
 	case 5:
-		// Form: /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>
+		// Form: /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>
 
 		volumeName = pathSplit[2]
 		mustBeInode = pathSplit[3]
-		inodeNumberAs16HexDigits = pathSplit[4]
+		inodeNumberAsHexDigits = pathSplit[4]
 
 		switch mustBeInode {
 		case "inode":
-			inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAs16HexDigits, 16, 64)
+			inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAsHexDigits, 16, 64)
 			if nil != err {
 				responseWriter.WriteHeader(http.StatusBadRequest)
 			} else {
-				fmt.Println("UNDO: inodeNumberAsUint64:", inodeNumberAsUint64)
 				defer func() {
 					globals.stats.GetVolumeInodeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 				}()
 
-				// TODO
+				globals.Lock()
+
+				volumeAsValue, ok, err = globals.volumeMap.GetByKey(volumeName)
+				if nil != err {
+					logFatal(err)
+				}
+
+				if ok {
+					volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
+					if !ok {
+						logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
+					}
+
+					toReturnTODO = fmt.Sprintf("TODO: GET /volume/%s/inode/%016X", volumeAsStruct.name, inodeNumberAsUint64)
+
+					globals.Unlock()
+
+					responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(toReturnTODO)))
+					responseWriter.Header().Set("Content-Type", "text/plain")
+					responseWriter.WriteHeader(http.StatusOK)
+
+					_, err = responseWriter.Write([]byte(toReturnTODO))
+					if nil != err {
+						logWarnf("responseWriter.Write([]byte(toReturnTODO)) failed: %v", err)
+					}
+				} else {
+					globals.Unlock()
+					responseWriter.WriteHeader(http.StatusNotFound)
+				}
 			}
 		default:
 			responseWriter.WriteHeader(http.StatusBadRequest)
 		}
 	case 6:
-		// Form: /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>/layout
-		// Form: /volume/<VolumeName>/inode/<InodeNumberAs16HexDigits>/payload
+		// Form: /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>/layout
+		// Form: /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>/payload
 
 		volumeName = pathSplit[2]
 		mustBeInode = pathSplit[3]
-		inodeNumberAs16HexDigits = pathSplit[4]
+		inodeNumberAsHexDigits = pathSplit[4]
 		mustBeLayoutOrPayload = pathSplit[5]
 
 		switch mustBeInode {
 		case "inode":
-			inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAs16HexDigits, 16, 64)
+			inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAsHexDigits, 16, 64)
 			if nil != err {
 				responseWriter.WriteHeader(http.StatusBadRequest)
 			} else {
@@ -418,13 +555,69 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 						globals.stats.GetVolumeInodeLayoutUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 					}()
 
-					// TODO
+					globals.Lock()
+
+					volumeAsValue, ok, err = globals.volumeMap.GetByKey(volumeName)
+					if nil != err {
+						logFatal(err)
+					}
+
+					if ok {
+						volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
+						if !ok {
+							logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
+						}
+
+						toReturnTODO = fmt.Sprintf("TODO: GET /volume/%s/inode/%016X/layout", volumeAsStruct.name, inodeNumberAsUint64)
+
+						globals.Unlock()
+
+						responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(toReturnTODO)))
+						responseWriter.Header().Set("Content-Type", "text/plain")
+						responseWriter.WriteHeader(http.StatusOK)
+
+						_, err = responseWriter.Write([]byte(toReturnTODO))
+						if nil != err {
+							logWarnf("responseWriter.Write([]byte(toReturnTODO)) failed: %v", err)
+						}
+					} else {
+						globals.Unlock()
+						responseWriter.WriteHeader(http.StatusNotFound)
+					}
 				case "payload":
 					defer func() {
 						globals.stats.GetVolumeInodePayloadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 					}()
 
-					// TODO
+					globals.Lock()
+
+					volumeAsValue, ok, err = globals.volumeMap.GetByKey(volumeName)
+					if nil != err {
+						logFatal(err)
+					}
+
+					if ok {
+						volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
+						if !ok {
+							logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
+						}
+
+						toReturnTODO = fmt.Sprintf("TODO: GET /volume/%s/inode/%016X/payload", volumeAsStruct.name, inodeNumberAsUint64)
+
+						globals.Unlock()
+
+						responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(toReturnTODO)))
+						responseWriter.Header().Set("Content-Type", "text/plain")
+						responseWriter.WriteHeader(http.StatusOK)
+
+						_, err = responseWriter.Write([]byte(toReturnTODO))
+						if nil != err {
+							logWarnf("responseWriter.Write([]byte(toReturnTODO)) failed: %v", err)
+						}
+					} else {
+						globals.Unlock()
+						responseWriter.WriteHeader(http.StatusNotFound)
+					}
 				default:
 					responseWriter.WriteHeader(http.StatusBadRequest)
 				}

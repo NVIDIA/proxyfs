@@ -5,7 +5,6 @@ package imgrpkg
 
 import (
 	"container/list"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -110,111 +109,6 @@ func deleteVolume(volumeName string) (err error) {
 	globals.Unlock()
 
 	err = nil
-	return
-}
-
-type volumeGETStruct struct {
-	Name                   string
-	StorageURL             string
-	HealthyMounts          uint64
-	LeasesExpiredMounts    uint64
-	AuthTokenExpiredMounts uint64
-}
-
-func getVolumeAsJSON(volumeName string) (volume []byte, err error) {
-	var (
-		ok             bool
-		volumeAsStruct *volumeStruct
-		volumeAsValue  sortedmap.Value
-		volumeToReturn *volumeGETStruct
-	)
-
-	globals.Lock()
-
-	volumeAsValue, ok, err = globals.volumeMap.GetByKey(volumeName)
-	if nil != err {
-		logFatal(err)
-	}
-	if !ok {
-		globals.Unlock()
-		err = fmt.Errorf("volumeName \"%s\" does not exist", volumeName)
-		return
-	}
-
-	volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
-	if !ok {
-		logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
-	}
-
-	volumeToReturn = &volumeGETStruct{
-		Name:                   volumeAsStruct.name,
-		StorageURL:             volumeAsStruct.storageURL,
-		HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
-		LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
-		AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
-	}
-
-	globals.Unlock()
-
-	volume, err = json.Marshal(volumeToReturn)
-	if nil != err {
-		logFatal(err)
-	}
-
-	err = nil
-	return
-}
-
-func getVolumeListAsJSON() (volumeList []byte) {
-	var (
-		err                error
-		ok                 bool
-		volumeAsStruct     *volumeStruct
-		volumeAsValue      sortedmap.Value
-		volumeListIndex    int
-		volumeListLen      int
-		volumeListToReturn []*volumeGETStruct
-	)
-
-	globals.Lock()
-
-	volumeListLen, err = globals.volumeMap.Len()
-	if nil != err {
-		logFatal(err)
-	}
-
-	volumeListToReturn = make([]*volumeGETStruct, volumeListLen)
-
-	for volumeListIndex = 0; volumeListIndex < volumeListLen; volumeListIndex++ {
-		_, volumeAsValue, ok, err = globals.volumeMap.GetByIndex(volumeListIndex)
-		if nil != err {
-			logFatal(err)
-		}
-		if !ok {
-			logFatalf("globals.volumeMap[] len (%d) is wrong", volumeListLen)
-		}
-
-		volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
-		if !ok {
-			logFatalf("globals.volumeMap[%d] was not a *volumeStruct", volumeListIndex)
-		}
-
-		volumeListToReturn[volumeListIndex] = &volumeGETStruct{
-			Name:                   volumeAsStruct.name,
-			StorageURL:             volumeAsStruct.storageURL,
-			HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
-			LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
-			AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
-		}
-	}
-
-	globals.Unlock()
-
-	volumeList, err = json.Marshal(volumeListToReturn)
-	if nil != err {
-		logFatal(err)
-	}
-
 	return
 }
 
