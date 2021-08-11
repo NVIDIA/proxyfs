@@ -1,6 +1,9 @@
 # Copyright (c) 2015-2021, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 
+gopregeneratedirs = \
+	make-static-content
+
 gopkgdirs = \
 	bucketstats \
 	conf \
@@ -26,13 +29,16 @@ gobindirs = \
 godirsforci = $(gopkgdirs) $(goplugindirs) $(gobindirs);
 godirpathsforci = $(addprefix github.com/NVIDIA/proxyfs/,$(godirsforci))
 
-all: version fmt generate test build
+generatedfiles := \
+	coverage.coverprofile
 
-ci: version fmt generate test cover build
+all: version fmt pre-generate generate test build
 
-minimal: version generate build
+ci: version fmt pre-generate generate test cover build
 
-.PHONY: all bench build ci clean cover fmt generate minimal test version
+minimal: version pre-generate generate build
+
+.PHONY: all bench build ci clean cover fmt generate minimal pre-generate test version
 
 bench:
 	@set -e; \
@@ -60,6 +66,9 @@ build:
 
 clean:
 	@set -e; \
+	for godir in $(gopregeneratedirs); do \
+		$(MAKE) --no-print-directory -C $$godir clean; \
+	done; \
 	for godir in $(gopkgdirs); do \
 		$(MAKE) --no-print-directory -C $$godir clean; \
 	done; \
@@ -68,6 +77,9 @@ clean:
 	done; \
 	for godir in $(gobindirs); do \
 		$(MAKE) --no-print-directory -C $$godir clean; \
+	done; \
+	for generatedfile in $(generatedfiles); do \
+		rm -f $$generatedfile; \
 	done; \
 	rm -f go-acc
 
@@ -79,7 +91,9 @@ cover:
 
 fmt:
 	@set -e; \
-	$(MAKE) --no-print-directory -C make-static-content fmt; \
+	for godir in $(gopregeneratedirs); do \
+		$(MAKE) --no-print-directory -C $$godir fmt; \
+	done; \
 	for godir in $(gopkgdirs); do \
 		$(MAKE) --no-print-directory -C $$godir fmt; \
 	done; \
@@ -100,6 +114,12 @@ generate:
 	done; \
 	for godir in $(gobindirs); do \
 		$(MAKE) --no-print-directory -C $$godir generate; \
+	done
+
+pre-generate:
+	@set -e; \
+	for godir in $(gopregeneratedirs); do \
+		$(MAKE) --no-print-directory -C $$godir build; \
 	done
 
 test:

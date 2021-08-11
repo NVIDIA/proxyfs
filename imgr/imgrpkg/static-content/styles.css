@@ -1,0 +1,71 @@
+/*
+    Copyright (c) 2015-2021, NVIDIA CORPORATION.
+    SPDX-License-Identifier: Apache-2.0
+*/
+
+.table td.fit,
+.table th.fit {
+  white-space: nowrap;
+  width: 1%;
+}
+
+body { padding-top: 70px; }
+
+.no-margin { margin: 0; }
+
+pre.code {
+  background-color: #e9ecef;
+  border-radius: .25rem;
+  padding: 20px;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+span.jstExpand, span.jstFold {
+  cursor: pointer;
+}
+
+.jstValue {
+  white-space: pre-wrap;
+}
+.jstComma {
+  white-space: pre-wrap;
+}
+.jstProperty {
+  color: #666;
+  word-wrap: break-word;
+}
+.jstBracket {
+  white-space: pre-wrap;;
+}
+.jstBool {
+  color: #2525CC;
+}
+.jstNum {
+  color: #D036D0;
+}
+.jstNull {
+  color: gray;
+}
+.jstStr {
+  color: #2DB669;
+}
+.jstFold:after {
+  content: ' -';
+  cursor: pointer;
+}
+.jstExpand {
+  white-space: normal;
+}
+.jstExpand:after {
+  content: ' +';
+  cursor: pointer;
+}
+.jstFolded {
+  white-space: normal !important;
+}
+.jstHiddenBlock {
+  display: none;
+}

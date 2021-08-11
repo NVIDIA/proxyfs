@@ -23,4 +23,4 @@ curl -v -s -f imgr:15346/volume -X POST -d "{\"StorageURL\":\"http://swift:8080/
 
 curl -v -s -f imgr:15346/volume/testvol -X PUT -d "{\"StorageURL\":\"http://swift:8080/v1/AUTH_test/con\"}"
 
-sleep 10000
+sleep 100000

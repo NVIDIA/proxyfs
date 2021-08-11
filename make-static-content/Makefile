@@ -3,4 +3,7 @@
 
 gosubdir := github.com/NVIDIA/proxyfs/make-static-content
 
+generatedfiles := \
+	make-static-content
+
 include ../GoMakefile

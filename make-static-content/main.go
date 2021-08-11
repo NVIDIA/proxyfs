@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -33,6 +34,7 @@ func main() {
 		contentName         string
 		contentType         string
 		dstFile             *os.File
+		dstFileContents     bytes.Buffer
 		dstFileName         string
 		err                 error
 		packageName         string
@@ -90,21 +92,25 @@ func main() {
 			panic(err.Error())
 		}
 	case "b":
-		_, err = dstFile.Write([]byte(fmt.Sprintf("var %vContent = []byte{", contentName)))
+		_, err = dstFileContents.Write([]byte(fmt.Sprintf("var %vContent = []byte{", contentName)))
 		if nil != err {
 			panic(err.Error())
 		}
 		for srcFileContentIndex, srcFileContentByte = range srcFileContents {
-			if 0 == (srcFileContentIndex % bytesPerLine) {
-				_, err = dstFile.Write([]byte(fmt.Sprintf("\n\t0x%02X,", srcFileContentByte)))
+			if (srcFileContentIndex % bytesPerLine) == 0 {
+				_, err = dstFileContents.Write([]byte(fmt.Sprintf("\n\t0x%02X,", srcFileContentByte)))
 			} else {
-				_, err = dstFile.Write([]byte(fmt.Sprintf(" 0x%02X,", srcFileContentByte)))
+				_, err = dstFileContents.Write([]byte(fmt.Sprintf(" 0x%02X,", srcFileContentByte)))
 			}
 			if nil != err {
 				panic(err.Error())
 			}
 		}
-		_, err = dstFile.Write([]byte("\n}\n"))
+		_, err = dstFileContents.Write([]byte("\n}\n"))
+		if nil != err {
+			panic(err.Error())
+		}
+		_, err = dstFile.Write(dstFileContents.Bytes())
 		if nil != err {
 			panic(err.Error())
 		}
