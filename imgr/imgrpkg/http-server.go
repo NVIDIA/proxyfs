@@ -301,12 +301,102 @@ func serveHTTPGetOfVersion(responseWriter http.ResponseWriter, request *http.Req
 	}
 }
 
-type volumeGETStruct struct {
+type volumeMiniGETStruct struct {
 	Name                   string
 	StorageURL             string
 	HealthyMounts          uint64
 	LeasesExpiredMounts    uint64
 	AuthTokenExpiredMounts uint64
+}
+
+type volumeFullGETInodeTableLayoutEntryStruct struct {
+	ObjectNumber    string
+	ObjectSize      string
+	BytesReferenced string
+}
+
+type volumeFullGETStruct struct {
+	Name                           string
+	StorageURL                     string
+	HealthyMounts                  uint64
+	LeasesExpiredMounts            uint64
+	AuthTokenExpiredMounts         uint64
+	InodeTableLayout               []volumeFullGETInodeTableLayoutEntryStruct
+	InodeObjectCount               string
+	InodeObjectSize                string
+	InodeBytesReferenced           string
+	PendingDeleteObjectNumberArray []string
+}
+
+type inodeGETLinkTableEntryStruct struct {
+	ParentDirInodeNumber string
+	ParentDirEntryName   string
+}
+
+type inodeGETStreamTableEntryStruct struct {
+	Name  string
+	Value string // "XX XX .. XX" Hex-displayed bytes
+}
+
+type dirInodeGETPayloadEntryStruct struct {
+	BaseName    string
+	InodeNumber string
+	InodeType   string // One of "InodeTypeDir", "InodeTypeFile", or "InodeTypeSymLink"
+}
+
+type fileInodeGETPayloadEntryStruct struct {
+	FileOffset   string
+	Length       string
+	ObjectNumber string
+	ObjectOffset string
+}
+
+type inodeGETLayoutEntryStruct struct {
+	ObjectNumber    string
+	ObjectSize      string
+	BytesReferenced string
+}
+
+type dirInodeGETStruct struct {
+	InodeNumber      string
+	InodeType        string // == "InodeTypeDir"
+	LinkTable        []inodeGETLinkTableEntryStruct
+	ModificationTime string
+	StatusChangeTime string
+	Mode             string
+	UserID           string
+	GroupID          string
+	StreamTable      []inodeGETStreamTableEntryStruct
+	Payload          []dirInodeGETPayloadEntryStruct
+	Layout           []inodeGETLayoutEntryStruct
+}
+
+type fileInodeGETStruct struct {
+	InodeNumber      string
+	InodeType        string // == "InodeTypeFile"
+	LinkTable        []inodeGETLinkTableEntryStruct
+	Size             string
+	ModificationTime string
+	StatusChangeTime string
+	Mode             string
+	UserID           string
+	GroupID          string
+	StreamTable      []inodeGETStreamTableEntryStruct
+	Payload          []fileInodeGETPayloadEntryStruct
+	Layout           []inodeGETLayoutEntryStruct
+}
+
+type symLinkInodeGETStruct struct {
+	InodeNumber      string
+	InodeType        string // == "InodeTypeSymLink"
+	LinkTable        []inodeGETLinkTableEntryStruct
+	ModificationTime string
+	StatusChangeTime string
+	Mode             string
+	UserID           string
+	GroupID          string
+	StreamTable      []inodeGETStreamTableEntryStruct
+	SymLinkTarget    string
 }
 
 func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
@@ -315,17 +405,15 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		inodeNumberAsHexDigits string
 		inodeNumberAsUint64    uint64
 		mustBeInode            string
-		mustBeLayout           string
-		mustBeLayoutOrPayload  string
 		ok                     bool
 		pathSplit              []string
 		startTime              time.Time
 		toReturnTODO           string
 		volumeAsStruct         *volumeStruct
 		volumeAsValue          sortedmap.Value
-		volumeGET              *volumeGETStruct
+		volumeGET              *volumeFullGETStruct
 		volumeGETAsJSON        []byte
-		volumeGETList          []*volumeGETStruct
+		volumeGETList          []*volumeMiniGETStruct
 		volumeGETListIndex     int
 		volumeGETListAsJSON    []byte
 		volumeGETListLen       int
@@ -351,7 +439,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			logFatal(err)
 		}
 
-		volumeGETList = make([]*volumeGETStruct, volumeGETListLen)
+		volumeGETList = make([]*volumeMiniGETStruct, volumeGETListLen)
 
 		for volumeGETListIndex = 0; volumeGETListIndex < volumeGETListLen; volumeGETListIndex++ {
 			_, volumeAsValue, ok, err = globals.volumeMap.GetByIndex(volumeGETListIndex)
@@ -367,7 +455,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				logFatalf("globals.volumeMap[%d] was not a *volumeStruct", volumeGETListIndex)
 			}
 
-			volumeGETList[volumeGETListIndex] = &volumeGETStruct{
+			volumeGETList[volumeGETListIndex] = &volumeMiniGETStruct{
 				Name:                   volumeAsStruct.name,
 				StorageURL:             volumeAsStruct.storageURL,
 				HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
@@ -413,7 +501,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
 			}
 
-			volumeGET = &volumeGETStruct{
+			volumeGET = &volumeFullGETStruct{
 				Name:                   volumeAsStruct.name,
 				StorageURL:             volumeAsStruct.storageURL,
 				HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
@@ -439,50 +527,6 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		} else {
 			globals.Unlock()
 			responseWriter.WriteHeader(http.StatusNotFound)
-		}
-	case 4:
-		// Form: /volume/<VolumeName>/layout
-
-		volumeName = pathSplit[2]
-		mustBeLayout = pathSplit[3]
-
-		switch mustBeLayout {
-		case "layout":
-			defer func() {
-				globals.stats.GetVolumeLayoutUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
-			}()
-
-			globals.Lock()
-
-			volumeAsValue, ok, err = globals.volumeMap.GetByKey(volumeName)
-			if nil != err {
-				logFatal(err)
-			}
-
-			if ok {
-				volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
-				if !ok {
-					logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
-				}
-
-				toReturnTODO = fmt.Sprintf("TODO: GET /volume/%s/layout", volumeAsStruct.name)
-
-				globals.Unlock()
-
-				responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(toReturnTODO)))
-				responseWriter.Header().Set("Content-Type", "text/plain")
-				responseWriter.WriteHeader(http.StatusOK)
-
-				_, err = responseWriter.Write([]byte(toReturnTODO))
-				if nil != err {
-					logWarnf("responseWriter.Write([]byte(toReturnTODO)) failed: %v", err)
-				}
-			} else {
-				globals.Unlock()
-				responseWriter.WriteHeader(http.StatusNotFound)
-			}
-		default:
-			responseWriter.WriteHeader(http.StatusBadRequest)
 		}
 	case 5:
 		// Form: /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>
@@ -529,97 +573,6 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				} else {
 					globals.Unlock()
 					responseWriter.WriteHeader(http.StatusNotFound)
-				}
-			}
-		default:
-			responseWriter.WriteHeader(http.StatusBadRequest)
-		}
-	case 6:
-		// Form: /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>/layout
-		// Form: /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>/payload
-
-		volumeName = pathSplit[2]
-		mustBeInode = pathSplit[3]
-		inodeNumberAsHexDigits = pathSplit[4]
-		mustBeLayoutOrPayload = pathSplit[5]
-
-		switch mustBeInode {
-		case "inode":
-			inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAsHexDigits, 16, 64)
-			if nil != err {
-				responseWriter.WriteHeader(http.StatusBadRequest)
-			} else {
-				switch mustBeLayoutOrPayload {
-				case "layout":
-					defer func() {
-						globals.stats.GetVolumeInodeLayoutUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
-					}()
-
-					globals.Lock()
-
-					volumeAsValue, ok, err = globals.volumeMap.GetByKey(volumeName)
-					if nil != err {
-						logFatal(err)
-					}
-
-					if ok {
-						volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
-						if !ok {
-							logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
-						}
-
-						toReturnTODO = fmt.Sprintf("TODO: GET /volume/%s/inode/%016X/layout", volumeAsStruct.name, inodeNumberAsUint64)
-
-						globals.Unlock()
-
-						responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(toReturnTODO)))
-						responseWriter.Header().Set("Content-Type", "text/plain")
-						responseWriter.WriteHeader(http.StatusOK)
-
-						_, err = responseWriter.Write([]byte(toReturnTODO))
-						if nil != err {
-							logWarnf("responseWriter.Write([]byte(toReturnTODO)) failed: %v", err)
-						}
-					} else {
-						globals.Unlock()
-						responseWriter.WriteHeader(http.StatusNotFound)
-					}
-				case "payload":
-					defer func() {
-						globals.stats.GetVolumeInodePayloadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
-					}()
-
-					globals.Lock()
-
-					volumeAsValue, ok, err = globals.volumeMap.GetByKey(volumeName)
-					if nil != err {
-						logFatal(err)
-					}
-
-					if ok {
-						volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
-						if !ok {
-							logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
-						}
-
-						toReturnTODO = fmt.Sprintf("TODO: GET /volume/%s/inode/%016X/payload", volumeAsStruct.name, inodeNumberAsUint64)
-
-						globals.Unlock()
-
-						responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(toReturnTODO)))
-						responseWriter.Header().Set("Content-Type", "text/plain")
-						responseWriter.WriteHeader(http.StatusOK)
-
-						_, err = responseWriter.Write([]byte(toReturnTODO))
-						if nil != err {
-							logWarnf("responseWriter.Write([]byte(toReturnTODO)) failed: %v", err)
-						}
-					} else {
-						globals.Unlock()
-						responseWriter.WriteHeader(http.StatusNotFound)
-					}
-				default:
-					responseWriter.WriteHeader(http.StatusBadRequest)
 				}
 			}
 		default:

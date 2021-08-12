@@ -143,16 +143,15 @@ func TestAPI(t *testing.T) {
 		unmarshaledDirectoryEntryValueV1BytesConsumedExpected = int(8 + 1)
 
 		testExtentMapEntryValueV1 = &ExtentMapEntryValueV1Struct{
-			FileOffset:   1,
-			Length:       2,
-			ObjectNumber: 3,
-			ObjectOffset: 4,
+			Length:       1,
+			ObjectNumber: 2,
+			ObjectOffset: 3,
 		}
 
 		marshaledExtentMapEntryValueV1                        []byte
 		unmarshaledExtentMapEntryValueV1                      *ExtentMapEntryValueV1Struct
 		unmarshaledExtentMapEntryValueV1BytesConsumed         int
-		unmarshaledExtentMapEntryValueV1BytesConsumedExpected = int(8 + 8 + 8 + 8)
+		unmarshaledExtentMapEntryValueV1BytesConsumedExpected = int(8 + 8 + 8)
 
 		testObjectNumber = uint64(0x0123456789ABCDEF)
 

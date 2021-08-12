@@ -403,8 +403,8 @@ func UnmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct
 //
 // The struct is serialized as a sequence of uint* fields in LittleEndian format.
 //
-// Note that there is no DirectoryEntryKeyV1Struct as it is simply a string serialized
-// by a uint64 length in LittleEndian format followed by the bytes of the string.
+// Note that there is no DirectoryEntryKeyV1Struct as it is simply a BaseName string
+// serialized by a uint64 length in LittleEndian format followed by the bytes of the string.
 //
 type DirectoryEntryValueV1Struct struct {
 	InodeNumber uint64
@@ -430,11 +430,10 @@ func UnmarshalDirectoryEntryValueV1(directoryEntryValueV1Buf []byte) (directoryE
 //
 // The struct is serialized as a sequence of uint64 fields in LittleEndian format.
 //
-// Note that there is no ExtentMapEntryKeyV1Struct as it is simply a uint64 serialized
-// in LittleEndian format.
+// Note that there is no ExtentMapEntryKeyV1Struct as it is simply a FileOffset uint64
+// serialized in LittleEndian format.
 //
 type ExtentMapEntryValueV1Struct struct {
-	FileOffset   uint64 // Offset from the start of the File
 	Length       uint64 // Length of this extent (both in the File and in the Object)
 	ObjectNumber uint64 // Identifies the Object containing this extent's data
 	ObjectOffset uint64 // Starting offset in the Object of this extent's data

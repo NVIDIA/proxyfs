@@ -131,6 +131,7 @@ func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksSt
 	}
 	return
 }
+
 func (postVolumeRootDirDirectoryCallbacks *postVolumeRootDirDirectoryCallbacksStruct) Seek(offset int64, whence int) (int64, error) {
 	var (
 		newOffset int64
@@ -281,6 +282,7 @@ func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCal
 	}
 	return
 }
+
 func (postVolumeSuperBlockInodeTableCallbacks *postVolumeSuperBlockInodeTableCallbacksStruct) Seek(offset int64, whence int) (int64, error) {
 	var (
 		newOffset int64

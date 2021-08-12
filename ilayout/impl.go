@@ -809,14 +809,9 @@ func (extentMapEntryValueV1 *ExtentMapEntryValueV1Struct) marshalExtentMapEntryV
 		curPos int
 	)
 
-	extentMapEntryValueV1Buf = make([]byte, 8+8+8+8)
+	extentMapEntryValueV1Buf = make([]byte, 8+8+8)
 
 	curPos = 0
-
-	curPos, err = putLEUint64ToBuf(extentMapEntryValueV1Buf, curPos, extentMapEntryValueV1.FileOffset)
-	if nil != err {
-		return
-	}
 
 	curPos, err = putLEUint64ToBuf(extentMapEntryValueV1Buf, curPos, extentMapEntryValueV1.Length)
 	if nil != err {
@@ -850,11 +845,6 @@ func unmarshalExtentMapEntryValueV1(extentMapEntryValueV1Buf []byte) (extentMapE
 	curPos = 0
 
 	extentMapEntryValueV1 = &ExtentMapEntryValueV1Struct{}
-
-	extentMapEntryValueV1.FileOffset, curPos, err = getLEUint64FromBuf(extentMapEntryValueV1Buf, curPos)
-	if nil != err {
-		return
-	}
 
 	extentMapEntryValueV1.Length, curPos, err = getLEUint64FromBuf(extentMapEntryValueV1Buf, curPos)
 	if nil != err {
