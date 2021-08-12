@@ -735,42 +735,19 @@ func (volume *volumeStruct) DumpValue(value sortedmap.Value) (valueAsString stri
 
 func (volume *volumeStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
 	var (
-		mount            *mountStruct
-		mountListElement *list.Element
-		ok               bool
+		authOK bool
 	)
 
-NextHealthyMount:
-
-	mountListElement = volume.healthyMountList.Front()
-	if nil == mountListElement {
-		err = fmt.Errorf("no healthy mounts available [case 1]")
-		return
+	nodeByteSlice, authOK, err = volume.swiftObjectGetRange(objectNumber, objectOffset, objectLength)
+	if nil != err {
+		err = fmt.Errorf("volume.swiftObjectGetRange(objectNumber==0x%016X, objectOffset==0x%016X, objectLength==0x%016X) failed: %v", objectNumber, objectOffset, objectLength, err)
+		logError(err)
+	} else if !authOK {
+		err = fmt.Errorf("volume.swiftObjectGetRange(objectNumber==0x%016X, objectOffset==0x%016X, objectLength==0x%016X) returned !authOK", objectNumber, objectOffset, objectLength)
+		logWarn(err)
 	}
 
-	mount, ok = mountListElement.Value.(*mountStruct)
-	if !ok {
-		logFatalf("mountListElement.Value.(*mountStruct) returned !ok [case 1]")
-	}
-
-	volume.healthyMountList.MoveToBack(mountListElement)
-
-	nodeByteSlice, err = swiftObjectGetRange(volume.storageURL, mount.authToken, objectNumber, objectOffset, objectLength)
-	if nil == err {
-		volume.healthyMountList.MoveToBack(mountListElement)
-
-		return // nil err from swiftObjectGetRange() is used
-	}
-
-	// Assume that the failure was due to AuthToken expiration
-
-	_ = volume.healthyMountList.Remove(mount.listElement)
-
-	mount.authTokenExpired = true
-
-	mount.listElement = volume.authTokenExpiredMountList.PushBack(mount)
-
-	goto NextHealthyMount
+	return
 }
 
 func (volume *volumeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {

@@ -4,6 +4,7 @@
 package imgrpkg
 
 import (
+	"container/list"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -96,10 +97,60 @@ func swiftObjectDeleteOnce(objectURL string, authToken string) (authOK bool, err
 		authOK = true
 		err = nil
 	} else if http.StatusUnauthorized == httpResponse.StatusCode {
-		authOK = false
-		err = nil
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
 	} else {
 		err = fmt.Errorf("httpResponse.Status: %s", httpResponse.Status)
+	}
+
+	return
+}
+
+func (volume *volumeStruct) swiftObjectDeleteOnce(objectURL string) (authOK bool, err error) {
+	var (
+		mount            *mountStruct
+		mountListElement *list.Element
+		ok               bool
+		toRetryMountList *list.List
+	)
+
+	toRetryMountList = list.New()
+
+	mountListElement = volume.healthyMountList.Front()
+
+	for nil != mountListElement {
+		_ = volume.healthyMountList.Remove(mountListElement)
+
+		mount, ok = mountListElement.Value.(*mountStruct)
+		if !ok {
+			logFatalf("mountListElement.Value.(*mountStruct) returned !ok")
+		}
+
+		authOK, err = swiftObjectDeleteOnce(objectURL, mount.authToken)
+		if nil == err {
+			if authOK {
+				volume.healthyMountList.PushBackList(toRetryMountList)
+				mount.listElement = volume.healthyMountList.PushBack(mount)
+				return
+			} else {
+				mount.authTokenExpired = true
+				mount.listElement = volume.authTokenExpiredMountList.PushBack(mount)
+			}
+		} else {
+			mount.listElement = toRetryMountList.PushBack(mount)
+		}
+
+		mountListElement = volume.healthyMountList.Front()
+	}
+
+	if toRetryMountList.Len() == 0 {
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
+	} else {
+		volume.healthyMountList.PushBackList(toRetryMountList)
+
+		authOK = true
+		err = fmt.Errorf("volume.healthyMountList not empty - retry possible")
 	}
 
 	return
@@ -111,10 +162,8 @@ func swiftObjectDelete(storageURL string, authToken string, objectNumber uint64)
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
 		objectURL           string
-		startTime           time.Time
+		startTime           time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.SwiftObjectDeleteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -139,11 +188,49 @@ func swiftObjectDelete(storageURL string, authToken string, objectNumber uint64)
 	}
 
 	err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+
 	return
 }
 
-func (volume *volumeStruct) swiftObjectDelete(storageURL string, authToken string, objectNumber uint64) (authOK bool, err error) {
-	return true, nil // TODO
+func (volume *volumeStruct) swiftObjectDelete(objectNumber uint64) (authOK bool, err error) {
+	var (
+		nextSwiftRetryDelay time.Duration
+		numSwiftRetries     uint32
+		objectURL           string
+		startTime           time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.SwiftObjectDeleteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	objectURL = volume.storageURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
+
+	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
+
+	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
+		authOK, err = volume.swiftObjectDeleteOnce(objectURL)
+		if nil == err {
+			if !authOK {
+				err = fmt.Errorf("httpResponse.Status: http.StatusUnauthorized")
+			}
+			return
+		}
+
+		time.Sleep(nextSwiftRetryDelay)
+
+		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
+	}
+
+	if volume.healthyMountList.Len() == 0 {
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
+	} else {
+		authOK = true
+		err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+	}
+
+	return
 }
 
 func swiftObjectGetOnce(objectURL string, authToken string, rangeHeaderValue string) (buf []byte, authOK bool, err error) {
@@ -185,10 +272,60 @@ func swiftObjectGetOnce(objectURL string, authToken string, rangeHeaderValue str
 		authOK = true
 		err = nil
 	} else if http.StatusUnauthorized == httpResponse.StatusCode {
-		authOK = false
-		err = nil
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
 	} else {
 		err = fmt.Errorf("httpResponse.Status: %s", httpResponse.Status)
+	}
+
+	return
+}
+
+func (volume *volumeStruct) swiftObjectGetOnce(objectURL string, rangeHeaderValue string) (buf []byte, authOK bool, err error) {
+	var (
+		mount            *mountStruct
+		mountListElement *list.Element
+		ok               bool
+		toRetryMountList *list.List
+	)
+
+	toRetryMountList = list.New()
+
+	mountListElement = volume.healthyMountList.Front()
+
+	for nil != mountListElement {
+		_ = volume.healthyMountList.Remove(mountListElement)
+
+		mount, ok = mountListElement.Value.(*mountStruct)
+		if !ok {
+			logFatalf("mountListElement.Value.(*mountStruct) returned !ok")
+		}
+
+		buf, authOK, err = swiftObjectGetOnce(objectURL, mount.authToken, rangeHeaderValue)
+		if nil == err {
+			if authOK {
+				volume.healthyMountList.PushBackList(toRetryMountList)
+				mount.listElement = volume.healthyMountList.PushBack(mount)
+				return
+			} else {
+				mount.authTokenExpired = true
+				mount.listElement = volume.authTokenExpiredMountList.PushBack(mount)
+			}
+		} else {
+			mount.listElement = toRetryMountList.PushBack(mount)
+		}
+
+		mountListElement = volume.healthyMountList.Front()
+	}
+
+	if toRetryMountList.Len() == 0 {
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
+	} else {
+		volume.healthyMountList.PushBackList(toRetryMountList)
+
+		authOK = true
+		err = fmt.Errorf("volume.healthyMountList not empty - retry possible")
 	}
 
 	return
@@ -200,10 +337,8 @@ func swiftObjectGet(storageURL string, authToken string, objectNumber uint64) (b
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
 		objectURL           string
-		startTime           time.Time
+		startTime           time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.SwiftObjectGetUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -228,11 +363,49 @@ func swiftObjectGet(storageURL string, authToken string, objectNumber uint64) (b
 	}
 
 	err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+
 	return
 }
 
-func (volume *volumeStruct) swiftObjectGet(storageURL string, authToken string, objectNumber uint64) (buf []byte, authOK bool, err error) {
-	return nil, true, nil // TODO
+func (volume *volumeStruct) swiftObjectGet(objectNumber uint64) (buf []byte, authOK bool, err error) {
+	var (
+		nextSwiftRetryDelay time.Duration
+		numSwiftRetries     uint32
+		objectURL           string
+		startTime           time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.SwiftObjectGetUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	objectURL = volume.storageURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
+
+	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
+
+	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
+		buf, authOK, err = volume.swiftObjectGetOnce(objectURL, "")
+		if nil == err {
+			if !authOK {
+				err = fmt.Errorf("httpResponse.Status: http.StatusUnauthorized")
+			}
+			return
+		}
+
+		time.Sleep(nextSwiftRetryDelay)
+
+		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
+	}
+
+	if volume.healthyMountList.Len() == 0 {
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
+	} else {
+		authOK = true
+		err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+	}
+
+	return
 }
 
 func swiftObjectGetRange(storageURL string, authToken string, objectNumber uint64, objectOffset uint64, objectLength uint64) (buf []byte, err error) {
@@ -242,10 +415,8 @@ func swiftObjectGetRange(storageURL string, authToken string, objectNumber uint6
 		numSwiftRetries     uint32
 		objectURL           string
 		rangeHeaderValue    string
-		startTime           time.Time
+		startTime           time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.SwiftObjectGetRangeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -272,11 +443,52 @@ func swiftObjectGetRange(storageURL string, authToken string, objectNumber uint6
 	}
 
 	err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+
 	return
 }
 
-func (volume *volumeStruct) swiftObjectGetRange(storageURL string, authToken string, objectNumber uint64, objectOffset uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
-	return nil, true, nil // TODO
+func (volume *volumeStruct) swiftObjectGetRange(objectNumber uint64, objectOffset uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
+	var (
+		nextSwiftRetryDelay time.Duration
+		numSwiftRetries     uint32
+		objectURL           string
+		rangeHeaderValue    string
+		startTime           time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.SwiftObjectGetRangeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	objectURL = volume.storageURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
+
+	rangeHeaderValue = fmt.Sprintf("bytes=%d-%d", objectOffset, (objectOffset + objectLength - 1))
+
+	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
+
+	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
+		buf, authOK, err = volume.swiftObjectGetOnce(objectURL, rangeHeaderValue)
+		if nil == err {
+			if !authOK {
+				err = fmt.Errorf("httpResponse.Status: http.StatusUnauthorized")
+			}
+			return
+		}
+
+		time.Sleep(nextSwiftRetryDelay)
+
+		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
+	}
+
+	if volume.healthyMountList.Len() == 0 {
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
+	} else {
+		authOK = true
+		err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+	}
+
+	return
 }
 
 func swiftObjectGetTail(storageURL string, authToken string, objectNumber uint64, objectLength uint64) (buf []byte, err error) {
@@ -286,10 +498,8 @@ func swiftObjectGetTail(storageURL string, authToken string, objectNumber uint64
 		numSwiftRetries     uint32
 		objectURL           string
 		rangeHeaderValue    string
-		startTime           time.Time
+		startTime           time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.SwiftObjectGetTailUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -316,11 +526,52 @@ func swiftObjectGetTail(storageURL string, authToken string, objectNumber uint64
 	}
 
 	err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+
 	return
 }
 
 func (volume *volumeStruct) swiftObjectGetTail(objectNumber uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
-	return nil, true, nil // TODO
+	var (
+		nextSwiftRetryDelay time.Duration
+		numSwiftRetries     uint32
+		objectURL           string
+		rangeHeaderValue    string
+		startTime           time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.SwiftObjectGetTailUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	objectURL = volume.storageURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
+
+	rangeHeaderValue = fmt.Sprintf("bytes=-%d", objectLength)
+
+	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
+
+	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
+		buf, authOK, err = volume.swiftObjectGetOnce(objectURL, rangeHeaderValue)
+		if nil == err {
+			if !authOK {
+				err = fmt.Errorf("httpResponse.Status: http.StatusUnauthorized")
+			}
+			return
+		}
+
+		time.Sleep(nextSwiftRetryDelay)
+
+		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
+	}
+
+	if volume.healthyMountList.Len() == 0 {
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
+	} else {
+		authOK = true
+		err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+	}
+
+	return
 }
 
 func swiftObjectPutOnce(objectURL string, authToken string, body io.ReadSeeker) (authOK bool, err error) {
@@ -361,10 +612,60 @@ func swiftObjectPutOnce(objectURL string, authToken string, body io.ReadSeeker) 
 		authOK = true
 		err = nil
 	} else if http.StatusUnauthorized == httpResponse.StatusCode {
-		authOK = false
-		err = nil
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
 	} else {
 		err = fmt.Errorf("httpResponse.Status: %s", httpResponse.Status)
+	}
+
+	return
+}
+
+func (volume *volumeStruct) swiftObjectPutOnce(objectURL string, body io.ReadSeeker) (authOK bool, err error) {
+	var (
+		mount            *mountStruct
+		mountListElement *list.Element
+		ok               bool
+		toRetryMountList *list.List
+	)
+
+	toRetryMountList = list.New()
+
+	mountListElement = volume.healthyMountList.Front()
+
+	for nil != mountListElement {
+		_ = volume.healthyMountList.Remove(mountListElement)
+
+		mount, ok = mountListElement.Value.(*mountStruct)
+		if !ok {
+			logFatalf("mountListElement.Value.(*mountStruct) returned !ok")
+		}
+
+		authOK, err = swiftObjectPutOnce(objectURL, mount.authToken, body)
+		if nil == err {
+			if authOK {
+				volume.healthyMountList.PushBackList(toRetryMountList)
+				mount.listElement = volume.healthyMountList.PushBack(mount)
+				return
+			} else {
+				mount.authTokenExpired = true
+				mount.listElement = volume.authTokenExpiredMountList.PushBack(mount)
+			}
+		} else {
+			mount.listElement = toRetryMountList.PushBack(mount)
+		}
+
+		mountListElement = volume.healthyMountList.Front()
+	}
+
+	if toRetryMountList.Len() == 0 {
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
+	} else {
+		volume.healthyMountList.PushBackList(toRetryMountList)
+
+		authOK = true
+		err = fmt.Errorf("volume.healthyMountList not empty - retry possible")
 	}
 
 	return
@@ -376,10 +677,8 @@ func swiftObjectPut(storageURL string, authToken string, objectNumber uint64, bo
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
 		objectURL           string
-		startTime           time.Time
+		startTime           time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.SwiftObjectPutUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -404,9 +703,46 @@ func swiftObjectPut(storageURL string, authToken string, objectNumber uint64, bo
 	}
 
 	err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+
 	return
 }
 
 func (volume *volumeStruct) swiftObjectPut(objectNumber uint64, body io.ReadSeeker) (authOK bool, err error) {
-	return true, nil // TODO
+	var (
+		nextSwiftRetryDelay time.Duration
+		numSwiftRetries     uint32
+		objectURL           string
+		startTime           time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.SwiftObjectPutUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	objectURL = volume.storageURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
+
+	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
+
+	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
+		authOK, err = volume.swiftObjectPutOnce(objectURL, body)
+		if nil == err {
+			if authOK {
+				return
+			}
+		}
+
+		time.Sleep(nextSwiftRetryDelay)
+
+		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
+	}
+
+	if volume.healthyMountList.Len() == 0 {
+		authOK = false // Auth failed,
+		err = nil      //   but we will still indicate the func succeeded
+	} else {
+		authOK = true
+		err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
+	}
+
+	return
 }
