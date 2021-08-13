@@ -9,7 +9,6 @@ StaticAuthToken=false
 
 while getopts 'hs' option
 do
-  echo "Handling option: $option"
   case "$option" in
     h) echo "$Usage"
        exit 0

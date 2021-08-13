@@ -116,5 +116,5 @@ services:
     depends_on:
       - swift
       - imgr
-    command: ["./iclient.sh"]
+    command: ["./iclient.sh", "-s"]
  
