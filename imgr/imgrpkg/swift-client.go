@@ -143,14 +143,24 @@ func (volume *volumeStruct) swiftObjectDeleteOnce(objectURL string) (authOK bool
 		mountListElement = volume.healthyMountList.Front()
 	}
 
-	if toRetryMountList.Len() == 0 {
+	if (toRetryMountList.Len() == 0) && (volume.authToken == "") {
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {
 		volume.healthyMountList.PushBackList(toRetryMountList)
 
+		if volume.authToken != "" {
+			authOK, err = swiftObjectDeleteOnce(objectURL, volume.authToken)
+			if (nil == err) && !authOK {
+				logWarnf("swiftObjectDeleteOnce(,volume.authToken) !authOK for volume %s...clearing volume.authToken", volume.name)
+				volume.authToken = ""
+			}
+
+			return
+		}
+
 		authOK = true
-		err = fmt.Errorf("volume.healthyMountList not empty - retry possible")
+		err = fmt.Errorf("authToken list not empty - retry possible")
 	}
 
 	return
@@ -222,7 +232,7 @@ func (volume *volumeStruct) swiftObjectDelete(objectNumber uint64) (authOK bool,
 		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
 	}
 
-	if volume.healthyMountList.Len() == 0 {
+	if (volume.healthyMountList.Len() == 0) && (volume.authToken == "") {
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {
@@ -318,14 +328,24 @@ func (volume *volumeStruct) swiftObjectGetOnce(objectURL string, rangeHeaderValu
 		mountListElement = volume.healthyMountList.Front()
 	}
 
-	if toRetryMountList.Len() == 0 {
+	if (toRetryMountList.Len() == 0) && (volume.authToken == "") {
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {
 		volume.healthyMountList.PushBackList(toRetryMountList)
 
+		if volume.authToken != "" {
+			buf, authOK, err = swiftObjectGetOnce(objectURL, volume.authToken, rangeHeaderValue)
+			if (nil == err) && !authOK {
+				logWarnf("swiftObjectGetOnce(,volume.authToken,) !authOK for volume %s...clearing volume.authToken", volume.name)
+				volume.authToken = ""
+			}
+
+			return
+		}
+
 		authOK = true
-		err = fmt.Errorf("volume.healthyMountList not empty - retry possible")
+		err = fmt.Errorf("authToken list not empty - retry possible")
 	}
 
 	return
@@ -397,7 +417,7 @@ func (volume *volumeStruct) swiftObjectGet(objectNumber uint64) (buf []byte, aut
 		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
 	}
 
-	if volume.healthyMountList.Len() == 0 {
+	if (volume.healthyMountList.Len() == 0) && (volume.authToken == "") {
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {
@@ -480,7 +500,7 @@ func (volume *volumeStruct) swiftObjectGetRange(objectNumber uint64, objectOffse
 		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
 	}
 
-	if volume.healthyMountList.Len() == 0 {
+	if (volume.healthyMountList.Len() == 0) && (volume.authToken == "") {
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {
@@ -563,7 +583,7 @@ func (volume *volumeStruct) swiftObjectGetTail(objectNumber uint64, objectLength
 		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
 	}
 
-	if volume.healthyMountList.Len() == 0 {
+	if (volume.healthyMountList.Len() == 0) && (volume.authToken == "") {
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {
@@ -658,14 +678,24 @@ func (volume *volumeStruct) swiftObjectPutOnce(objectURL string, body io.ReadSee
 		mountListElement = volume.healthyMountList.Front()
 	}
 
-	if toRetryMountList.Len() == 0 {
+	if (toRetryMountList.Len() == 0) && (volume.authToken == "") {
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {
 		volume.healthyMountList.PushBackList(toRetryMountList)
 
+		if volume.authToken != "" {
+			authOK, err = swiftObjectPutOnce(objectURL, volume.authToken, body)
+			if (nil == err) && !authOK {
+				logWarnf("swiftObjectPutOnce(,volume.authToken,) !authOK for volume %s...clearing volume.authToken", volume.name)
+				volume.authToken = ""
+			}
+
+			return
+		}
+
 		authOK = true
-		err = fmt.Errorf("volume.healthyMountList not empty - retry possible")
+		err = fmt.Errorf("authToken list not empty - retry possible")
 	}
 
 	return
@@ -736,7 +766,7 @@ func (volume *volumeStruct) swiftObjectPut(objectNumber uint64, body io.ReadSeek
 		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
 	}
 
-	if volume.healthyMountList.Len() == 0 {
+	if (volume.healthyMountList.Len() == 0) && (volume.authToken == "") {
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/NVIDIA/proxyfs/ilayout"
+	"github.com/NVIDIA/proxyfs/version"
 )
 
 func TestHTTPServer(t *testing.T) {
@@ -32,6 +33,14 @@ func TestHTTPServer(t *testing.T) {
 	_, _, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/stats", nil, nil)
 	if nil != err {
 		t.Fatalf("GET /stats failed: %v", err)
+	}
+
+	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/version", nil, nil)
+	if nil != err {
+		t.Fatalf("GET /version failed: %v", err)
+	}
+	if string(responseBody[:]) != version.ProxyFSVersion {
+		t.Fatalf("GET /version should have returned \"%s\" - it returned \"%s\"", version.ProxyFSVersion, string(responseBody[:]))
 	}
 
 	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume", nil, nil)
@@ -73,20 +82,20 @@ func TestHTTPServer(t *testing.T) {
 
 	_, _, err = testDoHTTPRequest("PUT", testGlobals.httpServerURL+"/volume/"+testVolume, nil, strings.NewReader(putRequestBody))
 	if nil != err {
-		t.Fatalf("testDoHTTPRequest(\"PUT\", testGlobals.httpServerURL+\"/volume\"+testVolume, nil, strings.NewReader(putRequestBody)) failed: %v", err)
+		t.Fatalf("testDoHTTPRequest(\"PUT\", testGlobals.httpServerURL+\"/volume\"+testVolume, nil, strings.NewReader(putRequestBody)) [case 1] failed: %v", err)
 	}
 
-	responseBodyExpected = fmt.Sprintf("{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0,\"InodeTableLayout\":null,\"InodeObjectCount\":\"\",\"InodeObjectSize\":\"\",\"InodeBytesReferenced\":\"\",\"PendingDeleteObjectNumberArray\":null}", testVolume, testGlobals.containerURL)
+	responseBodyExpected = fmt.Sprintf("{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0,\"InodeTableLayout\":null,\"InodeObjectCount\":\"\",\"InodeObjectSize\":\"\",\"InodeBytesReferenced\":\"\",\"PendingDeleteObjectNumberArray\":null}", testVolume, testGlobals.containerURL)
 
 	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume/"+testVolume, nil, nil)
 	if nil != err {
-		t.Fatalf("GET /volume/%s failed: %v", testVolume, err)
+		t.Fatalf("GET /volume/%s [case 1] failed: %v", testVolume, err)
 	}
 	if string(responseBody[:]) != responseBodyExpected {
-		t.Fatalf("GET /volume/%s returned unexpected responseBody: \"%s\"", testVolume, responseBody)
+		t.Fatalf("GET /volume/%s [case 1] returned unexpected responseBody: \"%s\"", testVolume, responseBody)
 	}
 
-	responseBodyExpected = fmt.Sprintf("[{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0}]", testVolume, testGlobals.containerURL)
+	responseBodyExpected = fmt.Sprintf("[{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0}]", testVolume, testGlobals.containerURL)
 
 	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume", nil, nil)
 	if nil != err {
@@ -98,7 +107,7 @@ func TestHTTPServer(t *testing.T) {
 
 	_, _, err = testDoHTTPRequest("DELETE", testGlobals.httpServerURL+"/volume/"+testVolume, nil, nil)
 	if nil != err {
-		t.Fatalf("testDoHTTPRequest(\"DELETE\", testGlobals.httpServerURL+\"/volume/\"+testVolume, nil, nil) failed: %v", err)
+		t.Fatalf("testDoHTTPRequest(\"DELETE\", testGlobals.httpServerURL+\"/volume/\"+testVolume, nil, nil) [case 1] failed: %v", err)
 	}
 
 	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume", nil, nil)
@@ -107,6 +116,46 @@ func TestHTTPServer(t *testing.T) {
 	}
 	if string(responseBody[:]) != "[]" {
 		t.Fatalf("GET /volume [case 3] should have returned \"[]\" - it returned \"%s\"", string(responseBody[:]))
+	}
+
+	putRequestBody = fmt.Sprintf("{\"StorageURL\":\"%s\",\"AuthToken\":\"%s\"}", testGlobals.containerURL, testGlobals.authToken)
+
+	_, _, err = testDoHTTPRequest("PUT", testGlobals.httpServerURL+"/volume/"+testVolume, nil, strings.NewReader(putRequestBody))
+	if nil != err {
+		t.Fatalf("testDoHTTPRequest(\"PUT\", testGlobals.httpServerURL+\"/volume\"+testVolume, nil, strings.NewReader(putRequestBody)) [case 2] failed: %v", err)
+	}
+
+	responseBodyExpected = fmt.Sprintf("{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0,\"InodeTableLayout\":null,\"InodeObjectCount\":\"\",\"InodeObjectSize\":\"\",\"InodeBytesReferenced\":\"\",\"PendingDeleteObjectNumberArray\":null}", testVolume, testGlobals.containerURL, testGlobals.authToken)
+
+	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume/"+testVolume, nil, nil)
+	if nil != err {
+		t.Fatalf("GET /volume/%s [case 2] failed: %v", testVolume, err)
+	}
+	if string(responseBody[:]) != responseBodyExpected {
+		t.Fatalf("GET /volume/%s [case 2] returned unexpected responseBody: \"%s\"", testVolume, responseBody)
+	}
+
+	responseBodyExpected = fmt.Sprintf("[{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0}]", testVolume, testGlobals.containerURL, testGlobals.authToken)
+
+	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume", nil, nil)
+	if nil != err {
+		t.Fatalf("GET /volume [case 4] failed: %v", err)
+	}
+	if string(responseBody[:]) != responseBodyExpected {
+		t.Fatalf("GET /volume [case 4] returned unexpected responseBody: \"%s\"", responseBody)
+	}
+
+	_, _, err = testDoHTTPRequest("DELETE", testGlobals.httpServerURL+"/volume/"+testVolume, nil, nil)
+	if nil != err {
+		t.Fatalf("testDoHTTPRequest(\"DELETE\", testGlobals.httpServerURL+\"/volume/\"+testVolume, nil, nil) [case 2] failed: %v", err)
+	}
+
+	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume", nil, nil)
+	if nil != err {
+		t.Fatalf("GET /volume [case 5] failed: %v", err)
+	}
+	if string(responseBody[:]) != "[]" {
+		t.Fatalf("GET /volume [case 5] should have returned \"[]\" - it returned \"%s\"", string(responseBody[:]))
 	}
 
 	testTeardown(t)

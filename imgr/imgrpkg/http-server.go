@@ -304,6 +304,7 @@ func serveHTTPGetOfVersion(responseWriter http.ResponseWriter, request *http.Req
 type volumeMiniGETStruct struct {
 	Name                   string
 	StorageURL             string
+	AuthToken              string
 	HealthyMounts          uint64
 	LeasesExpiredMounts    uint64
 	AuthTokenExpiredMounts uint64
@@ -318,6 +319,7 @@ type volumeFullGETInodeTableLayoutEntryStruct struct {
 type volumeFullGETStruct struct {
 	Name                           string
 	StorageURL                     string
+	AuthToken                      string
 	HealthyMounts                  uint64
 	LeasesExpiredMounts            uint64
 	AuthTokenExpiredMounts         uint64
@@ -458,6 +460,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			volumeGETList[volumeGETListIndex] = &volumeMiniGETStruct{
 				Name:                   volumeAsStruct.name,
 				StorageURL:             volumeAsStruct.storageURL,
+				AuthToken:              volumeAsStruct.authToken,
 				HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
 				LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
 				AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
@@ -504,6 +507,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			volumeGET = &volumeFullGETStruct{
 				Name:                   volumeAsStruct.name,
 				StorageURL:             volumeAsStruct.storageURL,
+				AuthToken:              volumeAsStruct.authToken,
 				HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
 				LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
 				AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
@@ -635,6 +639,7 @@ func serveHTTPPut(responseWriter http.ResponseWriter, request *http.Request, req
 
 type serveHTTPPutOfVolumeRequestBodyAsJSONStruct struct {
 	StorageURL string
+	AuthToken  string
 }
 
 func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
@@ -661,7 +666,7 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			return
 		}
 
-		err = putVolume(pathSplit[2], requestBodyAsJSON.StorageURL)
+		err = putVolume(pathSplit[2], requestBodyAsJSON.StorageURL, requestBodyAsJSON.AuthToken)
 		if nil == err {
 			responseWriter.WriteHeader(http.StatusCreated)
 		} else {

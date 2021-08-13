@@ -102,7 +102,10 @@
 //     "AuthToken" : "AUTH_tk0123456789abcde0123456789abcdef0"
 //  }
 //
-// This will cause the specified StorageURL to be formatted.
+// This will cause the specified StorageURL to be formatted. The StorageURL
+// specified in the JSON document content identifies the Container for format.
+// The AuthToken in the JSON document content provides the authentication to
+// use during the formatting process.
 //
 //  PUT /volume/<volumeName>
 //  Content-Type: application/json
@@ -113,6 +116,23 @@
 //
 // This will cause the specified <volumeName> to be served. The StorageURL
 // specified in the JSON document content identifies the Container to serve.
+// Clients will each supply an AuthToken in their Mount/RenewMount requests
+// that will be used to access the Container.
+//
+//  PUT /volume/<volumeName>
+//  Content-Type: application/json
+//
+//  {
+//     "StorageURL": "http://172.28.128.2:8080/v1/AUTH_test/con",
+//     "AuthToken" : "AUTH_tk0123456789abcde0123456789abcdef0"
+//  }
+//
+// This will cause the specified <volumeName> to be served. The StorageURL
+// specified in the JSON document content identifies the Container to serve.
+// Clients will each supply an AuthToken in their Mount/RenewMount requests
+// that will be used to access the Container. As a debugging aid, and in the
+// case where no Clients have <volumeName> mounted, the AuthToken in the JSON
+// document content will be used to access the Container.
 //
 package imgrpkg
 

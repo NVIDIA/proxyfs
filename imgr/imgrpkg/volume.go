@@ -603,7 +603,7 @@ func postVolume(storageURL string, authToken string) (err error) {
 	return
 }
 
-func putVolume(name string, storageURL string) (err error) {
+func putVolume(name string, storageURL string, authToken string) (err error) {
 	var (
 		ok     bool
 		volume *volumeStruct
@@ -612,6 +612,7 @@ func putVolume(name string, storageURL string) (err error) {
 	volume = &volumeStruct{
 		name:                          name,
 		storageURL:                    storageURL,
+		authToken:                     authToken,
 		mountMap:                      make(map[string]*mountStruct),
 		healthyMountList:              list.New(),
 		leasesExpiredMountList:        list.New(),

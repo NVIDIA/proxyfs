@@ -227,6 +227,7 @@ type inodeTableLayoutElementStruct struct {
 type volumeStruct struct {
 	name                          string                                    //
 	storageURL                    string                                    //
+	authToken                     string                                    // if != "" & healthyMountList is empty, this AuthToken will be used; cleared on auth failure
 	mountMap                      map[string]*mountStruct                   // key == mountStruct.mountID
 	healthyMountList              *list.List                                // LRU of mountStruct's with .{leases|authToken}Expired == false
 	leasesExpiredMountList        *list.List                                // list of mountStruct's with .leasesExpired == true (regardless of .authTokenExpired) value
