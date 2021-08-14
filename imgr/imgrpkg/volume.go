@@ -536,7 +536,7 @@ func postVolume(storageURL string, authToken string) (err error) {
 	ok, err = inodeTable.Put(
 		ilayout.RootDirInodeNumber,
 		ilayout.InodeTableEntryValueV1Struct{
-			InodeHeadObjectNumber: ilayout.RootDirInodeNumber,
+			InodeHeadObjectNumber: rootDirInodeObjectNumber,
 			InodeHeadLength:       uint64(len(rootDirInodeHeadV1Buf)),
 		})
 	if nil != err {
@@ -835,6 +835,69 @@ func (volume *volumeStruct) UnpackValue(payloadData []byte) (value sortedmap.Val
 	}
 
 	bytesConsumed = 24
+
+	return
+}
+
+func (volume *volumeStruct) fetchCheckPoint() (checkPointV1 *ilayout.CheckPointV1Struct, err error) {
+	var (
+		authOK          bool
+		checkPointV1Buf []byte
+	)
+
+	checkPointV1Buf, authOK, err = volume.swiftObjectGet(ilayout.CheckPointObjectNumber)
+	if nil != err {
+		err = fmt.Errorf("volume.swiftObjectGet() failed: %v", err)
+		return
+	}
+	if !authOK {
+		err = fmt.Errorf("volume.swiftObjectGet() returned !authOK")
+		return
+	}
+
+	checkPointV1, err = ilayout.UnmarshalCheckPointV1(string(checkPointV1Buf[:]))
+
+	return
+}
+
+func (volume *volumeStruct) fetchSuperBlock(superBlockObjectNumber uint64, superBlockLength uint64) (superBlockV1 *ilayout.SuperBlockV1Struct, err error) {
+	var (
+		authOK          bool
+		superBlockV1Buf []byte
+	)
+
+	superBlockV1Buf, authOK, err = volume.swiftObjectGetTail(superBlockObjectNumber, superBlockLength)
+	if nil != err {
+		err = fmt.Errorf("volume.swiftObjectGetTail() failed: %v", err)
+		return
+	}
+	if !authOK {
+		err = fmt.Errorf("volume.swiftObjectGetTail() returned !authOK")
+		return
+	}
+
+	superBlockV1, err = ilayout.UnmarshalSuperBlockV1(superBlockV1Buf)
+
+	return
+}
+
+func (volume *volumeStruct) fetchInodeHead(inodeHeadObjectNumber uint64, inodeHeadLength uint64) (inodeHeadV1 *ilayout.InodeHeadV1Struct, err error) {
+	var (
+		authOK         bool
+		inodeHeadV1Buf []byte
+	)
+
+	inodeHeadV1Buf, authOK, err = volume.swiftObjectGetTail(inodeHeadObjectNumber, inodeHeadLength)
+	if nil != err {
+		err = fmt.Errorf("volume.swiftObjectGetTail() failed: %v", err)
+		return
+	}
+	if !authOK {
+		err = fmt.Errorf("volume.swiftObjectGetTail() returned !authOK")
+		return
+	}
+
+	inodeHeadV1, err = ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf)
 
 	return
 }

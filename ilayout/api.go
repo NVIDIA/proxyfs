@@ -256,7 +256,8 @@ func UnmarshalInodeTableEntryValueVersion(inodeTableEntryValueBuf []byte) (inode
 //
 // The struct is serialized as a sequence of LittleEndian formatted fields.
 //
-// Note that there is no InodeTableEntryKeyV1Struct as it is simply a uint64 InodeNumber.
+// Note that there is no InodeTableEntryKeyV1Struct as it is simply an InodeNumber uint64
+// serialized in LittleEndian format.
 //
 type InodeTableEntryValueV1Struct struct {
 	InodeHeadObjectNumber uint64 // Identifies the Object containing InodeHeadV*Struct
@@ -361,7 +362,7 @@ type InodeHeadLayoutEntryV1Struct struct {
 //     specified in the table entry struct.
 //   For time.Time fields, a uint64 in LittleEndian is used to hold the UnixNano() equivalent.
 //
-// Note that the InodeTableEntryValueV1Struct.InodeHeadLength also includes the bytes for
+// Note that the SuperBlockV1Struct.InodeTableRootObjectLength also includes the bytes for
 // holding the ObjectTrailerStruct{ObjType: InodeHeadType, Version: InodeHeadVersionV1}
 // that is appended.
 //

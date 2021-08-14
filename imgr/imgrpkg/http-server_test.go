@@ -85,14 +85,9 @@ func TestHTTPServer(t *testing.T) {
 		t.Fatalf("testDoHTTPRequest(\"PUT\", testGlobals.httpServerURL+\"/volume\"+testVolume, nil, strings.NewReader(putRequestBody)) [case 1] failed: %v", err)
 	}
 
-	responseBodyExpected = fmt.Sprintf("{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0,\"InodeTableLayout\":null,\"InodeObjectCount\":\"\",\"InodeObjectSize\":\"\",\"InodeBytesReferenced\":\"\",\"PendingDeleteObjectNumberArray\":null}", testVolume, testGlobals.containerURL)
-
-	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume/"+testVolume, nil, nil)
-	if nil != err {
-		t.Fatalf("GET /volume/%s [case 1] failed: %v", testVolume, err)
-	}
-	if string(responseBody[:]) != responseBodyExpected {
-		t.Fatalf("GET /volume/%s [case 1] returned unexpected responseBody: \"%s\"", testVolume, responseBody)
+	_, _, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume/"+testVolume, nil, nil)
+	if nil == err {
+		t.Fatalf("GET /volume/%s [case 1] should have failed", testVolume)
 	}
 
 	responseBodyExpected = fmt.Sprintf("[{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0}]", testVolume, testGlobals.containerURL)
@@ -125,7 +120,7 @@ func TestHTTPServer(t *testing.T) {
 		t.Fatalf("testDoHTTPRequest(\"PUT\", testGlobals.httpServerURL+\"/volume\"+testVolume, nil, strings.NewReader(putRequestBody)) [case 2] failed: %v", err)
 	}
 
-	responseBodyExpected = fmt.Sprintf("{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0,\"InodeTableLayout\":null,\"InodeObjectCount\":\"\",\"InodeObjectSize\":\"\",\"InodeBytesReferenced\":\"\",\"PendingDeleteObjectNumberArray\":null}", testVolume, testGlobals.containerURL, testGlobals.authToken)
+	responseBodyExpected = fmt.Sprintf("{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0,\"SuperBlockObjectName\":\"3000000000000000\",\"SuperBlockLength\":96,\"ReservedToNonce\":3,\"InodeTableLayout\":[{\"ObjectName\":\"3000000000000000\",\"ObjectSize\":58,\"BytesReferenced\":58}],\"InodeObjectCount\":1,\"InodeObjectSize\":237,\"InodeBytesReferenced\":237,\"PendingDeleteObjectNameArray\":[],\"InodeTable\":[{\"InodeNumber\":1,\"InodeHeadObjectName\":\"2000000000000000\",\"InodeHeadLength\":174}]}", testVolume, testGlobals.containerURL, testGlobals.authToken)
 
 	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume/"+testVolume, nil, nil)
 	if nil != err {

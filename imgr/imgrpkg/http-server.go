@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/proxyfs/version"
 	"github.com/NVIDIA/sortedmap"
 )
@@ -23,6 +24,9 @@ import (
 const (
 	startHTTPServerUpCheckDelay      = 100 * time.Millisecond
 	startHTTPServerUpCheckMaxRetries = 10
+
+	volumeGETInodeTableCacheLowLimit  = 1000
+	volumeGETInodeTableCacheHighLimit = 1010
 )
 
 func startHTTPServer() (err error) {
@@ -311,28 +315,39 @@ type volumeMiniGETStruct struct {
 }
 
 type volumeFullGETInodeTableLayoutEntryStruct struct {
-	ObjectNumber    string
-	ObjectSize      string
-	BytesReferenced string
+	ObjectName      string // == ilayout.GetObjectNameAsString(ObjectNumber)
+	ObjectSize      uint64
+	BytesReferenced uint64
+}
+
+type volumeFullGETInodeTableEntryStruct struct {
+	InodeNumber         uint64
+	InodeHeadObjectName string // == ilayout.GetObjectNameAsString(InodeHeadObjectNumber)
+	InodeHeadLength     uint64
 }
 
 type volumeFullGETStruct struct {
-	Name                           string
-	StorageURL                     string
-	AuthToken                      string
-	HealthyMounts                  uint64
-	LeasesExpiredMounts            uint64
-	AuthTokenExpiredMounts         uint64
-	InodeTableLayout               []volumeFullGETInodeTableLayoutEntryStruct
-	InodeObjectCount               string
-	InodeObjectSize                string
-	InodeBytesReferenced           string
-	PendingDeleteObjectNumberArray []string
+	volume                       *volumeStruct // will not be encoded by json.Marshal()
+	Name                         string
+	StorageURL                   string
+	AuthToken                    string
+	HealthyMounts                uint64
+	LeasesExpiredMounts          uint64
+	AuthTokenExpiredMounts       uint64
+	SuperBlockObjectName         string // == ilayout.GetObjectNameAsString(SuperBlockObjectNumber)
+	SuperBlockLength             uint64
+	ReservedToNonce              uint64
+	InodeTableLayout             []volumeFullGETInodeTableLayoutEntryStruct
+	InodeObjectCount             uint64
+	InodeObjectSize              uint64
+	InodeBytesReferenced         uint64
+	PendingDeleteObjectNameArray []string // == []ilayout.GetObjectNameAsString(PendingDeleteObjectNumber)
+	InodeTable                   []volumeFullGETInodeTableEntryStruct
 }
 
 type inodeGETLinkTableEntryStruct struct {
-	ParentDirInodeNumber string
-	ParentDirEntryName   string
+	ParentDirInodeNumber uint64
+	ParentDirEntryName   uint64
 }
 
 type inodeGETStreamTableEntryStruct struct {
@@ -342,84 +357,174 @@ type inodeGETStreamTableEntryStruct struct {
 
 type dirInodeGETPayloadEntryStruct struct {
 	BaseName    string
-	InodeNumber string
+	InodeNumber uint64
 	InodeType   string // One of "InodeTypeDir", "InodeTypeFile", or "InodeTypeSymLink"
 }
 
 type fileInodeGETPayloadEntryStruct struct {
-	FileOffset   string
-	Length       string
-	ObjectNumber string
-	ObjectOffset string
+	FileOffset   uint64
+	Length       uint64
+	ObjectName   string // == ilayout.GetObjectNameAsString(ObjectNumber)
+	ObjectOffset uint64
 }
 
 type inodeGETLayoutEntryStruct struct {
-	ObjectNumber    string
-	ObjectSize      string
-	BytesReferenced string
+	ObjectName      string // == ilayout.GetObjectNameAsString(ObjectNumber)
+	ObjectSize      uint64
+	BytesReferenced uint64
 }
 
 type dirInodeGETStruct struct {
-	InodeNumber      string
+	InodeNumber      uint64
 	InodeType        string // == "InodeTypeDir"
 	LinkTable        []inodeGETLinkTableEntryStruct
 	ModificationTime string
 	StatusChangeTime string
-	Mode             string
-	UserID           string
-	GroupID          string
+	Mode             uint16
+	UserID           uint64
+	GroupID          uint64
 	StreamTable      []inodeGETStreamTableEntryStruct
 	Payload          []dirInodeGETPayloadEntryStruct
 	Layout           []inodeGETLayoutEntryStruct
 }
 
 type fileInodeGETStruct struct {
-	InodeNumber      string
+	InodeNumber      uint64
 	InodeType        string // == "InodeTypeFile"
 	LinkTable        []inodeGETLinkTableEntryStruct
 	Size             string
 	ModificationTime string
 	StatusChangeTime string
-	Mode             string
-	UserID           string
-	GroupID          string
+	Mode             uint16
+	UserID           uint64
+	GroupID          uint64
 	StreamTable      []inodeGETStreamTableEntryStruct
 	Payload          []fileInodeGETPayloadEntryStruct
 	Layout           []inodeGETLayoutEntryStruct
 }
 
 type symLinkInodeGETStruct struct {
-	InodeNumber      string
+	InodeNumber      uint64
 	InodeType        string // == "InodeTypeSymLink"
 	LinkTable        []inodeGETLinkTableEntryStruct
 	ModificationTime string
 	StatusChangeTime string
-	Mode             string
-	UserID           string
-	GroupID          string
+	Mode             uint16
+	UserID           uint64
+	GroupID          uint64
 	StreamTable      []inodeGETStreamTableEntryStruct
 	SymLinkTarget    string
 }
 
+func (volumeGET *volumeFullGETStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (volumeGET *volumeFullGETStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (volumeGET *volumeFullGETStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	var (
+		authOK bool
+	)
+
+	nodeByteSlice, authOK, err = volumeGET.volume.swiftObjectGetRange(objectNumber, objectOffset, objectLength)
+	if nil != err {
+		err = fmt.Errorf("volume.swiftObjectGetRange() failed: %v", err)
+		return
+	}
+	if !authOK {
+		err = fmt.Errorf("volume.swiftObjectGetRange() returned !authOK")
+		return
+	}
+
+	return
+}
+
+func (volumeGET *volumeFullGETStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (volumeGET *volumeFullGETStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (volumeGET *volumeFullGETStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (volumeGET *volumeFullGETStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
+	var (
+		nextPos     int
+		inodeNumber uint64
+	)
+
+	inodeNumber, nextPos, err = ilayout.GetLEUint64FromBuf(payloadData, 0)
+	if nil == err {
+		key = inodeNumber
+		bytesConsumed = uint64(nextPos)
+	}
+
+	return
+}
+
+func (volumeGET *volumeFullGETStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (volumeGET *volumeFullGETStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
+	var (
+		bytesConsumedAsInt     int
+		inodeTableEntryValueV1 *ilayout.InodeTableEntryValueV1Struct
+	)
+
+	inodeTableEntryValueV1, bytesConsumedAsInt, err = ilayout.UnmarshalInodeTableEntryValueV1(payloadData)
+	if nil == err {
+		value = inodeTableEntryValueV1
+		bytesConsumed = uint64(bytesConsumedAsInt)
+	}
+
+	return
+}
+
 func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	var (
-		err                    error
-		inodeNumberAsHexDigits string
-		inodeNumberAsUint64    uint64
-		mustBeInode            string
-		ok                     bool
-		pathSplit              []string
-		startTime              time.Time
-		toReturnTODO           string
-		volumeAsStruct         *volumeStruct
-		volumeAsValue          sortedmap.Value
-		volumeGET              *volumeFullGETStruct
-		volumeGETAsJSON        []byte
-		volumeGETList          []*volumeMiniGETStruct
-		volumeGETListIndex     int
-		volumeGETListAsJSON    []byte
-		volumeGETListLen       int
-		volumeName             string
+		checkPointV1 *ilayout.CheckPointV1Struct
+		err          error
+		// inodeHeadV1 *ilayout.InodeHeadV1Struct
+		inodeNumberAsHexDigits            string
+		inodeNumberAsUint64               uint64
+		inodeNumberAsKey                  sortedmap.Key
+		inodeTable                        sortedmap.BPlusTree
+		inodeTableCache                   sortedmap.BPlusTreeCache
+		inodeTableEntryValueV1            *ilayout.InodeTableEntryValueV1Struct
+		inodeTableEntryValueV1AsValue     sortedmap.Value
+		inodeTableIndex                   int
+		inodeTableLayoutIndex             int
+		inodeTableLen                     int
+		mustBeInode                       string
+		ok                                bool
+		pathSplit                         []string
+		pendingDeleteObjectNameArrayIndex int
+		startTime                         time.Time
+		superBlockV1                      *ilayout.SuperBlockV1Struct
+		toReturnTODO                      string
+		volumeAsStruct                    *volumeStruct
+		volumeAsValue                     sortedmap.Value
+		volumeGET                         *volumeFullGETStruct
+		volumeGETAsJSON                   []byte
+		volumeGETList                     []*volumeMiniGETStruct
+		volumeGETListIndex                int
+		volumeGETListAsJSON               []byte
+		volumeGETListLen                  int
+		volumeName                        string
 	)
 
 	startTime = time.Now()
@@ -504,13 +609,91 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
 			}
 
+			checkPointV1, err = volumeAsStruct.fetchCheckPoint()
+			if nil != err {
+				globals.Unlock()
+				responseWriter.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
+			superBlockV1, err = volumeAsStruct.fetchSuperBlock(checkPointV1.SuperBlockObjectNumber, checkPointV1.SuperBlockLength)
+			if nil != err {
+				globals.Unlock()
+				responseWriter.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
 			volumeGET = &volumeFullGETStruct{
-				Name:                   volumeAsStruct.name,
-				StorageURL:             volumeAsStruct.storageURL,
-				AuthToken:              volumeAsStruct.authToken,
-				HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
-				LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
-				AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
+				volume:                       volumeAsStruct,
+				Name:                         volumeAsStruct.name,
+				StorageURL:                   volumeAsStruct.storageURL,
+				AuthToken:                    volumeAsStruct.authToken,
+				HealthyMounts:                uint64(volumeAsStruct.healthyMountList.Len()),
+				LeasesExpiredMounts:          uint64(volumeAsStruct.leasesExpiredMountList.Len()),
+				AuthTokenExpiredMounts:       uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
+				SuperBlockObjectName:         ilayout.GetObjectNameAsString(checkPointV1.SuperBlockObjectNumber),
+				SuperBlockLength:             checkPointV1.SuperBlockLength,
+				ReservedToNonce:              checkPointV1.ReservedToNonce,
+				InodeTableLayout:             make([]volumeFullGETInodeTableLayoutEntryStruct, len(superBlockV1.InodeTableLayout)),
+				InodeObjectCount:             superBlockV1.InodeObjectCount,
+				InodeObjectSize:              superBlockV1.InodeObjectSize,
+				InodeBytesReferenced:         superBlockV1.InodeBytesReferenced,
+				PendingDeleteObjectNameArray: make([]string, len(superBlockV1.PendingDeleteObjectNumberArray)),
+				// InodeTable filled after the BPlusTree has been loaded later
+			}
+
+			for inodeTableLayoutIndex = range volumeGET.InodeTableLayout {
+				volumeGET.InodeTableLayout[inodeTableLayoutIndex].ObjectName = ilayout.GetObjectNameAsString(superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectNumber)
+				volumeGET.InodeTableLayout[inodeTableLayoutIndex].ObjectSize = superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectSize
+				volumeGET.InodeTableLayout[inodeTableLayoutIndex].BytesReferenced = superBlockV1.InodeTableLayout[inodeTableLayoutIndex].BytesReferenced
+			}
+
+			for pendingDeleteObjectNameArrayIndex = range volumeGET.PendingDeleteObjectNameArray {
+				volumeGET.PendingDeleteObjectNameArray[pendingDeleteObjectNameArrayIndex] = ilayout.GetObjectNameAsString(superBlockV1.PendingDeleteObjectNumberArray[pendingDeleteObjectNameArrayIndex])
+			}
+
+			inodeTableCache = sortedmap.NewBPlusTreeCache(volumeGETInodeTableCacheLowLimit, volumeGETInodeTableCacheHighLimit)
+
+			inodeTable, err = sortedmap.OldBPlusTree(superBlockV1.InodeTableRootObjectNumber, superBlockV1.InodeTableRootObjectOffset, superBlockV1.InodeTableRootObjectLength, sortedmap.CompareUint64, volumeGET, inodeTableCache)
+			if nil != err {
+				globals.Unlock()
+				responseWriter.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
+			inodeTableLen, err = inodeTable.Len()
+			if nil != err {
+				globals.Unlock()
+				responseWriter.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
+			volumeGET.InodeTable = make([]volumeFullGETInodeTableEntryStruct, inodeTableLen)
+
+			for inodeTableIndex = range volumeGET.InodeTable {
+				inodeNumberAsKey, inodeTableEntryValueV1AsValue, ok, err = inodeTable.GetByIndex(inodeTableIndex)
+				if (nil != err) || !ok {
+					globals.Unlock()
+					responseWriter.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+
+				volumeGET.InodeTable[inodeTableIndex].InodeNumber, ok = inodeNumberAsKey.(uint64)
+				if !ok {
+					globals.Unlock()
+					responseWriter.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+
+				inodeTableEntryValueV1, ok = inodeTableEntryValueV1AsValue.(*ilayout.InodeTableEntryValueV1Struct)
+				if !ok {
+					globals.Unlock()
+					responseWriter.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+
+				volumeGET.InodeTable[inodeTableIndex].InodeHeadObjectName = ilayout.GetObjectNameAsString(inodeTableEntryValueV1.InodeHeadObjectNumber)
+				volumeGET.InodeTable[inodeTableIndex].InodeHeadLength = inodeTableEntryValueV1.InodeHeadLength
 			}
 
 			globals.Unlock()
