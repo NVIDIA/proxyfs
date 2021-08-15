@@ -25,8 +25,12 @@ const (
 	startHTTPServerUpCheckDelay      = 100 * time.Millisecond
 	startHTTPServerUpCheckMaxRetries = 10
 
-	volumeGETInodeTableCacheLowLimit  = 1000
-	volumeGETInodeTableCacheHighLimit = 1010
+	httpServerInodeTableCacheLowLimit  = 1000
+	httpServerInodeTableCacheHighLimit = 1010
+	httpServerDirectoryCacheLowLimit   = 1000
+	httpServerDirectoryCacheHighLimit  = 1010
+	httpServerExtentMapCacheLowLimit   = 1000
+	httpServerExtentMapCacheHighLimit  = 1010
 )
 
 func startHTTPServer() (err error) {
@@ -305,7 +309,7 @@ func serveHTTPGetOfVersion(responseWriter http.ResponseWriter, request *http.Req
 	}
 }
 
-type volumeMiniGETStruct struct {
+type volumeListGETEntryStruct struct {
 	Name                   string
 	StorageURL             string
 	AuthToken              string
@@ -314,20 +318,25 @@ type volumeMiniGETStruct struct {
 	AuthTokenExpiredMounts uint64
 }
 
-type volumeFullGETInodeTableLayoutEntryStruct struct {
+type volumeGETInodeTableLayoutEntryStruct struct {
 	ObjectName      string // == ilayout.GetObjectNameAsString(ObjectNumber)
 	ObjectSize      uint64
 	BytesReferenced uint64
 }
 
-type volumeFullGETInodeTableEntryStruct struct {
+type volumeGETInodeTableEntryStruct struct {
 	InodeNumber         uint64
 	InodeHeadObjectName string // == ilayout.GetObjectNameAsString(InodeHeadObjectNumber)
 	InodeHeadLength     uint64
 }
 
-type volumeFullGETStruct struct {
-	volume                       *volumeStruct // will not be encoded by json.Marshal()
+type httpServerInodeTableWrapperStruct struct {
+	volume *volumeStruct
+	cache  sortedmap.BPlusTreeCache
+	table  sortedmap.BPlusTree
+}
+
+type volumeGETStruct struct {
 	Name                         string
 	StorageURL                   string
 	AuthToken                    string
@@ -337,17 +346,17 @@ type volumeFullGETStruct struct {
 	SuperBlockObjectName         string // == ilayout.GetObjectNameAsString(SuperBlockObjectNumber)
 	SuperBlockLength             uint64
 	ReservedToNonce              uint64
-	InodeTableLayout             []volumeFullGETInodeTableLayoutEntryStruct
+	InodeTableLayout             []volumeGETInodeTableLayoutEntryStruct
 	InodeObjectCount             uint64
 	InodeObjectSize              uint64
 	InodeBytesReferenced         uint64
 	PendingDeleteObjectNameArray []string // == []ilayout.GetObjectNameAsString(PendingDeleteObjectNumber)
-	InodeTable                   []volumeFullGETInodeTableEntryStruct
+	InodeTable                   []volumeGETInodeTableEntryStruct
 }
 
 type inodeGETLinkTableEntryStruct struct {
 	ParentDirInodeNumber uint64
-	ParentDirEntryName   uint64
+	ParentDirEntryName   string
 }
 
 type inodeGETStreamTableEntryStruct struct {
@@ -358,7 +367,7 @@ type inodeGETStreamTableEntryStruct struct {
 type dirInodeGETPayloadEntryStruct struct {
 	BaseName    string
 	InodeNumber uint64
-	InodeType   string // One of "InodeTypeDir", "InodeTypeFile", or "InodeTypeSymLink"
+	InodeType   string // One of "Dir", "File", or "SymLink"
 }
 
 type fileInodeGETPayloadEntryStruct struct {
@@ -374,9 +383,9 @@ type inodeGETLayoutEntryStruct struct {
 	BytesReferenced uint64
 }
 
-type dirInodeGETStruct struct {
+type inodeGETStruct struct {
 	InodeNumber      uint64
-	InodeType        string // == "InodeTypeDir"
+	InodeType        string // == "Dir", "File", or "Symlink"
 	LinkTable        []inodeGETLinkTableEntryStruct
 	ModificationTime string
 	StatusChangeTime string
@@ -384,54 +393,54 @@ type dirInodeGETStruct struct {
 	UserID           uint64
 	GroupID          uint64
 	StreamTable      []inodeGETStreamTableEntryStruct
-	Payload          []dirInodeGETPayloadEntryStruct
-	Layout           []inodeGETLayoutEntryStruct
+}
+
+type httpServerDirectoryWrapperStruct struct {
+	volume *volumeStruct
+	cache  sortedmap.BPlusTreeCache
+	table  sortedmap.BPlusTree
+}
+
+type dirInodeGETStruct struct {
+	inodeGETStruct
+	Payload []dirInodeGETPayloadEntryStruct
+	Layout  []inodeGETLayoutEntryStruct
+}
+
+type httpServerExtentMapWrapperStruct struct {
+	volume *volumeStruct
+	cache  sortedmap.BPlusTreeCache
+	table  sortedmap.BPlusTree
 }
 
 type fileInodeGETStruct struct {
-	InodeNumber      uint64
-	InodeType        string // == "InodeTypeFile"
-	LinkTable        []inodeGETLinkTableEntryStruct
-	Size             string
-	ModificationTime string
-	StatusChangeTime string
-	Mode             uint16
-	UserID           uint64
-	GroupID          uint64
-	StreamTable      []inodeGETStreamTableEntryStruct
-	Payload          []fileInodeGETPayloadEntryStruct
-	Layout           []inodeGETLayoutEntryStruct
+	inodeGETStruct
+	Size    uint64
+	Payload []fileInodeGETPayloadEntryStruct
+	Layout  []inodeGETLayoutEntryStruct
 }
 
 type symLinkInodeGETStruct struct {
-	InodeNumber      uint64
-	InodeType        string // == "InodeTypeSymLink"
-	LinkTable        []inodeGETLinkTableEntryStruct
-	ModificationTime string
-	StatusChangeTime string
-	Mode             uint16
-	UserID           uint64
-	GroupID          uint64
-	StreamTable      []inodeGETStreamTableEntryStruct
-	SymLinkTarget    string
+	inodeGETStruct
+	SymLinkTarget string
 }
 
-func (volumeGET *volumeFullGETStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+func (inodeTableWrapper *httpServerInodeTableWrapperStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
 	err = fmt.Errorf("not implemented")
 	return
 }
 
-func (volumeGET *volumeFullGETStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+func (inodeTableWrapper *httpServerInodeTableWrapperStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
 	err = fmt.Errorf("not implemented")
 	return
 }
 
-func (volumeGET *volumeFullGETStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+func (inodeTableWrapper *httpServerInodeTableWrapperStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
 	var (
 		authOK bool
 	)
 
-	nodeByteSlice, authOK, err = volumeGET.volume.swiftObjectGetRange(objectNumber, objectOffset, objectLength)
+	nodeByteSlice, authOK, err = inodeTableWrapper.volume.swiftObjectGetRange(objectNumber, objectOffset, objectLength)
 	if nil != err {
 		err = fmt.Errorf("volume.swiftObjectGetRange() failed: %v", err)
 		return
@@ -444,22 +453,22 @@ func (volumeGET *volumeFullGETStruct) GetNode(objectNumber uint64, objectOffset 
 	return
 }
 
-func (volumeGET *volumeFullGETStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+func (inodeTableWrapper *httpServerInodeTableWrapperStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
 	err = fmt.Errorf("not implemented")
 	return
 }
 
-func (volumeGET *volumeFullGETStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+func (inodeTableWrapper *httpServerInodeTableWrapperStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
 	err = fmt.Errorf("not implemented")
 	return
 }
 
-func (volumeGET *volumeFullGETStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
+func (inodeTableWrapper *httpServerInodeTableWrapperStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
 	err = fmt.Errorf("not implemented")
 	return
 }
 
-func (volumeGET *volumeFullGETStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
+func (inodeTableWrapper *httpServerInodeTableWrapperStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
 	var (
 		nextPos     int
 		inodeNumber uint64
@@ -474,12 +483,12 @@ func (volumeGET *volumeFullGETStruct) UnpackKey(payloadData []byte) (key sortedm
 	return
 }
 
-func (volumeGET *volumeFullGETStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
+func (inodeTableWrapper *httpServerInodeTableWrapperStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
 	err = fmt.Errorf("not implemented")
 	return
 }
 
-func (volumeGET *volumeFullGETStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
+func (inodeTableWrapper *httpServerInodeTableWrapperStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
 	var (
 		bytesConsumedAsInt     int
 		inodeTableEntryValueV1 *ilayout.InodeTableEntryValueV1Struct
@@ -494,37 +503,210 @@ func (volumeGET *volumeFullGETStruct) UnpackValue(payloadData []byte) (value sor
 	return
 }
 
+func (directoryWrapper *httpServerDirectoryWrapperStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (directoryWrapper *httpServerDirectoryWrapperStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (directoryWrapper *httpServerDirectoryWrapperStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	var (
+		authOK bool
+	)
+
+	nodeByteSlice, authOK, err = directoryWrapper.volume.swiftObjectGetRange(objectNumber, objectOffset, objectLength)
+	if nil != err {
+		err = fmt.Errorf("volume.swiftObjectGetRange() failed: %v", err)
+		return
+	}
+	if !authOK {
+		err = fmt.Errorf("volume.swiftObjectGetRange() returned !authOK")
+		return
+	}
+
+	return
+}
+
+func (directoryWrapper *httpServerDirectoryWrapperStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (directoryWrapper *httpServerDirectoryWrapperStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (directoryWrapper *httpServerDirectoryWrapperStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (directoryWrapper *httpServerDirectoryWrapperStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
+	var (
+		nextPos  int
+		baseName string
+	)
+
+	baseName, nextPos, err = ilayout.GetLEStringFromBuf(payloadData, 0)
+	if nil == err {
+		key = baseName
+		bytesConsumed = uint64(nextPos)
+	}
+
+	return
+}
+
+func (directoryWrapper *httpServerDirectoryWrapperStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (directoryWrapper *httpServerDirectoryWrapperStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
+	var (
+		bytesConsumedAsInt    int
+		directoryEntryValueV1 *ilayout.DirectoryEntryValueV1Struct
+	)
+
+	directoryEntryValueV1, bytesConsumedAsInt, err = ilayout.UnmarshalDirectoryEntryValueV1(payloadData)
+	if nil == err {
+		value = directoryEntryValueV1
+		bytesConsumed = uint64(bytesConsumedAsInt)
+	}
+
+	return
+}
+
+func (extentMapWrapper *httpServerExtentMapWrapperStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (extentMapWrapper *httpServerExtentMapWrapperStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (extentMapWrapper *httpServerExtentMapWrapperStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	var (
+		authOK bool
+	)
+
+	nodeByteSlice, authOK, err = extentMapWrapper.volume.swiftObjectGetRange(objectNumber, objectOffset, objectLength)
+	if nil != err {
+		err = fmt.Errorf("volume.swiftObjectGetRange() failed: %v", err)
+		return
+	}
+	if !authOK {
+		err = fmt.Errorf("volume.swiftObjectGetRange() returned !authOK")
+		return
+	}
+
+	return
+}
+
+func (extentMapWrapper *httpServerExtentMapWrapperStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (extentMapWrapper *httpServerExtentMapWrapperStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (extentMapWrapper *httpServerExtentMapWrapperStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (extentMapWrapper *httpServerExtentMapWrapperStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
+	var (
+		nextPos    int
+		fileOffset uint64
+	)
+
+	fileOffset, nextPos, err = ilayout.GetLEUint64FromBuf(payloadData, 0)
+	if nil == err {
+		key = fileOffset
+		bytesConsumed = uint64(nextPos)
+	}
+
+	return
+}
+
+func (extentMapWrapper *httpServerExtentMapWrapperStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
+	err = fmt.Errorf("not implemented")
+	return
+}
+
+func (extentMapWrapper *httpServerExtentMapWrapperStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
+	var (
+		bytesConsumedAsInt    int
+		extentMapEntryValueV1 *ilayout.ExtentMapEntryValueV1Struct
+	)
+
+	extentMapEntryValueV1, bytesConsumedAsInt, err = ilayout.UnmarshalExtentMapEntryValueV1(payloadData)
+	if nil == err {
+		value = extentMapEntryValueV1
+		bytesConsumed = uint64(bytesConsumedAsInt)
+	}
+
+	return
+}
+
 func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	var (
-		checkPointV1 *ilayout.CheckPointV1Struct
-		err          error
-		// inodeHeadV1 *ilayout.InodeHeadV1Struct
-		inodeNumberAsHexDigits            string
-		inodeNumberAsUint64               uint64
-		inodeNumberAsKey                  sortedmap.Key
-		inodeTable                        sortedmap.BPlusTree
-		inodeTableCache                   sortedmap.BPlusTreeCache
-		inodeTableEntryValueV1            *ilayout.InodeTableEntryValueV1Struct
-		inodeTableEntryValueV1AsValue     sortedmap.Value
-		inodeTableIndex                   int
-		inodeTableLayoutIndex             int
-		inodeTableLen                     int
-		mustBeInode                       string
-		ok                                bool
-		pathSplit                         []string
-		pendingDeleteObjectNameArrayIndex int
-		startTime                         time.Time
-		superBlockV1                      *ilayout.SuperBlockV1Struct
-		toReturnTODO                      string
-		volumeAsStruct                    *volumeStruct
-		volumeAsValue                     sortedmap.Value
-		volumeGET                         *volumeFullGETStruct
-		volumeGETAsJSON                   []byte
-		volumeGETList                     []*volumeMiniGETStruct
-		volumeGETListIndex                int
-		volumeGETListAsJSON               []byte
-		volumeGETListLen                  int
-		volumeName                        string
+		checkPointV1                       *ilayout.CheckPointV1Struct
+		directoryEntryIndex                int
+		directoryEntryKeyV1AsKey           sortedmap.Key
+		directoryEntryValueV1              *ilayout.DirectoryEntryValueV1Struct
+		directoryEntryValueV1AsValue       sortedmap.Value
+		directoryLen                       int
+		directoryWrapper                   *httpServerDirectoryWrapperStruct
+		err                                error
+		extentMapEntryIndex                int
+		extentMapEntryKeyV1AsKey           sortedmap.Key
+		extentMapEntryValueV1              *ilayout.ExtentMapEntryValueV1Struct
+		extentMapEntryValueV1AsValue       sortedmap.Value
+		extentMapLen                       int
+		extentMapWrapper                   *httpServerExtentMapWrapperStruct
+		inodeGET                           interface{}
+		inodeGETAsJSON                     []byte
+		inodeGETLayoutEntryIndex           int
+		inodeGETLinkTableEntryIndex        int
+		inodeGETStreamTableEntryIndex      int
+		inodeGETStreamTableEntryValueByte  byte
+		inodeGETStreamTableEntryValueIndex int
+		inodeHeadV1                        *ilayout.InodeHeadV1Struct
+		inodeNumberAsHexDigits             string
+		inodeNumberAsUint64                uint64
+		inodeNumberAsKey                   sortedmap.Key
+		inodeTableEntryValueV1             *ilayout.InodeTableEntryValueV1Struct
+		inodeTableEntryValueV1AsValue      sortedmap.Value
+		inodeTableIndex                    int
+		inodeTableLayoutIndex              int
+		inodeTableLen                      int
+		inodeTableWrapper                  *httpServerInodeTableWrapperStruct
+		mustBeInode                        string
+		ok                                 bool
+		pathSplit                          []string
+		pendingDeleteObjectNameArrayIndex  int
+		startTime                          time.Time
+		superBlockV1                       *ilayout.SuperBlockV1Struct
+		volumeAsStruct                     *volumeStruct
+		volumeAsValue                      sortedmap.Value
+		volumeGET                          *volumeGETStruct
+		volumeGETAsJSON                    []byte
+		volumeListGET                      []*volumeListGETEntryStruct
+		volumeListGETIndex                 int
+		volumeListGETAsJSON                []byte
+		volumeListGETLen                   int
+		volumeName                         string
 	)
 
 	startTime = time.Now()
@@ -541,28 +723,28 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 		globals.Lock()
 
-		volumeGETListLen, err = globals.volumeMap.Len()
+		volumeListGETLen, err = globals.volumeMap.Len()
 		if nil != err {
 			logFatal(err)
 		}
 
-		volumeGETList = make([]*volumeMiniGETStruct, volumeGETListLen)
+		volumeListGET = make([]*volumeListGETEntryStruct, volumeListGETLen)
 
-		for volumeGETListIndex = 0; volumeGETListIndex < volumeGETListLen; volumeGETListIndex++ {
-			_, volumeAsValue, ok, err = globals.volumeMap.GetByIndex(volumeGETListIndex)
+		for volumeListGETIndex = 0; volumeListGETIndex < volumeListGETLen; volumeListGETIndex++ {
+			_, volumeAsValue, ok, err = globals.volumeMap.GetByIndex(volumeListGETIndex)
 			if nil != err {
 				logFatal(err)
 			}
 			if !ok {
-				logFatalf("globals.volumeMap[] len (%d) is wrong", volumeGETListLen)
+				logFatalf("globals.volumeMap[] len (%d) is wrong", volumeListGETLen)
 			}
 
 			volumeAsStruct, ok = volumeAsValue.(*volumeStruct)
 			if !ok {
-				logFatalf("globals.volumeMap[%d] was not a *volumeStruct", volumeGETListIndex)
+				logFatalf("globals.volumeMap[%d] was not a *volumeStruct", volumeListGETIndex)
 			}
 
-			volumeGETList[volumeGETListIndex] = &volumeMiniGETStruct{
+			volumeListGET[volumeListGETIndex] = &volumeListGETEntryStruct{
 				Name:                   volumeAsStruct.name,
 				StorageURL:             volumeAsStruct.storageURL,
 				AuthToken:              volumeAsStruct.authToken,
@@ -574,18 +756,18 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 		globals.Unlock()
 
-		volumeGETListAsJSON, err = json.Marshal(volumeGETList)
+		volumeListGETAsJSON, err = json.Marshal(volumeListGET)
 		if nil != err {
 			logFatal(err)
 		}
 
-		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeGETListAsJSON)))
+		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeListGETAsJSON)))
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, err = responseWriter.Write(volumeGETListAsJSON)
+		_, err = responseWriter.Write(volumeListGETAsJSON)
 		if nil != err {
-			logWarnf("responseWriter.Write(volumeGETListAsJSON) failed: %v", err)
+			logWarnf("responseWriter.Write(volumeListGETAsJSON) failed: %v", err)
 		}
 	case 3:
 		// Form: /volume/<VolumeName>
@@ -623,8 +805,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				return
 			}
 
-			volumeGET = &volumeFullGETStruct{
-				volume:                       volumeAsStruct,
+			volumeGET = &volumeGETStruct{
 				Name:                         volumeAsStruct.name,
 				StorageURL:                   volumeAsStruct.storageURL,
 				AuthToken:                    volumeAsStruct.authToken,
@@ -634,12 +815,11 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				SuperBlockObjectName:         ilayout.GetObjectNameAsString(checkPointV1.SuperBlockObjectNumber),
 				SuperBlockLength:             checkPointV1.SuperBlockLength,
 				ReservedToNonce:              checkPointV1.ReservedToNonce,
-				InodeTableLayout:             make([]volumeFullGETInodeTableLayoutEntryStruct, len(superBlockV1.InodeTableLayout)),
+				InodeTableLayout:             make([]volumeGETInodeTableLayoutEntryStruct, len(superBlockV1.InodeTableLayout)),
 				InodeObjectCount:             superBlockV1.InodeObjectCount,
 				InodeObjectSize:              superBlockV1.InodeObjectSize,
 				InodeBytesReferenced:         superBlockV1.InodeBytesReferenced,
 				PendingDeleteObjectNameArray: make([]string, len(superBlockV1.PendingDeleteObjectNumberArray)),
-				// InodeTable filled after the BPlusTree has been loaded later
 			}
 
 			for inodeTableLayoutIndex = range volumeGET.InodeTableLayout {
@@ -652,26 +832,29 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				volumeGET.PendingDeleteObjectNameArray[pendingDeleteObjectNameArrayIndex] = ilayout.GetObjectNameAsString(superBlockV1.PendingDeleteObjectNumberArray[pendingDeleteObjectNameArrayIndex])
 			}
 
-			inodeTableCache = sortedmap.NewBPlusTreeCache(volumeGETInodeTableCacheLowLimit, volumeGETInodeTableCacheHighLimit)
+			inodeTableWrapper = &httpServerInodeTableWrapperStruct{
+				volume: volumeAsStruct,
+				cache:  sortedmap.NewBPlusTreeCache(httpServerInodeTableCacheLowLimit, httpServerInodeTableCacheHighLimit),
+			}
 
-			inodeTable, err = sortedmap.OldBPlusTree(superBlockV1.InodeTableRootObjectNumber, superBlockV1.InodeTableRootObjectOffset, superBlockV1.InodeTableRootObjectLength, sortedmap.CompareUint64, volumeGET, inodeTableCache)
+			inodeTableWrapper.table, err = sortedmap.OldBPlusTree(superBlockV1.InodeTableRootObjectNumber, superBlockV1.InodeTableRootObjectOffset, superBlockV1.InodeTableRootObjectLength, sortedmap.CompareUint64, inodeTableWrapper, inodeTableWrapper.cache)
 			if nil != err {
 				globals.Unlock()
 				responseWriter.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 
-			inodeTableLen, err = inodeTable.Len()
+			inodeTableLen, err = inodeTableWrapper.table.Len()
 			if nil != err {
 				globals.Unlock()
 				responseWriter.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 
-			volumeGET.InodeTable = make([]volumeFullGETInodeTableEntryStruct, inodeTableLen)
+			volumeGET.InodeTable = make([]volumeGETInodeTableEntryStruct, inodeTableLen)
 
 			for inodeTableIndex = range volumeGET.InodeTable {
-				inodeNumberAsKey, inodeTableEntryValueV1AsValue, ok, err = inodeTable.GetByIndex(inodeTableIndex)
+				inodeNumberAsKey, inodeTableEntryValueV1AsValue, ok, err = inodeTableWrapper.table.GetByIndex(inodeTableIndex)
 				if (nil != err) || !ok {
 					globals.Unlock()
 					responseWriter.WriteHeader(http.StatusUnauthorized)
@@ -680,16 +863,12 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 				volumeGET.InodeTable[inodeTableIndex].InodeNumber, ok = inodeNumberAsKey.(uint64)
 				if !ok {
-					globals.Unlock()
-					responseWriter.WriteHeader(http.StatusUnauthorized)
-					return
+					logFatalf("inodeNumberAsKey.(uint64) returned !ok")
 				}
 
 				inodeTableEntryValueV1, ok = inodeTableEntryValueV1AsValue.(*ilayout.InodeTableEntryValueV1Struct)
 				if !ok {
-					globals.Unlock()
-					responseWriter.WriteHeader(http.StatusUnauthorized)
-					return
+					logFatalf("inodeTableEntryValueV1AsValue.(*ilayout.InodeTableEntryValueV1Struct) returned !ok")
 				}
 
 				volumeGET.InodeTable[inodeTableIndex].InodeHeadObjectName = ilayout.GetObjectNameAsString(inodeTableEntryValueV1.InodeHeadObjectNumber)
@@ -745,17 +924,294 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 						logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
 					}
 
-					toReturnTODO = fmt.Sprintf("TODO: GET /volume/%s/inode/%016X", volumeAsStruct.name, inodeNumberAsUint64)
+					checkPointV1, err = volumeAsStruct.fetchCheckPoint()
+					if nil != err {
+						globals.Unlock()
+						responseWriter.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+
+					superBlockV1, err = volumeAsStruct.fetchSuperBlock(checkPointV1.SuperBlockObjectNumber, checkPointV1.SuperBlockLength)
+					if nil != err {
+						globals.Unlock()
+						responseWriter.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+
+					inodeTableWrapper = &httpServerInodeTableWrapperStruct{
+						volume: volumeAsStruct,
+						cache:  sortedmap.NewBPlusTreeCache(httpServerInodeTableCacheLowLimit, httpServerInodeTableCacheHighLimit),
+					}
+
+					inodeTableWrapper.table, err = sortedmap.OldBPlusTree(superBlockV1.InodeTableRootObjectNumber, superBlockV1.InodeTableRootObjectOffset, superBlockV1.InodeTableRootObjectLength, sortedmap.CompareUint64, inodeTableWrapper, inodeTableWrapper.cache)
+					if nil != err {
+						globals.Unlock()
+						responseWriter.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+
+					inodeTableEntryValueV1AsValue, ok, err = inodeTableWrapper.table.GetByKey(inodeNumberAsUint64)
+					if nil != err {
+						globals.Unlock()
+						responseWriter.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+					if !ok {
+						globals.Unlock()
+						responseWriter.WriteHeader(http.StatusNotFound)
+						return
+					}
+
+					inodeTableEntryValueV1, ok = inodeTableEntryValueV1AsValue.(*ilayout.InodeTableEntryValueV1Struct)
+					if !ok {
+						logFatalf("inodeTableEntryValueV1AsValue.(*ilayout.InodeTableEntryValueV1Struct) returned !ok")
+					}
+
+					inodeHeadV1, err = volumeAsStruct.fetchInodeHead(inodeTableEntryValueV1.InodeHeadObjectNumber, inodeTableEntryValueV1.InodeHeadLength)
+					if nil != err {
+						globals.Unlock()
+						responseWriter.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+
+					if inodeNumberAsUint64 != inodeHeadV1.InodeNumber {
+						logFatalf("Lookup of Inode 0x%016X returned an Inode with InodeNumber 0x%016X", inodeNumberAsUint64, inodeHeadV1.InodeNumber)
+					}
+
+					// Apologies for the hack below due to Golang not supporting full inheritance
+
+					switch inodeHeadV1.InodeType {
+					case ilayout.InodeTypeDir:
+						directoryWrapper = &httpServerDirectoryWrapperStruct{
+							volume: volumeAsStruct,
+							cache:  sortedmap.NewBPlusTreeCache(httpServerDirectoryCacheLowLimit, httpServerDirectoryCacheHighLimit),
+						}
+
+						directoryWrapper.table, err = sortedmap.OldBPlusTree(inodeHeadV1.PayloadObjectNumber, inodeHeadV1.PayloadObjectOffset, inodeHeadV1.PayloadObjectLength, sortedmap.CompareString, directoryWrapper, directoryWrapper.cache)
+						if nil != err {
+							globals.Unlock()
+							responseWriter.WriteHeader(http.StatusUnauthorized)
+							return
+						}
+
+						directoryLen, err = directoryWrapper.table.Len()
+						if nil != err {
+							globals.Unlock()
+							responseWriter.WriteHeader(http.StatusUnauthorized)
+							return
+						}
+
+						inodeGET = &dirInodeGETStruct{
+							inodeGETStruct{
+								InodeNumber:      inodeHeadV1.InodeNumber,
+								InodeType:        "Dir",
+								LinkTable:        make([]inodeGETLinkTableEntryStruct, len(inodeHeadV1.LinkTable)),
+								ModificationTime: inodeHeadV1.ModificationTime.Format(time.RFC3339),
+								StatusChangeTime: inodeHeadV1.StatusChangeTime.Format(time.RFC3339),
+								Mode:             inodeHeadV1.Mode,
+								UserID:           inodeHeadV1.UserID,
+								GroupID:          inodeHeadV1.GroupID,
+								StreamTable:      make([]inodeGETStreamTableEntryStruct, len(inodeHeadV1.StreamTable)),
+							},
+							make([]dirInodeGETPayloadEntryStruct, directoryLen),
+							make([]inodeGETLayoutEntryStruct, len(inodeHeadV1.Layout)),
+						}
+
+						for inodeGETLinkTableEntryIndex = range inodeHeadV1.LinkTable {
+							inodeGET.(*dirInodeGETStruct).LinkTable[inodeGETLinkTableEntryIndex].ParentDirInodeNumber = inodeHeadV1.LinkTable[inodeGETLinkTableEntryIndex].ParentDirInodeNumber
+							inodeGET.(*dirInodeGETStruct).LinkTable[inodeGETLinkTableEntryIndex].ParentDirEntryName = inodeHeadV1.LinkTable[inodeGETLinkTableEntryIndex].ParentDirEntryName
+						}
+
+						for inodeGETStreamTableEntryIndex = range inodeHeadV1.StreamTable {
+							inodeGET.(*dirInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Name = inodeHeadV1.StreamTable[inodeGETStreamTableEntryIndex].Name
+							if len(inodeHeadV1.StreamTable[inodeGETStreamTableEntryIndex].Value) == 0 {
+								inodeGET.(*dirInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Value = ""
+							} else {
+								for inodeGETStreamTableEntryValueIndex, inodeGETStreamTableEntryValueByte = range inodeHeadV1.StreamTable[inodeGETStreamTableEntryIndex].Value {
+									if inodeGETStreamTableEntryValueIndex == 0 {
+										inodeGET.(*dirInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Value = fmt.Sprintf("%02X", inodeGETStreamTableEntryValueByte)
+									} else {
+										inodeGET.(*dirInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Value += fmt.Sprintf(" %02X", inodeGETStreamTableEntryValueByte)
+									}
+								}
+							}
+						}
+
+						for directoryEntryIndex = 0; directoryEntryIndex < directoryLen; directoryEntryIndex++ {
+							directoryEntryKeyV1AsKey, directoryEntryValueV1AsValue, ok, err = directoryWrapper.table.GetByIndex(directoryEntryIndex)
+							if (nil != err) || !ok {
+								globals.Unlock()
+								responseWriter.WriteHeader(http.StatusUnauthorized)
+								return
+							}
+
+							inodeGET.(*dirInodeGETStruct).Payload[directoryEntryIndex].BaseName, ok = directoryEntryKeyV1AsKey.(string)
+							if !ok {
+								logFatalf("directoryEntryKeyV1AsKey.(string) returned !ok")
+							}
+
+							directoryEntryValueV1, ok = directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct)
+							if !ok {
+								logFatalf("directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
+							}
+
+							inodeGET.(*dirInodeGETStruct).Payload[directoryEntryIndex].InodeNumber = directoryEntryValueV1.InodeNumber
+
+							switch directoryEntryValueV1.InodeType {
+							case ilayout.InodeTypeDir:
+								inodeGET.(*dirInodeGETStruct).Payload[directoryEntryIndex].InodeType = "Dir"
+							case ilayout.InodeTypeFile:
+								inodeGET.(*dirInodeGETStruct).Payload[directoryEntryIndex].InodeType = "File"
+							case ilayout.InodeTypeSymLink:
+								inodeGET.(*dirInodeGETStruct).Payload[directoryEntryIndex].InodeType = "SymLink"
+							default:
+								logFatalf("Directory entry in DirInode 0x%016X contains unknown InodeType: 0x%02X", inodeGET.(*dirInodeGETStruct).Payload[directoryEntryIndex].InodeNumber, directoryEntryValueV1.InodeType)
+							}
+						}
+
+						for inodeGETLayoutEntryIndex = range inodeHeadV1.Layout {
+							inodeGET.(*dirInodeGETStruct).Layout[inodeGETLayoutEntryIndex].ObjectName = ilayout.GetObjectNameAsString(inodeHeadV1.Layout[inodeGETLayoutEntryIndex].ObjectNumber)
+							inodeGET.(*dirInodeGETStruct).Layout[inodeGETLayoutEntryIndex].ObjectSize = inodeHeadV1.Layout[inodeGETLayoutEntryIndex].ObjectSize
+							inodeGET.(*dirInodeGETStruct).Layout[inodeGETLayoutEntryIndex].BytesReferenced = inodeHeadV1.Layout[inodeGETLayoutEntryIndex].BytesReferenced
+						}
+					case ilayout.InodeTypeFile:
+						extentMapWrapper = &httpServerExtentMapWrapperStruct{
+							volume: volumeAsStruct,
+							cache:  sortedmap.NewBPlusTreeCache(httpServerExtentMapCacheLowLimit, httpServerExtentMapCacheHighLimit),
+						}
+
+						extentMapWrapper.table, err = sortedmap.OldBPlusTree(inodeHeadV1.PayloadObjectNumber, inodeHeadV1.PayloadObjectOffset, inodeHeadV1.PayloadObjectLength, sortedmap.CompareUint64, extentMapWrapper, extentMapWrapper.cache)
+						if nil != err {
+							globals.Unlock()
+							responseWriter.WriteHeader(http.StatusUnauthorized)
+							return
+						}
+
+						extentMapLen, err = extentMapWrapper.table.Len()
+						if nil != err {
+							globals.Unlock()
+							responseWriter.WriteHeader(http.StatusUnauthorized)
+							return
+						}
+
+						inodeGET = &fileInodeGETStruct{
+							inodeGETStruct{
+								InodeNumber:      inodeHeadV1.InodeNumber,
+								InodeType:        "File",
+								LinkTable:        make([]inodeGETLinkTableEntryStruct, len(inodeHeadV1.LinkTable)),
+								ModificationTime: inodeHeadV1.ModificationTime.Format(time.RFC3339),
+								StatusChangeTime: inodeHeadV1.StatusChangeTime.Format(time.RFC3339),
+								Mode:             inodeHeadV1.Mode,
+								UserID:           inodeHeadV1.UserID,
+								GroupID:          inodeHeadV1.GroupID,
+								StreamTable:      make([]inodeGETStreamTableEntryStruct, len(inodeHeadV1.StreamTable)),
+							},
+							inodeHeadV1.Size,
+							make([]fileInodeGETPayloadEntryStruct, extentMapLen),
+							make([]inodeGETLayoutEntryStruct, len(inodeHeadV1.Layout)),
+						}
+
+						for inodeGETLinkTableEntryIndex = range inodeHeadV1.LinkTable {
+							inodeGET.(*fileInodeGETStruct).LinkTable[inodeGETLinkTableEntryIndex].ParentDirInodeNumber = inodeHeadV1.LinkTable[inodeGETLinkTableEntryIndex].ParentDirInodeNumber
+							inodeGET.(*fileInodeGETStruct).LinkTable[inodeGETLinkTableEntryIndex].ParentDirEntryName = inodeHeadV1.LinkTable[inodeGETLinkTableEntryIndex].ParentDirEntryName
+						}
+
+						for inodeGETStreamTableEntryIndex = range inodeHeadV1.StreamTable {
+							inodeGET.(*fileInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Name = inodeHeadV1.StreamTable[inodeGETStreamTableEntryIndex].Name
+							if len(inodeHeadV1.StreamTable[inodeGETStreamTableEntryIndex].Value) == 0 {
+								inodeGET.(*fileInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Value = ""
+							} else {
+								for inodeGETStreamTableEntryValueIndex, inodeGETStreamTableEntryValueByte = range inodeHeadV1.StreamTable[inodeGETStreamTableEntryIndex].Value {
+									if inodeGETStreamTableEntryValueIndex == 0 {
+										inodeGET.(*fileInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Value = fmt.Sprintf("%02X", inodeGETStreamTableEntryValueByte)
+									} else {
+										inodeGET.(*fileInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Value += fmt.Sprintf(" %02X", inodeGETStreamTableEntryValueByte)
+									}
+								}
+							}
+						}
+
+						for extentMapEntryIndex = 0; extentMapEntryIndex < extentMapLen; extentMapEntryIndex++ {
+							extentMapEntryKeyV1AsKey, extentMapEntryValueV1AsValue, ok, err = extentMapWrapper.table.GetByIndex(extentMapEntryIndex)
+							if (nil != err) || !ok {
+								globals.Unlock()
+								responseWriter.WriteHeader(http.StatusUnauthorized)
+								return
+							}
+
+							inodeGET.(*fileInodeGETStruct).Payload[extentMapEntryIndex].FileOffset, ok = extentMapEntryKeyV1AsKey.(uint64)
+							if !ok {
+								logFatalf("extentMapEntryKeyV1AsKey.(uint64) returned !ok")
+							}
+
+							extentMapEntryValueV1, ok = extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1Struct)
+							if !ok {
+								logFatalf("extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1Struct) returned !ok")
+							}
+
+							inodeGET.(*fileInodeGETStruct).Payload[extentMapEntryIndex].Length = extentMapEntryValueV1.Length
+							inodeGET.(*fileInodeGETStruct).Payload[extentMapEntryIndex].ObjectName = ilayout.GetObjectNameAsString(extentMapEntryValueV1.ObjectNumber)
+							inodeGET.(*fileInodeGETStruct).Payload[extentMapEntryIndex].ObjectOffset = extentMapEntryValueV1.ObjectOffset
+						}
+
+						for inodeGETLayoutEntryIndex = range inodeHeadV1.Layout {
+							inodeGET.(*dirInodeGETStruct).Layout[inodeGETLayoutEntryIndex].ObjectName = ilayout.GetObjectNameAsString(inodeHeadV1.Layout[inodeGETLayoutEntryIndex].ObjectNumber)
+							inodeGET.(*dirInodeGETStruct).Layout[inodeGETLayoutEntryIndex].ObjectSize = inodeHeadV1.Layout[inodeGETLayoutEntryIndex].ObjectSize
+							inodeGET.(*dirInodeGETStruct).Layout[inodeGETLayoutEntryIndex].BytesReferenced = inodeHeadV1.Layout[inodeGETLayoutEntryIndex].BytesReferenced
+						}
+					case ilayout.InodeTypeSymLink:
+						inodeGET = &symLinkInodeGETStruct{
+							inodeGETStruct{
+								InodeNumber:      inodeHeadV1.InodeNumber,
+								InodeType:        "SymLink",
+								LinkTable:        make([]inodeGETLinkTableEntryStruct, len(inodeHeadV1.LinkTable)),
+								ModificationTime: inodeHeadV1.ModificationTime.Format(time.RFC3339),
+								StatusChangeTime: inodeHeadV1.StatusChangeTime.Format(time.RFC3339),
+								Mode:             inodeHeadV1.Mode,
+								UserID:           inodeHeadV1.UserID,
+								GroupID:          inodeHeadV1.GroupID,
+								StreamTable:      make([]inodeGETStreamTableEntryStruct, len(inodeHeadV1.StreamTable)),
+							},
+							inodeHeadV1.SymLinkTarget,
+						}
+
+						for inodeGETLinkTableEntryIndex = range inodeHeadV1.LinkTable {
+							inodeGET.(*symLinkInodeGETStruct).LinkTable[inodeGETLinkTableEntryIndex].ParentDirInodeNumber = inodeHeadV1.LinkTable[inodeGETLinkTableEntryIndex].ParentDirInodeNumber
+							inodeGET.(*symLinkInodeGETStruct).LinkTable[inodeGETLinkTableEntryIndex].ParentDirEntryName = inodeHeadV1.LinkTable[inodeGETLinkTableEntryIndex].ParentDirEntryName
+						}
+
+						for inodeGETStreamTableEntryIndex = range inodeHeadV1.StreamTable {
+							inodeGET.(*symLinkInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Name = inodeHeadV1.StreamTable[inodeGETStreamTableEntryIndex].Name
+							if len(inodeHeadV1.StreamTable[inodeGETStreamTableEntryIndex].Value) == 0 {
+								inodeGET.(*symLinkInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Value = ""
+							} else {
+								for inodeGETStreamTableEntryValueIndex, inodeGETStreamTableEntryValueByte = range inodeHeadV1.StreamTable[inodeGETStreamTableEntryIndex].Value {
+									if inodeGETStreamTableEntryValueIndex == 0 {
+										inodeGET.(*symLinkInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Value = fmt.Sprintf("%02X", inodeGETStreamTableEntryValueByte)
+									} else {
+										inodeGET.(*symLinkInodeGETStruct).StreamTable[inodeGETStreamTableEntryIndex].Value += fmt.Sprintf(" %02X", inodeGETStreamTableEntryValueByte)
+									}
+								}
+							}
+						}
+					default:
+						logFatalf("Inode 0x%016X contains unknown InodeType: 0x%02X", inodeNumberAsUint64, inodeHeadV1.InodeType)
+					}
 
 					globals.Unlock()
 
-					responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(toReturnTODO)))
-					responseWriter.Header().Set("Content-Type", "text/plain")
+					inodeGETAsJSON, err = json.Marshal(inodeGET)
+					if nil != err {
+						logFatal(err)
+					}
+
+					responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(inodeGETAsJSON)))
+					responseWriter.Header().Set("Content-Type", "application/json")
 					responseWriter.WriteHeader(http.StatusOK)
 
-					_, err = responseWriter.Write([]byte(toReturnTODO))
+					_, err = responseWriter.Write(inodeGETAsJSON)
 					if nil != err {
-						logWarnf("responseWriter.Write([]byte(toReturnTODO)) failed: %v", err)
+						logWarnf("responseWriter.Write(inodeGETAsJSON) failed: %v", err)
 					}
 				} else {
 					globals.Unlock()
@@ -772,7 +1228,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 func serveHTTPPost(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
 	switch {
-	case "/volume" == requestPath:
+	case requestPath == "/volume":
 		serveHTTPPostOfVolume(responseWriter, request, requestBody)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
