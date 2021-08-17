@@ -81,18 +81,15 @@ type chunkedPutContextStruct struct {
 }
 
 type statsStruct struct {
-	DeleteVolumeUsecs          bucketstats.BucketLog2Round // DELETE /volume/<VolumeName>
-	GetConfigUsecs             bucketstats.BucketLog2Round // GET /config
-	GetStatsUsecs              bucketstats.BucketLog2Round // GET /stats
-	GetVersionUsecs            bucketstats.BucketLog2Round // GET /version
-	GetVolumeInodeUsecs        bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>
-	GetVolumeInodeLayoutUsecs  bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>/layout
-	GetVolumeInodePayloadUsecs bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>/payload
-	GetVolumeLayoutUsecs       bucketstats.BucketLog2Round // GET /volume/<VolumeName>/layout
-	GetVolumeListUsecs         bucketstats.BucketLog2Round // GET /volume
-	GetVolumeUsecs             bucketstats.BucketLog2Round // GET /volume/<VolumeName>
-	PostVolumeUsecs            bucketstats.BucketLog2Round // POST /volume/<VolumeName>
-	PutVolumeUsecs             bucketstats.BucketLog2Round // PUT /volume/<VolumeName>
+	DeleteVolumeUsecs   bucketstats.BucketLog2Round // DELETE /volume/<VolumeName>
+	GetConfigUsecs      bucketstats.BucketLog2Round // GET /config
+	GetStatsUsecs       bucketstats.BucketLog2Round // GET /stats
+	GetVersionUsecs     bucketstats.BucketLog2Round // GET /version
+	GetVolumeInodeUsecs bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumber>
+	GetVolumeListUsecs  bucketstats.BucketLog2Round // GET /volume
+	GetVolumeUsecs      bucketstats.BucketLog2Round // GET /volume/<VolumeName>
+	PostVolumeUsecs     bucketstats.BucketLog2Round // POST /volume/<VolumeName>
+	PutVolumeUsecs      bucketstats.BucketLog2Round // PUT /volume/<VolumeName>
 
 	AdjustInodeTableEntryOpenCountUsecs bucketstats.BucketLog2Round // (*RetryRPCServerStruct).AdjustInodeTableEntryOpenCount()
 	DeleteInodeTableEntryUsecs          bucketstats.BucketLog2Round // (*RetryRPCServerStruct).DeleteInodeTableEntry()

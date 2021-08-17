@@ -910,7 +910,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			responseWriter.WriteHeader(http.StatusNotFound)
 		}
 	case 5:
-		// Form: /volume/<VolumeName>/inode/<InodeNumberAsHexDigits>
+		// Form: /volume/<VolumeName>/inode/<InodeNumber>
 
 		volumeName = pathSplit[2]
 		mustBeInode = pathSplit[3]
