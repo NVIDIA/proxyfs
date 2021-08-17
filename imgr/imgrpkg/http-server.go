@@ -696,10 +696,12 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		ok                                 bool
 		pathSplit                          []string
 		pendingDeleteObjectNameArrayIndex  int
+		requestAuthToken                   string
 		startTime                          time.Time
 		superBlockV1                       *ilayout.SuperBlockV1Struct
 		volumeAsStruct                     *volumeStruct
 		volumeAsValue                      sortedmap.Value
+		volumeAuthToken                    string
 		volumeGET                          *volumeGETStruct
 		volumeGETAsJSON                    []byte
 		volumeListGET                      []*volumeListGETEntryStruct
@@ -791,8 +793,15 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
 			}
 
+			requestAuthToken = request.Header.Get("X-Auth-Token")
+			volumeAuthToken = volumeAsStruct.authToken
+			if requestAuthToken != "" {
+				volumeAsStruct.authToken = requestAuthToken
+			}
+
 			checkPointV1, err = volumeAsStruct.fetchCheckPoint()
 			if nil != err {
+				volumeAsStruct.authToken = volumeAuthToken
 				globals.Unlock()
 				responseWriter.WriteHeader(http.StatusUnauthorized)
 				return
@@ -800,6 +809,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 			superBlockV1, err = volumeAsStruct.fetchSuperBlock(checkPointV1.SuperBlockObjectNumber, checkPointV1.SuperBlockLength)
 			if nil != err {
+				volumeAsStruct.authToken = volumeAuthToken
 				globals.Unlock()
 				responseWriter.WriteHeader(http.StatusUnauthorized)
 				return
@@ -808,7 +818,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			volumeGET = &volumeGETStruct{
 				Name:                         volumeAsStruct.name,
 				StorageURL:                   volumeAsStruct.storageURL,
-				AuthToken:                    volumeAsStruct.authToken,
+				AuthToken:                    volumeAuthToken,
 				HealthyMounts:                uint64(volumeAsStruct.healthyMountList.Len()),
 				LeasesExpiredMounts:          uint64(volumeAsStruct.leasesExpiredMountList.Len()),
 				AuthTokenExpiredMounts:       uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
@@ -839,6 +849,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 			inodeTableWrapper.table, err = sortedmap.OldBPlusTree(superBlockV1.InodeTableRootObjectNumber, superBlockV1.InodeTableRootObjectOffset, superBlockV1.InodeTableRootObjectLength, sortedmap.CompareUint64, inodeTableWrapper, inodeTableWrapper.cache)
 			if nil != err {
+				volumeAsStruct.authToken = volumeAuthToken
 				globals.Unlock()
 				responseWriter.WriteHeader(http.StatusUnauthorized)
 				return
@@ -846,6 +857,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 			inodeTableLen, err = inodeTableWrapper.table.Len()
 			if nil != err {
+				volumeAsStruct.authToken = volumeAuthToken
 				globals.Unlock()
 				responseWriter.WriteHeader(http.StatusUnauthorized)
 				return
@@ -856,6 +868,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			for inodeTableIndex = range volumeGET.InodeTable {
 				inodeNumberAsKey, inodeTableEntryValueV1AsValue, ok, err = inodeTableWrapper.table.GetByIndex(inodeTableIndex)
 				if (nil != err) || !ok {
+					volumeAsStruct.authToken = volumeAuthToken
 					globals.Unlock()
 					responseWriter.WriteHeader(http.StatusUnauthorized)
 					return
@@ -874,6 +887,8 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				volumeGET.InodeTable[inodeTableIndex].InodeHeadObjectName = ilayout.GetObjectNameAsString(inodeTableEntryValueV1.InodeHeadObjectNumber)
 				volumeGET.InodeTable[inodeTableIndex].InodeHeadLength = inodeTableEntryValueV1.InodeHeadLength
 			}
+
+			volumeAsStruct.authToken = volumeAuthToken
 
 			globals.Unlock()
 
@@ -924,8 +939,15 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 						logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
 					}
 
+					volumeAuthToken = volumeAsStruct.authToken
+					requestAuthToken = request.Header.Get("X-Auth-Token")
+					if requestAuthToken != "" {
+						volumeAsStruct.authToken = requestAuthToken
+					}
+
 					checkPointV1, err = volumeAsStruct.fetchCheckPoint()
 					if nil != err {
+						volumeAsStruct.authToken = volumeAuthToken
 						globals.Unlock()
 						responseWriter.WriteHeader(http.StatusUnauthorized)
 						return
@@ -933,6 +955,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 					superBlockV1, err = volumeAsStruct.fetchSuperBlock(checkPointV1.SuperBlockObjectNumber, checkPointV1.SuperBlockLength)
 					if nil != err {
+						volumeAsStruct.authToken = volumeAuthToken
 						globals.Unlock()
 						responseWriter.WriteHeader(http.StatusUnauthorized)
 						return
@@ -945,6 +968,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 					inodeTableWrapper.table, err = sortedmap.OldBPlusTree(superBlockV1.InodeTableRootObjectNumber, superBlockV1.InodeTableRootObjectOffset, superBlockV1.InodeTableRootObjectLength, sortedmap.CompareUint64, inodeTableWrapper, inodeTableWrapper.cache)
 					if nil != err {
+						volumeAsStruct.authToken = volumeAuthToken
 						globals.Unlock()
 						responseWriter.WriteHeader(http.StatusUnauthorized)
 						return
@@ -952,11 +976,13 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 					inodeTableEntryValueV1AsValue, ok, err = inodeTableWrapper.table.GetByKey(inodeNumberAsUint64)
 					if nil != err {
+						volumeAsStruct.authToken = volumeAuthToken
 						globals.Unlock()
 						responseWriter.WriteHeader(http.StatusUnauthorized)
 						return
 					}
 					if !ok {
+						volumeAsStruct.authToken = volumeAuthToken
 						globals.Unlock()
 						responseWriter.WriteHeader(http.StatusNotFound)
 						return
@@ -969,6 +995,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 					inodeHeadV1, err = volumeAsStruct.fetchInodeHead(inodeTableEntryValueV1.InodeHeadObjectNumber, inodeTableEntryValueV1.InodeHeadLength)
 					if nil != err {
+						volumeAsStruct.authToken = volumeAuthToken
 						globals.Unlock()
 						responseWriter.WriteHeader(http.StatusUnauthorized)
 						return
@@ -989,6 +1016,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 						directoryWrapper.table, err = sortedmap.OldBPlusTree(inodeHeadV1.PayloadObjectNumber, inodeHeadV1.PayloadObjectOffset, inodeHeadV1.PayloadObjectLength, sortedmap.CompareString, directoryWrapper, directoryWrapper.cache)
 						if nil != err {
+							volumeAsStruct.authToken = volumeAuthToken
 							globals.Unlock()
 							responseWriter.WriteHeader(http.StatusUnauthorized)
 							return
@@ -996,6 +1024,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 						directoryLen, err = directoryWrapper.table.Len()
 						if nil != err {
+							volumeAsStruct.authToken = volumeAuthToken
 							globals.Unlock()
 							responseWriter.WriteHeader(http.StatusUnauthorized)
 							return
@@ -1040,6 +1069,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 						for directoryEntryIndex = 0; directoryEntryIndex < directoryLen; directoryEntryIndex++ {
 							directoryEntryKeyV1AsKey, directoryEntryValueV1AsValue, ok, err = directoryWrapper.table.GetByIndex(directoryEntryIndex)
 							if (nil != err) || !ok {
+								volumeAsStruct.authToken = volumeAuthToken
 								globals.Unlock()
 								responseWriter.WriteHeader(http.StatusUnauthorized)
 								return
@@ -1082,6 +1112,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 						extentMapWrapper.table, err = sortedmap.OldBPlusTree(inodeHeadV1.PayloadObjectNumber, inodeHeadV1.PayloadObjectOffset, inodeHeadV1.PayloadObjectLength, sortedmap.CompareUint64, extentMapWrapper, extentMapWrapper.cache)
 						if nil != err {
+							volumeAsStruct.authToken = volumeAuthToken
 							globals.Unlock()
 							responseWriter.WriteHeader(http.StatusUnauthorized)
 							return
@@ -1089,6 +1120,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 						extentMapLen, err = extentMapWrapper.table.Len()
 						if nil != err {
+							volumeAsStruct.authToken = volumeAuthToken
 							globals.Unlock()
 							responseWriter.WriteHeader(http.StatusUnauthorized)
 							return
@@ -1134,6 +1166,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 						for extentMapEntryIndex = 0; extentMapEntryIndex < extentMapLen; extentMapEntryIndex++ {
 							extentMapEntryKeyV1AsKey, extentMapEntryValueV1AsValue, ok, err = extentMapWrapper.table.GetByIndex(extentMapEntryIndex)
 							if (nil != err) || !ok {
+								volumeAsStruct.authToken = volumeAuthToken
 								globals.Unlock()
 								responseWriter.WriteHeader(http.StatusUnauthorized)
 								return
@@ -1197,6 +1230,8 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 					default:
 						logFatalf("Inode 0x%016X contains unknown InodeType: 0x%02X", inodeNumberAsUint64, inodeHeadV1.InodeType)
 					}
+
+					volumeAsStruct.authToken = volumeAuthToken
 
 					globals.Unlock()
 
