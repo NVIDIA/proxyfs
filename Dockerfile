@@ -47,13 +47,17 @@
 #          [-d|--detach]                                  \
 #          [-it]                                          \
 #          [--rm]                                         \
+#          [--privileged]                                 \
 #          [--mount src="$(pwd)",target="/src",type=bind] \
 #          <image id>|<repository>[:<tag>]
 #
 #   Notes:
-#     -d|--detach: tells Docker to detach from running container 
-#     -it:         tells Docker to run container interactively
-#     --rm:        tells Docker to destroy container upon exit
+#     -d|--detach:  tells Docker to detach from running container 
+#     -it:          tells Docker to run container interactively
+#     --rm:         tells Docker to destroy container upon exit
+#     --privileged:
+#       1) tells Docker to, among other things, grant access to /dev/fuse
+#       2) only useful for --target development and --target iclient
 #     --mount:
 #       1) bind mounts the context into /src in the container
 #       2) /src will be a read-write'able equivalent to the context dir
@@ -62,13 +66,14 @@
 #       5) /src doesn't exist for --target build
 
 FROM alpine:3.14.0 as base
-ARG GolangVersion=1.16.7
+ARG GolangVersion=1.17
 ARG MakeTarget
 RUN apk add --no-cache libc6-compat
 
 FROM base as dev
 RUN apk add --no-cache bind-tools \
                        curl       \
+                       fuse       \
                        gcc        \
                        git        \
                        jq         \
@@ -103,6 +108,7 @@ COPY --from=build /src/imgr/imgr.conf ./
 
 FROM imgr as iclient
 RUN rm caKey.pem cert.pem key.pem imgr imgr.conf
+RUN apk add --no-cache fuse
 COPY --from=build /src/iclient/iclient      ./
 COPY --from=build /src/iclient/iclient.conf ./
 COPY --from=build /src/iclient/iclient.sh   ./

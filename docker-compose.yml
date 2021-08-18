@@ -68,6 +68,7 @@ services:
     depends_on:
       - etcd
       - swift
+    privileged: true
     expose:
       - 32356                                 # IMGR.RetryRPCPort
       - 15346                                 # IMGR.HTTPServerPort
@@ -116,5 +117,6 @@ services:
     depends_on:
       - swift
       - imgr
+    privileged: true
     command: ["./iclient.sh", "-s"]
  
