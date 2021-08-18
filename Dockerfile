@@ -57,11 +57,11 @@
 #     --rm:         tells Docker to destroy container upon exit
 #     --privileged:
 #       1) tells Docker to, among other things, grant access to /dev/fuse
-#       2) only useful for --target development and --target iclient
+#       2) only useful for --target dev and --target iclient
 #     --mount:
 #       1) bind mounts the context into /src in the container
 #       2) /src will be a read-write'able equivalent to the context dir
-#       3) only useful for --target development
+#       3) only useful for --target dev
 #       4) /src will be a local copy instead for --target build
 #       5) /src doesn't exist for --target build
 

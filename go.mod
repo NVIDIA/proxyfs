@@ -1,6 +1,6 @@
 module github.com/NVIDIA/proxyfs
 
-go 1.16
+go 1.17
 
 replace github.com/coreos/bbolt v1.3.4 => go.etcd.io/bbolt v1.3.4
 
@@ -10,9 +10,9 @@ replace google.golang.org/grpc => google.golang.org/grpc v1.26.0
 
 require (
 	bazil.org/fuse v0.0.0-20200524192727-fb710f7dfd05
-	github.com/NVIDIA/cstruct v0.0.0-20210804235153-e02d4f5f012d
-	github.com/NVIDIA/fission v0.0.0-20210804235922-f7f250e19ccc
-	github.com/NVIDIA/sortedmap v0.0.0-20210804235713-3e115b37465d
+	github.com/NVIDIA/cstruct v0.0.0-20210817223100-441a06a021c8
+	github.com/NVIDIA/fission v0.0.0-20210818012801-322f6346f124
+	github.com/NVIDIA/sortedmap v0.0.0-20210818004215-48fa0266cfdd
 	github.com/ansel1/merry v1.6.1
 	github.com/coreos/bbolt v1.3.4 // indirect
 	github.com/coreos/etcd v3.3.25+incompatible // indirect
@@ -20,7 +20,6 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf // indirect
 	github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f // indirect
 	github.com/creachadair/cityhash v0.1.0
-	github.com/dgraph-io/ristretto v0.1.0 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/golang/glog v0.0.0-20210429001901-424d2337a529 // indirect
@@ -33,13 +32,9 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
 	github.com/kr/pretty v0.2.0 // indirect
-	github.com/ory/go-acc v0.2.6 // indirect
-	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/prometheus/client_golang v1.11.0 // indirect
 	github.com/sirupsen/logrus v1.8.1
 	github.com/soheilhy/cmux v0.1.5 // indirect
-	github.com/spf13/cast v1.4.1 // indirect
-	github.com/spf13/cobra v1.2.1 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
@@ -52,4 +47,39 @@ require (
 	google.golang.org/genproto v0.0.0-20210602131652-f16073e35f0c // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
+)
+
+require (
+	github.com/ansel1/merry/v2 v2.0.0-beta.10 // indirect
+	github.com/cespare/xxhash v1.1.0 // indirect
+	github.com/cespare/xxhash/v2 v2.1.1 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/dgraph-io/ristretto v0.1.0 // indirect
+	github.com/fsnotify/fsnotify v1.4.9 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/hashicorp/hcl v1.0.0 // indirect
+	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/magiconair/properties v1.8.5 // indirect
+	github.com/mitchellh/mapstructure v1.4.1 // indirect
+	github.com/ory/go-acc v0.2.6 // indirect
+	github.com/ory/viper v1.7.5 // indirect
+	github.com/pborman/uuid v1.2.1 // indirect
+	github.com/pelletier/go-toml v1.9.3 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/spf13/afero v1.6.0 // indirect
+	github.com/spf13/cast v1.4.1 // indirect
+	github.com/spf13/cobra v1.2.1 // indirect
+	github.com/spf13/jwalterweatherman v1.1.0 // indirect
+	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/subosito/gotenv v1.2.0 // indirect
+	go.uber.org/atomic v1.7.0 // indirect
+	go.uber.org/multierr v1.6.0 // indirect
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
+	google.golang.org/grpc v1.38.0 // indirect
+	google.golang.org/protobuf v1.26.0 // indirect
+	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
+	gopkg.in/ini.v1 v1.62.0 // indirect
+	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
