@@ -318,7 +318,14 @@ type volumeListGETEntryStruct struct {
 	AuthTokenExpiredMounts uint64
 }
 
-type volumeGETInodeTableLayoutEntryStruct struct {
+type volumeOrInodeGETDimensionStruct struct {
+	MinKeysPerNode uint64 // only applies to non-Root nodes
+	MaxKeysPerNode uint64
+	Items          uint64
+	Height         uint64
+}
+
+type volumeOrInodeGETLayoutEntryStruct struct {
 	ObjectName      string // == ilayout.GetObjectNameAsString(ObjectNumber)
 	ObjectSize      uint64
 	BytesReferenced uint64
@@ -346,7 +353,11 @@ type volumeGETStruct struct {
 	SuperBlockObjectName         string // == ilayout.GetObjectNameAsString(SuperBlockObjectNumber)
 	SuperBlockLength             uint64
 	ReservedToNonce              uint64
-	InodeTableLayout             []volumeGETInodeTableLayoutEntryStruct
+	InodeTableMinInodesPerNode   uint64
+	InodeTableMaxInodesPerNode   uint64
+	InodeTableInodeCount         uint64
+	InodeTableHeight             uint64
+	InodeTableLayout             []volumeOrInodeGETLayoutEntryStruct
 	InodeObjectCount             uint64
 	InodeObjectSize              uint64
 	InodeBytesReferenced         uint64
@@ -377,12 +388,6 @@ type fileInodeGETPayloadEntryStruct struct {
 	ObjectOffset uint64
 }
 
-type inodeGETLayoutEntryStruct struct {
-	ObjectName      string // == ilayout.GetObjectNameAsString(ObjectNumber)
-	ObjectSize      uint64
-	BytesReferenced uint64
-}
-
 type inodeGETStruct struct {
 	InodeNumber      uint64
 	InodeType        string // == "Dir", "File", or "Symlink"
@@ -403,8 +408,12 @@ type httpServerDirectoryWrapperStruct struct {
 
 type dirInodeGETStruct struct {
 	inodeGETStruct
-	Payload []dirInodeGETPayloadEntryStruct
-	Layout  []inodeGETLayoutEntryStruct
+	MinDirEntriesPerNode uint64
+	MaxDirEntriesPerNode uint64
+	DirEntryCount        uint64
+	DirectoryHeight      uint64
+	Payload              []dirInodeGETPayloadEntryStruct
+	Layout               []volumeOrInodeGETLayoutEntryStruct
 }
 
 type httpServerExtentMapWrapperStruct struct {
@@ -415,9 +424,13 @@ type httpServerExtentMapWrapperStruct struct {
 
 type fileInodeGETStruct struct {
 	inodeGETStruct
-	Size    uint64
-	Payload []fileInodeGETPayloadEntryStruct
-	Layout  []inodeGETLayoutEntryStruct
+	Size              uint64
+	MinExtentsPerNode uint64
+	MaxExtentsPerNode uint64
+	ExtentCount       uint64
+	ExtentMapHeight   uint64
+	Payload           []fileInodeGETPayloadEntryStruct
+	Layout            []volumeOrInodeGETLayoutEntryStruct
 }
 
 type symLinkInodeGETStruct struct {
@@ -662,18 +675,17 @@ func (extentMapWrapper *httpServerExtentMapWrapperStruct) UnpackValue(payloadDat
 func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	var (
 		checkPointV1                       *ilayout.CheckPointV1Struct
+		dimensionsReport                   sortedmap.DimensionsReport
 		directoryEntryIndex                int
 		directoryEntryKeyV1AsKey           sortedmap.Key
 		directoryEntryValueV1              *ilayout.DirectoryEntryValueV1Struct
 		directoryEntryValueV1AsValue       sortedmap.Value
-		directoryLen                       int
 		directoryWrapper                   *httpServerDirectoryWrapperStruct
 		err                                error
 		extentMapEntryIndex                int
 		extentMapEntryKeyV1AsKey           sortedmap.Key
 		extentMapEntryValueV1              *ilayout.ExtentMapEntryValueV1Struct
 		extentMapEntryValueV1AsValue       sortedmap.Value
-		extentMapLen                       int
 		extentMapWrapper                   *httpServerExtentMapWrapperStruct
 		inodeGET                           interface{}
 		inodeGETAsJSON                     []byte
@@ -690,7 +702,6 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		inodeTableEntryValueV1AsValue      sortedmap.Value
 		inodeTableIndex                    int
 		inodeTableLayoutIndex              int
-		inodeTableLen                      int
 		inodeTableWrapper                  *httpServerInodeTableWrapperStruct
 		mustBeInode                        string
 		ok                                 bool
@@ -815,33 +826,6 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				return
 			}
 
-			volumeGET = &volumeGETStruct{
-				Name:                         volumeAsStruct.name,
-				StorageURL:                   volumeAsStruct.storageURL,
-				AuthToken:                    volumeAuthToken,
-				HealthyMounts:                uint64(volumeAsStruct.healthyMountList.Len()),
-				LeasesExpiredMounts:          uint64(volumeAsStruct.leasesExpiredMountList.Len()),
-				AuthTokenExpiredMounts:       uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
-				SuperBlockObjectName:         ilayout.GetObjectNameAsString(checkPointV1.SuperBlockObjectNumber),
-				SuperBlockLength:             checkPointV1.SuperBlockLength,
-				ReservedToNonce:              checkPointV1.ReservedToNonce,
-				InodeTableLayout:             make([]volumeGETInodeTableLayoutEntryStruct, len(superBlockV1.InodeTableLayout)),
-				InodeObjectCount:             superBlockV1.InodeObjectCount,
-				InodeObjectSize:              superBlockV1.InodeObjectSize,
-				InodeBytesReferenced:         superBlockV1.InodeBytesReferenced,
-				PendingDeleteObjectNameArray: make([]string, len(superBlockV1.PendingDeleteObjectNumberArray)),
-			}
-
-			for inodeTableLayoutIndex = range volumeGET.InodeTableLayout {
-				volumeGET.InodeTableLayout[inodeTableLayoutIndex].ObjectName = ilayout.GetObjectNameAsString(superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectNumber)
-				volumeGET.InodeTableLayout[inodeTableLayoutIndex].ObjectSize = superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectSize
-				volumeGET.InodeTableLayout[inodeTableLayoutIndex].BytesReferenced = superBlockV1.InodeTableLayout[inodeTableLayoutIndex].BytesReferenced
-			}
-
-			for pendingDeleteObjectNameArrayIndex = range volumeGET.PendingDeleteObjectNameArray {
-				volumeGET.PendingDeleteObjectNameArray[pendingDeleteObjectNameArrayIndex] = ilayout.GetObjectNameAsString(superBlockV1.PendingDeleteObjectNumberArray[pendingDeleteObjectNameArrayIndex])
-			}
-
 			inodeTableWrapper = &httpServerInodeTableWrapperStruct{
 				volume: volumeAsStruct,
 				cache:  sortedmap.NewBPlusTreeCache(httpServerInodeTableCacheLowLimit, httpServerInodeTableCacheHighLimit),
@@ -855,7 +839,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				return
 			}
 
-			inodeTableLen, err = inodeTableWrapper.table.Len()
+			dimensionsReport, err = inodeTableWrapper.table.FetchDimensionsReport()
 			if nil != err {
 				volumeAsStruct.authToken = volumeAuthToken
 				globals.Unlock()
@@ -863,7 +847,37 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				return
 			}
 
-			volumeGET.InodeTable = make([]volumeGETInodeTableEntryStruct, inodeTableLen)
+			volumeGET = &volumeGETStruct{
+				Name:                         volumeAsStruct.name,
+				StorageURL:                   volumeAsStruct.storageURL,
+				AuthToken:                    volumeAuthToken,
+				HealthyMounts:                uint64(volumeAsStruct.healthyMountList.Len()),
+				LeasesExpiredMounts:          uint64(volumeAsStruct.leasesExpiredMountList.Len()),
+				AuthTokenExpiredMounts:       uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
+				SuperBlockObjectName:         ilayout.GetObjectNameAsString(checkPointV1.SuperBlockObjectNumber),
+				SuperBlockLength:             checkPointV1.SuperBlockLength,
+				ReservedToNonce:              checkPointV1.ReservedToNonce,
+				InodeTableMinInodesPerNode:   dimensionsReport.MinKeysPerNode,
+				InodeTableMaxInodesPerNode:   dimensionsReport.MaxKeysPerNode,
+				InodeTableInodeCount:         dimensionsReport.Items,
+				InodeTableHeight:             dimensionsReport.Height,
+				InodeTableLayout:             make([]volumeOrInodeGETLayoutEntryStruct, len(superBlockV1.InodeTableLayout)),
+				InodeObjectCount:             superBlockV1.InodeObjectCount,
+				InodeObjectSize:              superBlockV1.InodeObjectSize,
+				InodeBytesReferenced:         superBlockV1.InodeBytesReferenced,
+				PendingDeleteObjectNameArray: make([]string, len(superBlockV1.PendingDeleteObjectNumberArray)),
+				InodeTable:                   make([]volumeGETInodeTableEntryStruct, dimensionsReport.Items),
+			}
+
+			for inodeTableLayoutIndex = range volumeGET.InodeTableLayout {
+				volumeGET.InodeTableLayout[inodeTableLayoutIndex].ObjectName = ilayout.GetObjectNameAsString(superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectNumber)
+				volumeGET.InodeTableLayout[inodeTableLayoutIndex].ObjectSize = superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectSize
+				volumeGET.InodeTableLayout[inodeTableLayoutIndex].BytesReferenced = superBlockV1.InodeTableLayout[inodeTableLayoutIndex].BytesReferenced
+			}
+
+			for pendingDeleteObjectNameArrayIndex = range volumeGET.PendingDeleteObjectNameArray {
+				volumeGET.PendingDeleteObjectNameArray[pendingDeleteObjectNameArrayIndex] = ilayout.GetObjectNameAsString(superBlockV1.PendingDeleteObjectNumberArray[pendingDeleteObjectNameArrayIndex])
+			}
 
 			for inodeTableIndex = range volumeGET.InodeTable {
 				inodeNumberAsKey, inodeTableEntryValueV1AsValue, ok, err = inodeTableWrapper.table.GetByIndex(inodeTableIndex)
@@ -1022,7 +1036,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 							return
 						}
 
-						directoryLen, err = directoryWrapper.table.Len()
+						dimensionsReport, err = directoryWrapper.table.FetchDimensionsReport()
 						if nil != err {
 							volumeAsStruct.authToken = volumeAuthToken
 							globals.Unlock()
@@ -1042,8 +1056,12 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 								GroupID:          inodeHeadV1.GroupID,
 								StreamTable:      make([]inodeGETStreamTableEntryStruct, len(inodeHeadV1.StreamTable)),
 							},
-							make([]dirInodeGETPayloadEntryStruct, directoryLen),
-							make([]inodeGETLayoutEntryStruct, len(inodeHeadV1.Layout)),
+							dimensionsReport.MinKeysPerNode,
+							dimensionsReport.MaxKeysPerNode,
+							dimensionsReport.Items,
+							dimensionsReport.Height,
+							make([]dirInodeGETPayloadEntryStruct, dimensionsReport.Items),
+							make([]volumeOrInodeGETLayoutEntryStruct, len(inodeHeadV1.Layout)),
 						}
 
 						for inodeGETLinkTableEntryIndex = range inodeHeadV1.LinkTable {
@@ -1066,7 +1084,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 							}
 						}
 
-						for directoryEntryIndex = 0; directoryEntryIndex < directoryLen; directoryEntryIndex++ {
+						for directoryEntryIndex = range inodeGET.(*dirInodeGETStruct).Payload {
 							directoryEntryKeyV1AsKey, directoryEntryValueV1AsValue, ok, err = directoryWrapper.table.GetByIndex(directoryEntryIndex)
 							if (nil != err) || !ok {
 								volumeAsStruct.authToken = volumeAuthToken
@@ -1118,7 +1136,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 							return
 						}
 
-						extentMapLen, err = extentMapWrapper.table.Len()
+						dimensionsReport, err = extentMapWrapper.table.FetchDimensionsReport()
 						if nil != err {
 							volumeAsStruct.authToken = volumeAuthToken
 							globals.Unlock()
@@ -1139,8 +1157,12 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 								StreamTable:      make([]inodeGETStreamTableEntryStruct, len(inodeHeadV1.StreamTable)),
 							},
 							inodeHeadV1.Size,
-							make([]fileInodeGETPayloadEntryStruct, extentMapLen),
-							make([]inodeGETLayoutEntryStruct, len(inodeHeadV1.Layout)),
+							dimensionsReport.MinKeysPerNode,
+							dimensionsReport.MaxKeysPerNode,
+							dimensionsReport.Items,
+							dimensionsReport.Height,
+							make([]fileInodeGETPayloadEntryStruct, dimensionsReport.Items),
+							make([]volumeOrInodeGETLayoutEntryStruct, len(inodeHeadV1.Layout)),
 						}
 
 						for inodeGETLinkTableEntryIndex = range inodeHeadV1.LinkTable {
@@ -1163,7 +1185,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 							}
 						}
 
-						for extentMapEntryIndex = 0; extentMapEntryIndex < extentMapLen; extentMapEntryIndex++ {
+						for extentMapEntryIndex = range inodeGET.(*fileInodeGETStruct).Payload {
 							extentMapEntryKeyV1AsKey, extentMapEntryValueV1AsValue, ok, err = extentMapWrapper.table.GetByIndex(extentMapEntryIndex)
 							if (nil != err) || !ok {
 								volumeAsStruct.authToken = volumeAuthToken

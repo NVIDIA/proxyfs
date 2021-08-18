@@ -11,8 +11,8 @@ replace google.golang.org/grpc => google.golang.org/grpc v1.26.0
 require (
 	bazil.org/fuse v0.0.0-20200524192727-fb710f7dfd05
 	github.com/NVIDIA/cstruct v0.0.0-20210817223100-441a06a021c8
-	github.com/NVIDIA/fission v0.0.0-20210818012801-322f6346f124
-	github.com/NVIDIA/sortedmap v0.0.0-20210818004215-48fa0266cfdd
+	github.com/NVIDIA/fission v0.0.0-20210818194118-c8072a1555ab
+	github.com/NVIDIA/sortedmap v0.0.0-20210818193114-64918d535a18
 	github.com/ansel1/merry v1.6.1
 	github.com/coreos/bbolt v1.3.4 // indirect
 	github.com/coreos/etcd v3.3.25+incompatible // indirect
