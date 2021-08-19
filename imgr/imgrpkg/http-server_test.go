@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/proxyfs/version"
@@ -15,12 +16,17 @@ import (
 
 func TestHTTPServer(t *testing.T) {
 	var (
-		err                  error
-		getRequestHeaders    http.Header
-		postRequestBody      string
-		putRequestBody       string
-		responseBody         []byte
-		responseBodyExpected string
+		err                              error
+		getRequestHeaders                http.Header
+		postRequestBody                  string
+		putRequestBody                   string
+		responseBody                     []byte
+		responseBodyAsString             string
+		responseBodyAsStringSplit        []string
+		responseBodyExpected             string
+		responseBodyExpectedStaticPrefix string
+		responseBodyExpectedStaticMiddle string
+		responseBodyExpectedStaticSuffix string
 	)
 
 	testSetup(t, nil)
@@ -120,7 +126,7 @@ func TestHTTPServer(t *testing.T) {
 		t.Fatalf("testDoHTTPRequest(\"PUT\", testGlobals.httpServerURL+\"/volume\"+testVolume, nil, strings.NewReader(putRequestBody)) [case 2] failed: %v", err)
 	}
 
-	responseBodyExpected = fmt.Sprintf("{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0,\"SuperBlockObjectName\":\"3000000000000000\",\"SuperBlockLength\":96,\"ReservedToNonce\":3,\"InodeTableLayout\":[{\"ObjectName\":\"3000000000000000\",\"ObjectSize\":58,\"BytesReferenced\":58}],\"InodeObjectCount\":1,\"InodeObjectSize\":237,\"InodeBytesReferenced\":237,\"PendingDeleteObjectNameArray\":[],\"InodeTable\":[{\"InodeNumber\":1,\"InodeHeadObjectName\":\"2000000000000000\",\"InodeHeadLength\":174}]}", testVolume, testGlobals.containerURL, testGlobals.authToken)
+	responseBodyExpected = fmt.Sprintf("{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0,\"SuperBlockObjectName\":\"3000000000000000\",\"SuperBlockLength\":96,\"ReservedToNonce\":3,\"InodeTableMinInodesPerNode\":1024,\"InodeTableMaxInodesPerNode\":2048,\"InodeTableInodeCount\":1,\"InodeTableHeight\":1,\"InodeTableLayout\":[{\"ObjectName\":\"3000000000000000\",\"ObjectSize\":58,\"BytesReferenced\":58}],\"InodeObjectCount\":1,\"InodeObjectSize\":237,\"InodeBytesReferenced\":237,\"PendingDeleteObjectNameArray\":[],\"InodeTable\":[{\"InodeNumber\":1,\"InodeHeadObjectName\":\"2000000000000000\",\"InodeHeadLength\":174}]}", testVolume, testGlobals.containerURL, testGlobals.authToken)
 
 	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume/"+testVolume, nil, nil)
 	if nil != err {
@@ -128,6 +134,38 @@ func TestHTTPServer(t *testing.T) {
 	}
 	if string(responseBody[:]) != responseBodyExpected {
 		t.Fatalf("GET /volume/%s [case 2] returned unexpected responseBody: \"%s\"", testVolume, responseBody)
+	}
+
+	responseBodyExpectedStaticPrefix = "{\"InodeNumber\":1,\"InodeType\":\"Dir\",\"LinkTable\":[{\"ParentDirInodeNumber\":1,\"ParentDirEntryName\":\".\"},{\"ParentDirInodeNumber\":1,\"ParentDirEntryName\":\"..\"}],\"ModificationTime\":\""
+	// Next segment to be a quoted ModificationTime.Format(time.RFC3339)
+	responseBodyExpectedStaticMiddle = "\",\"StatusChangeTime\":\""
+	// Next segment to be a quoted StatusChangeTime.Format(time.RFC3339)
+	responseBodyExpectedStaticSuffix = "\",\"Mode\":511,\"UserID\":0,\"GroupID\":0,\"StreamTable\":[],\"MinDirEntriesPerNode\":512,\"MaxDirEntriesPerNode\":1024,\"DirEntryCount\":2,\"DirectoryHeight\":1,\"Payload\":[{\"BaseName\":\".\",\"InodeNumber\":1,\"InodeType\":\"Dir\"},{\"BaseName\":\"..\",\"InodeNumber\":1,\"InodeType\":\"Dir\"}],\"Layout\":[{\"ObjectName\":\"2000000000000000\",\"ObjectSize\":63,\"BytesReferenced\":63}]}"
+
+	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume/"+testVolume+"/inode/1", nil, nil)
+	if nil != err {
+		t.Fatalf("GET /volume/%s/inode/1 failed: %v", testVolume, err)
+	}
+	responseBodyAsString = string(responseBody[:])
+	if !strings.HasPrefix(responseBodyAsString, responseBodyExpectedStaticPrefix) {
+		t.Fatalf("GET /volume/%s/inode/1 returned unexpected responseBody [case 1]: \"%s\"", testVolume, responseBody)
+	}
+	if !strings.HasSuffix(responseBodyAsString, responseBodyExpectedStaticSuffix) {
+		t.Fatalf("GET /volume/%s/inode/1 returned unexpected responseBody [case 2]: \"%s\"", testVolume, responseBody)
+	}
+	responseBodyAsString = strings.TrimPrefix(responseBodyAsString, responseBodyExpectedStaticPrefix)
+	responseBodyAsString = strings.TrimSuffix(responseBodyAsString, responseBodyExpectedStaticSuffix)
+	responseBodyAsStringSplit = strings.Split(responseBodyAsString, responseBodyExpectedStaticMiddle)
+	if len(responseBodyAsStringSplit) != 2 {
+		t.Fatalf("GET /volume/%s/inode/1 returned unexpected responseBody [case 3]: \"%s\"", testVolume, responseBody)
+	}
+	_, err = time.Parse(time.RFC3339, responseBodyAsStringSplit[0])
+	if nil != err {
+		t.Fatalf("GET /volume/%s/inode/1 returned unexpected responseBody [case 4]: \"%s\"", testVolume, responseBody)
+	}
+	_, err = time.Parse(time.RFC3339, responseBodyAsStringSplit[1])
+	if nil != err {
+		t.Fatalf("GET /volume/%s/inode/1 returned unexpected responseBody [case 5]: \"%s\"", testVolume, responseBody)
 	}
 
 	responseBodyExpected = fmt.Sprintf("[{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0}]", testVolume, testGlobals.containerURL, testGlobals.authToken)
