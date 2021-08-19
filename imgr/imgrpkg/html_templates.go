@@ -4,6 +4,7 @@
 package imgrpkg
 
 // To use: fmt.Sprintf(indexDotHTMLTemplate, proxyfsVersion)
+//                                               %[1]v
 const indexDotHTMLTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -92,6 +93,7 @@ const indexDotHTMLTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(configTemplate, proxyfsVersion, confMapJSONString)
+//                                          %[1]v            %[2]v
 const configTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -150,6 +152,7 @@ const configTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(volumeListTopTemplate, proxyfsVersion)
+//                                                %[1]v
 const volumeListTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -206,6 +209,7 @@ const volumeListTopTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(volumeListPerVolumeTemplate, volumeName)
+//                                                    %[1]v
 const volumeListPerVolumeTemplate string = `          <tr>
             <td>%[1]v</td>
             <td class="fit"><a href="/volume/%[1]v/snapshot" class="btn btn-sm btn-primary">SnapShots</a></td>
@@ -226,15 +230,17 @@ const volumeListBottom string = `        </tbody>
 </html>
 `
 
-// To use: fmt.Sprintf(layoutReportTopTemplate, proxyfsVersion, volumeName)
-const layoutReportTopTemplate string = `<!doctype html>
+// To use: fmt.Sprintf(volumeTemplate, proxyfsVersion, volumeName, volumeJSONString)
+//                                          %[1]v        %[2]v          %[3]v
+const volumeTemplate string = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>Layout Report %[2]v</title>
+    <link href="/open-iconic/font/css/open-iconic-bootstrap.min.css" rel="stylesheet">
+    <title>Volume %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
@@ -246,14 +252,14 @@ const layoutReportTopTemplate string = `<!doctype html>
           <li class="nav-item">
             <a class="nav-link" href="/">Home</a>
           </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/config">Config</a>
+          <li class="nav-item active">
+            <a class="nav-link" href="/config">Config <span class="sr-only">(current)</span></a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/stats">Stats</a>
           </li>
-          <li class="nav-item active">
-            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
+          <li class="nav-item">
+            <a class="nav-link" href="/volume">Volumes</a>
           </li>
         </ul>
         <span class="navbar-text">Version %[1]v</span>
@@ -264,238 +270,166 @@ const layoutReportTopTemplate string = `<!doctype html>
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
           <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
-          <li class="breadcrumb-item active" aria-current="page">Layout Report %[2]v</li>
+          <li class="breadcrumb-item active" aria-current="page">%[2]v</li>
         </ol>
       </nav>
+
       <h1 class="display-4">
-        Layout Report
+        Volume
         <small class="text-muted">%[2]v</small>
       </h1>
-      <a id="validate-button" class="btn btn-primary float-right" href="#">Show validated version</a><br><br>
-`
 
-// To use: fmt.Sprintf(layoutReportTableTopTemplate, TreeName, NumDiscrepencies, {"success"|"danger"})
-const layoutReportTableTopTemplate string = `      <br>
-      <div class="d-flex justify-content-between">
-        <h3>%[1]v</h3><h4><span class="badge badge-%[3]v d-none">%[2]v discrepancies</span></h4>
+      <div id="table-container">
+        <br>
+
+        <table class="table table-sm table-striped table-hover">
+          <tbody id="key-pair-data"></tbody>
+        </table>
       </div>
-	    <table class="table table-sm table-striped table-hover">
-        <thead>
-          <tr>
-            <th scope="col" class="w-50">ObjectName</th>
-            <th scope="col" class="w-50">ObjectBytes</th>
-          </tr>
-        </thead>
-        <tbody>
-`
-
-// To use: fmt.Sprintf(layoutReportTableRowTemplate, ObjectName, ObjectBytes)
-const layoutReportTableRowTemplate string = `          <tr>
-            <td><pre class="no-margin">%016[1]X</pre></td>
-			      <td><pre class="no-margin">%[2]v</pre></td>
-          </tr>
-`
-
-const layoutReportTableBottom string = `        </tbody>
-      </table>
-`
-
-const layoutReportBottom string = `    <div>
+      <!-- Back to top button -->
+      <button type="button" class="btn btn-primary btn-floating btn-lg" id="btn-back-to-top">
+        <span class="oi oi-chevron-top"></span>
+      </button>
+    </div>
     <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script type="text/javascript">
-      var url_params = new URLSearchParams(window.location.search);
-      var validate = false;
-      var validate_button = document.getElementById('validate-button');
-      if (
-        url_params.has("validate") &&
-        url_params.get("validate") != "0" &&
-        url_params.get("validate").toLowerCase() != "false"
-      ) {
-        validate = true;
-      }
-      if (validate) {
-        validate_button.innerHTML = 'Show non-validated version';
-        validate_button.href = window.location.origin + window.location.pathname + "?validate=0";
-        $("h4 .badge").removeClass("d-none");
-      } else {
-        validate_button.innerHTML = 'Show validated version';
-        validate_button.href = window.location.origin + window.location.pathname + "?validate=1";
-      }
-    </script>
-  </body>
-</html>
-`
+      const json_data = %[3]v;
 
-// To use: fmt.Sprintf(extentMapTemplate, proxyfsVersion, volumeName, extentMapJSONString, pathDoubleQuotedString, serverErrorBoolString)
-const extentMapTemplate string = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <link rel="stylesheet" href="/bootstrap.min.css">
-    <link rel="stylesheet" href="/styles.css">
-    <title>Extent Map %[2]v</title>
-  </head>
-  <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarNavDropdown">
-        <ul class="navbar-nav mr-auto">
-          <li class="nav-item">
-            <a class="nav-link" href="/">Home</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/config">Config</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/stats">Stats</a>
-          </li>
-          <li class="nav-item active">
-            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
-          </li>
-        </ul>
-        <span class="navbar-text">Version %[1]v</span>
-      </div>
-    </nav>
-    <div class="container">
-      <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-          <li class="breadcrumb-item"><a href="/">Home</a></li>
-          <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
-          <li class="breadcrumb-item active" aria-current="page">Extent Map %[2]v</li>
-        </ol>
-      </nav>
+      /*********************************************************************************
+      * WARNING! A lot of the code in this page is duplicated in the inode details     *
+      * page, so if you're changing anything here, you might as well want to change    *
+      * it in the other page.                                                          *
+      *********************************************************************************/
 
-      <h1 class="display-4">
-        Extent Map
-        <small class="text-muted">%[2]v</small>
-      </h1>
-
-      <div class="alert alert-danger" id="error-message" role="alert"></div>
-
-      <form id="new-path-form">
-        <div class="input-group mb-3">
-          <input type="text" id="path-text-box" class="form-control path-text-box" placeholder="path/to/check" aria-label="Path to check">
-          <div class="input-group-append">
-            <input type="submit" class="btn btn-primary" value="Search">
-          </div>
-        </div>
-      </form>
-
-      <br>
-      <table class="table table-sm table-striped table-hover" id="extent-map-table">
-        <thead>
-          <tr>
-            <th scope="col">File Offset</th>
-            <th scope="col" class="w-50">Container/Object</th>
-            <th scope="col">Object Offset</th>
-            <th scope="col">Length</th>
-          </tr>
-        </thead>
-        <tbody id="extent-map-data"></tbody>
-      </table>
-    </div>
-    <script src="/jquery.min.js"></script>
-    <script src="popper.min.js"></script>
-    <script src="/bootstrap.min.js"></script>
-    <script type="text/javascript">
-      var json_data = %[3]v
-      var path = %[4]v;
-      var volume = "%[2]v";
-      var server_error = %[5]v;
-
-      $("#new-path-form").submit(function(e){
-        e.preventDefault();
-        var new_path = $("#path-text-box").val().trim();
-        if (new_path != "" && !new_path.startsWith("/")) {
-          new_path = "/" + new_path;
+      const getListOfComplexKeys = function(data) {
+        let keys = [];
+        for (let key in data) {
+          if (
+            Array.isArray(data[key]) &&                                         // An array
+            data[key].length !== 0 &&                                           // not empty
+            Object.prototype.toString.call(data[key][0]) === "[object Object]"  // with "[object Object]" elements (ie: dictionaries, because we're getting this from JSON)
+          ) {
+            keys.push(key);
+          }
         }
-        var new_url = "/volume/" + volume + "/extent-map" + new_path;
-        window.location = new_url;
-      });
-
-      var hideError = function() {
-        document.getElementById("error-message").style.display = "none";
+        return keys;
       };
 
-      var showPathError = function(path) {
-        var msg_to_print = "";
-        if (path !== null) {
-          msg_to_print = "<p>There was an error getting extent map for path:</p><pre>" + path + "</pre>";
-        } else {
-          msg_to_print = "<p>There was an error getting extent map for path:</p><pre>(error retrieving input path)</pre>";
-        }
-        showCustomError(msg_to_print);
-      };
-
-      var showCustomError = function(text) {
-        document.getElementById("error-message").innerHTML = text;
-      };
-
-      var getTableMarkupWithData = function(data) {
-        var table_markup = "";
-        for (var key in data) {
-          table_markup += "          <tr>\n";
-          table_markup += "            <td><pre class=\"no-margin\">" + data[key]["file_offset"] + "</pre></td>\n";
-          table_markup += "            <td><pre class=\"no-margin\">" + data[key]["container_name"] + "/" + data[key]["object_name"] + "</pre></td>\n";
-          table_markup += "            <td><pre class=\"no-margin\">" + data[key]["object_offset"] + "</pre></td>\n";
-          table_markup += "            <td><pre class=\"no-margin\">" + data[key]["length"] + "</pre></td>\n";
-          table_markup += "          </tr>\n";
+      const getSimpleKeyValuePairsTableMarkupWithData = function(data, complex_keys) {
+        let table_markup = "";
+        for (let key in data) {
+          if (complex_keys.includes(key)) {
+            table_markup += "          <tr>\n";
+            table_markup += "            <th scope=\"row\">" + key + "</th>\n";
+            table_markup += "            <td class=\"text-right\"><a href='#" + key + "-table'>Go to " + key + " table</a></td>\n";
+            table_markup += "          </tr>\n";
+          } else if (Array.isArray(data[key]) && data[key].length === 0) {
+            table_markup += "          <tr>\n";
+            table_markup += "            <th scope=\"row\">" + key + "</th>\n";
+            table_markup += "            <td class=\"text-right\">[ empty ]</td>\n";
+            table_markup += "          </tr>\n";
+          } else if (Array.isArray(data[key]) && data[key].length !== 0) {
+            let first = true;
+            data[key].forEach((item) => {
+              table_markup += "          <tr>\n";
+              if (first) {
+                table_markup += "            <th scope=\"row\">" + key + "</th>\n";
+                first = false;
+              } else {
+                table_markup += "            <th scope=\"row\"></th>\n";
+              }
+              table_markup += "            <td class=\"text-right\">" + item + "</td>\n";
+              table_markup += "          </tr>\n";
+            });
+          } else {
+            table_markup += "          <tr>\n";
+            table_markup += "            <th scope=\"row\">" + key + "</th>\n";
+            table_markup += "            <td class=\"text-right\">" + data[key] + "</td>\n";
+            table_markup += "          </tr>\n";
+          }
         }
         return table_markup;
       };
 
-      var buildTable = function(data) {
-        document.getElementById("extent-map-data").innerHTML = getTableMarkupWithData(data);
-      };
-
-      var hideTable = function() {
-        document.getElementById("extent-map-table").style.display = "none";
-      };
-
-      var fillInTextBox = function(path) {
-        document.getElementById("path-text-box").value = path;
-      };
-
-      var selectSearchText = function() {
-        var pat_text_box = document.getElementById("path-text-box");
-        pat_text_box.setSelectionRange(0, pat_text_box.value.length)
-      };
-
-      if (server_error) {
-        // Error finding path
-        hideTable();
-        fillInTextBox(path);
-        showPathError(path);
-        selectSearchText();
-      } else if (json_data === null && path === null) {
-        // Empty form
-        hideTable();
-        hideError();
-        selectSearchText();
-      } else if (json_data === null || path === null) {
-        // This should never happen!
-        hideTable();
-        var msg_to_print = "<p>Oops, that's embarrassing... Something went wrong server side: ";
-        if (json_data === null) {
-          msg_to_print += "'json_data' is null, but 'path' is not:</p><pre>" + path + "</pre>";
-          fillInTextBox(path);
+      const getColsClass = function(keys) {
+        const keys_length = keys.length;
+        if (keys_length === 2) {
+          return " class=\"w-50\"";
+        } else if (keys_length === 3) {
+          return " class=\"w-25\"";
         } else {
-          msg_to_print += "'path' is null, but 'json_data' is not:</p><pre>" + JSON.stringify(json_data, null, 2) + "</pre>";
+          return "";
         }
-        showCustomError(msg_to_print);
-        selectSearchText();
-      } else {
-        // Path has been found
-        hideError();
-        fillInTextBox(path);
-        buildTable(json_data);
-        selectSearchText();
+      };
+
+      const getOnclickForInode = function(volume_name, inode_number) {
+        return " onclick=\"window.location.assign('/volume/" + volume_name + "/inode/" + inode_number + "');\"";
+      };
+
+      const getComplexDataTableMarkup = function(data, key) {
+        let table_markup = "";
+        const data_for_key = data[key];
+        const object_keys = Object.keys(data_for_key[0]);
+        let cols_class = getColsClass(object_keys);
+        table_markup += "      <br>";
+        table_markup += "      <div class=\"d-flex justify-content-between\">";
+        table_markup += "        <h3>" + key + "</h3>";
+        table_markup += "      </div>";
+        table_markup += "      <table class=\"table table-sm table-striped table-hover\" id=\"" + key + "-table\">";
+        table_markup += "        <thead>";
+        table_markup += "          <tr>";
+        object_keys.forEach ((object_key) => {
+          table_markup += "            <th scope=\"col\"" + cols_class + ">" + object_key + "</th>";
+        });
+        table_markup += "          </tr>";
+        table_markup += "        </thead>";
+        table_markup += "        <tbody>";
+        data_for_key.forEach((element) => {
+          if (key === "InodeTable") {
+            table_markup += "          <tr class=\"clickable\"" + getOnclickForInode(data["Name"], element["InodeNumber"]) + ">";
+          } else {
+            table_markup += "          <tr>";
+          }
+          object_keys.forEach ((object_key) => {
+            table_markup += "            <td><pre class=\"no-margin\">" + element[object_key] + "</pre></td>";
+          });
+          table_markup += "          </tr>";
+        });
+        table_markup += "        </tbody>";
+        table_markup += "      </table>";
+        return table_markup;
       }
+
+      const addTablesForComplexData = function(data, complex_keys) {
+        let complex_tables_markup = "";
+        complex_keys.forEach((key) => {
+          complex_tables_markup += getComplexDataTableMarkup(json_data, key);
+        });
+        document.getElementById("table-container").innerHTML = document.getElementById("table-container").innerHTML + complex_tables_markup;
+      }
+
+      const backToTop = function () {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+      };
+
+      // Create / fill tables
+      const complex_keys = getListOfComplexKeys(json_data);
+      document.getElementById("key-pair-data").innerHTML = getSimpleKeyValuePairsTableMarkupWithData(json_data, complex_keys);
+      addTablesForComplexData(json_data, complex_keys);
+
+      // Fancy back to top behavior
+      let back_to_top_button = document.getElementById("btn-back-to-top");
+      window.onscroll = function () {
+        if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
+          back_to_top_button.style.display = "block";
+        } else {
+          back_to_top_button.style.display = "none";
+        }
+      };
+      back_to_top_button.addEventListener("click", backToTop);
     </script>
   </body>
 </html>

@@ -674,6 +674,7 @@ func (extentMapWrapper *httpServerExtentMapWrapperStruct) UnpackValue(payloadDat
 
 func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	var (
+		acceptHeader                       string
 		checkPointV1                       *ilayout.CheckPointV1Struct
 		dimensionsReport                   sortedmap.DimensionsReport
 		directoryEntryIndex                int
@@ -714,6 +715,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		volumeAsValue                      sortedmap.Value
 		volumeAuthToken                    string
 		volumeGET                          *volumeGETStruct
+		volumeGETAsHTML                    []byte
 		volumeGETAsJSON                    []byte
 		volumeListGET                      []*volumeListGETEntryStruct
 		volumeListGETIndex                 int
@@ -911,13 +913,28 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				logFatal(err)
 			}
 
-			responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeGETAsJSON)))
-			responseWriter.Header().Set("Content-Type", "application/json")
-			responseWriter.WriteHeader(http.StatusOK)
+			acceptHeader = request.Header.Get("Accept")
 
-			_, err = responseWriter.Write(volumeGETAsJSON)
-			if nil != err {
-				logWarnf("responseWriter.Write(volumeGETAsJSON) failed: %v", err)
+			if strings.Contains(acceptHeader, "text/html") {
+				volumeGETAsHTML = []byte(fmt.Sprintf(volumeTemplate, version.ProxyFSVersion, volumeGET.Name, string(volumeGETAsJSON)))
+
+				responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeGETAsHTML)))
+				responseWriter.Header().Set("Content-Type", "text/html")
+				responseWriter.WriteHeader(http.StatusOK)
+
+				_, err = responseWriter.Write(volumeGETAsHTML)
+				if nil != err {
+					logWarnf("responseWriter.Write(volumeGETAsHTML) failed: %v", err)
+				}
+			} else {
+				responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeGETAsJSON)))
+				responseWriter.Header().Set("Content-Type", "application/json")
+				responseWriter.WriteHeader(http.StatusOK)
+
+				_, err = responseWriter.Write(volumeGETAsJSON)
+				if nil != err {
+					logWarnf("responseWriter.Write(volumeGETAsJSON) failed: %v", err)
+				}
 			}
 		} else {
 			globals.Unlock()
