@@ -173,13 +173,13 @@ const volumeListTemplate string = `<!doctype html>
             <a class="nav-link" href="/">Home</a>
           </li>
           <li class="nav-item active">
-            <a class="nav-link" href="/config">Config <span class="sr-only">(current)</span></a>
+            <a class="nav-link" href="/config">Config</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/stats">Stats</a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="/volume">Volumes</a>
+            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
         <span class="navbar-text">Version %[1]v</span>
@@ -240,13 +240,13 @@ const volumeTemplate string = `<!doctype html>
             <a class="nav-link" href="/">Home</a>
           </li>
           <li class="nav-item active">
-            <a class="nav-link" href="/config">Config <span class="sr-only">(current)</span></a>
+            <a class="nav-link" href="/config">Config</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/stats">Stats</a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="/volume">Volumes</a>
+            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
         <span class="navbar-text">Version %[1]v</span>
@@ -431,7 +431,8 @@ const inodeTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>Volumes</title>
+    <link href="/open-iconic/font/css/open-iconic-bootstrap.min.css" rel="stylesheet">
+    <title>Inode %[3]v | Volume %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
@@ -444,13 +445,13 @@ const inodeTemplate string = `<!doctype html>
             <a class="nav-link" href="/">Home</a>
           </li>
           <li class="nav-item active">
-            <a class="nav-link" href="/config">Config <span class="sr-only">(current)</span></a>
+            <a class="nav-link" href="/config">Config</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/stats">Stats</a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" href="/volume">Volumes</a>
+            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
         <span class="navbar-text">Version %[1]v</span>
@@ -460,30 +461,174 @@ const inodeTemplate string = `<!doctype html>
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
-          <li class="breadcrumb-item active" aria-current="page">Volumes</li>
+          <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
+          <li class="breadcrumb-item"><a href="/volume/%[2]v">%[2]v</a></li>
+          <li class="breadcrumb-item"><a href="/volume/%[2]v#InodeTable-table">inode</a></li>
+          <li class="breadcrumb-item active" aria-current="page">%[3]v</li>
         </ol>
       </nav>
 
-      <h1 class="display-4">Volumes</h1>
-      <table class="table table-sm table-striped table-hover">
-        <thead>
-          <tr>
-            <th scope="col">Volume Name</th>
-            <th class="fit">&nbsp;</th>
-            <th class="fit">&nbsp;</th>
-            <th class="fit">&nbsp;</th>
-            <th class="fit">&nbsp;</th>
-            <th class="fit">&nbsp;</th>
-          </tr>
-        </thead>
-        <tbody>
-        <tr>
-        <tr>
-      </table>
+      <h1 class="display-4">
+        Inode
+        <small class="text-muted">1</small>
+      </h1>
+
+      <h2><small class="text-muted">Volume testvol</small></h2>
+
+      <div id="table-container">
+        <br>
+
+        <table class="table table-sm table-striped table-hover">
+          <tbody id="key-pair-data"></tbody>
+        </table>
+      </div>
+      <!-- Back to top button -->
+      <button type="button" class="btn btn-primary btn-floating btn-lg" id="btn-back-to-top">
+        <span class="oi oi-chevron-top"></span>
+      </button>
     </div>
     <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
+    <script type="text/javascript">
+      const json_data = %[4]v;
+
+      /*********************************************************************************
+      * WARNING! A lot of the code in this page is duplicated in the inode details     *
+      * page, so if you're changing anything here, you might as well want to change    *
+      * it in the other page.                                                          *
+      *********************************************************************************/
+
+      const getListOfComplexKeys = function(data) {
+        let keys = [];
+        for (let key in data) {
+          if (
+            Array.isArray(data[key]) &&                                         // An array
+            data[key].length !== 0 &&                                           // not empty
+            Object.prototype.toString.call(data[key][0]) === "[object Object]"  // with "[object Object]" elements (ie: dictionaries, because we're getting this from JSON)
+          ) {
+            keys.push(key);
+          }
+        }
+        return keys;
+      };
+
+      const getSimpleKeyValuePairsTableMarkupWithData = function(data, complex_keys) {
+        let table_markup = "";
+        for (let key in data) {
+          if (complex_keys.includes(key)) {
+            table_markup += "          <tr>\n";
+            table_markup += "            <th scope=\"row\">" + key + "</th>\n";
+            table_markup += "            <td class=\"text-right\"><a href='#" + key + "-table'>Go to " + key + "</a></td>\n";
+            table_markup += "          </tr>\n";
+          } else if (Array.isArray(data[key]) && data[key].length === 0) {
+            table_markup += "          <tr>\n";
+            table_markup += "            <th scope=\"row\">" + key + "</th>\n";
+            table_markup += "            <td class=\"text-right\">[ empty ]</td>\n";
+            table_markup += "          </tr>\n";
+          } else if (Array.isArray(data[key]) && data[key].length !== 0) {
+            let first = true;
+            data[key].forEach((item) => {
+              table_markup += "          <tr>\n";
+              if (first) {
+                table_markup += "            <th scope=\"row\">" + key + "</th>\n";
+                first = false;
+              } else {
+                table_markup += "            <th scope=\"row\"></th>\n";
+              }
+              table_markup += "            <td class=\"text-right\">" + item + "</td>\n";
+              table_markup += "          </tr>\n";
+            });
+          } else {
+            table_markup += "          <tr>\n";
+            table_markup += "            <th scope=\"row\">" + key + "</th>\n";
+            table_markup += "            <td class=\"text-right\">" + data[key] + "</td>\n";
+            table_markup += "          </tr>\n";
+          }
+        }
+        return table_markup;
+      };
+
+      const getColsClass = function(keys) {
+        const keys_length = keys.length;
+        if (keys_length === 2) {
+          return " class=\"w-50\"";
+        } else if (keys_length === 3) {
+          return " class=\"w-25\"";
+        } else {
+          return "";
+        }
+      };
+
+      const getOnclickForInode = function(volume_name, inode_number) {
+        return " onclick=\"window.location.assign('./" + inode_number + "');\"";
+      };
+
+      const getComplexDataTableMarkup = function(data, key) {
+        let table_markup = "";
+        const data_for_key = data[key];
+        const object_keys = Object.keys(data_for_key[0]);
+        let cols_class = getColsClass(object_keys);
+        table_markup += "      <br>";
+        table_markup += "      <div class=\"d-flex justify-content-between\">";
+        table_markup += "        <h3>" + key + "</h3>";
+        table_markup += "      </div>";
+        table_markup += "      <table class=\"table table-sm table-striped table-hover\" id=\"" + key + "-table\">";
+        table_markup += "        <thead>";
+        table_markup += "          <tr>";
+        object_keys.forEach ((object_key) => {
+          table_markup += "            <th scope=\"col\"" + cols_class + ">" + object_key + "</th>";
+        });
+        table_markup += "          </tr>";
+        table_markup += "        </thead>";
+        table_markup += "        <tbody>";
+        data_for_key.forEach((element) => {
+          if (key === "LinkTable") {
+            table_markup += "          <tr class=\"clickable\"" + getOnclickForInode(data["Name"], element["ParentDirInodeNumber"]) + ">";
+          } else if (data["InodeType"] === "Dir" && key === "Payload") {
+            table_markup += "          <tr class=\"clickable\"" + getOnclickForInode(data["Name"], element["InodeNumber"]) + ">";
+          } else {
+            table_markup += "          <tr>";
+          }
+          object_keys.forEach ((object_key) => {
+            table_markup += "            <td><pre class=\"no-margin\">" + element[object_key] + "</pre></td>";
+          });
+          table_markup += "          </tr>";
+        });
+        table_markup += "        </tbody>";
+        table_markup += "      </table>";
+        return table_markup;
+      }
+
+      const addTablesForComplexData = function(data, complex_keys) {
+        let complex_tables_markup = "";
+        complex_keys.forEach((key) => {
+          complex_tables_markup += getComplexDataTableMarkup(json_data, key);
+        });
+        document.getElementById("table-container").innerHTML = document.getElementById("table-container").innerHTML + complex_tables_markup;
+      }
+
+      const backToTop = function () {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+      };
+
+      // Create / fill tables
+      const complex_keys = getListOfComplexKeys(json_data);
+      document.getElementById("key-pair-data").innerHTML = getSimpleKeyValuePairsTableMarkupWithData(json_data, complex_keys);
+      addTablesForComplexData(json_data, complex_keys);
+
+      // Fancy back to top behavior
+      let back_to_top_button = document.getElementById("btn-back-to-top");
+      window.onscroll = function () {
+        if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
+          back_to_top_button.style.display = "block";
+        } else {
+          back_to_top_button.style.display = "none";
+        }
+      };
+      back_to_top_button.addEventListener("click", backToTop);
+    </script>
   </body>
 </html>
 `
