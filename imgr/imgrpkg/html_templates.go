@@ -151,9 +151,9 @@ const configTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(volumeListTopTemplate, proxyfsVersion)
-//                                                %[1]v
-const volumeListTopTemplate string = `<!doctype html>
+// To use: fmt.Sprintf(volumeListTemplate, proxyfsVersion, volumeListJSONString)
+//                                             %[1]v              %[2]v
+const volumeListTemplate string = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -172,14 +172,14 @@ const volumeListTopTemplate string = `<!doctype html>
           <li class="nav-item">
             <a class="nav-link" href="/">Home</a>
           </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/config">Config</a>
+          <li class="nav-item active">
+            <a class="nav-link" href="/config">Config <span class="sr-only">(current)</span></a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/stats">Stats</a>
           </li>
-          <li class="nav-item active">
-            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
+          <li class="nav-item">
+            <a class="nav-link" href="/volume">Volumes</a>
           </li>
         </ul>
         <span class="navbar-text">Version %[1]v</span>
@@ -206,21 +206,8 @@ const volumeListTopTemplate string = `<!doctype html>
           </tr>
         </thead>
         <tbody>
-`
-
-// To use: fmt.Sprintf(volumeListPerVolumeTemplate, volumeName)
-//                                                    %[1]v
-const volumeListPerVolumeTemplate string = `          <tr>
-            <td>%[1]v</td>
-            <td class="fit"><a href="/volume/%[1]v/snapshot" class="btn btn-sm btn-primary">SnapShots</a></td>
-            <td class="fit"><a href="/volume/%[1]v/fsck-job" class="btn btn-sm btn-primary">FSCK jobs</a></td>
-            <td class="fit"><a href="/volume/%[1]v/scrub-job" class="btn btn-sm btn-primary">SCRUB jobs</a></td>
-            <td class="fit"><a href="/volume/%[1]v/layout-report" class="btn btn-sm btn-primary">Layout Report</a></td>
-            <td class="fit"><a href="/volume/%[1]v/extent-map" class="btn btn-sm btn-primary">Extent Map</a></td>
-          </tr>
-`
-
-const volumeListBottom string = `        </tbody>
+        <tr>
+        <tr>
       </table>
     </div>
     <script src="/jquery.min.js"></script>
@@ -323,7 +310,7 @@ const volumeTemplate string = `<!doctype html>
           if (complex_keys.includes(key)) {
             table_markup += "          <tr>\n";
             table_markup += "            <th scope=\"row\">" + key + "</th>\n";
-            table_markup += "            <td class=\"text-right\"><a href='#" + key + "-table'>Go to " + key + " table</a></td>\n";
+            table_markup += "            <td class=\"text-right\"><a href='#" + key + "-table'>Go to " + key + "</a></td>\n";
             table_markup += "          </tr>\n";
           } else if (Array.isArray(data[key]) && data[key].length === 0) {
             table_markup += "          <tr>\n";
@@ -431,6 +418,72 @@ const volumeTemplate string = `<!doctype html>
       };
       back_to_top_button.addEventListener("click", backToTop);
     </script>
+  </body>
+</html>
+`
+
+// To use: fmt.Sprintf(inodeTemplate, proxyfsVersion, volumeName, inodeNumber, inodeJSONString)
+//                                          %[1]v       %[2]v        %[3]v          %[4]v
+const inodeTemplate string = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/styles.css">
+    <title>Volumes</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNavDropdown">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Home</a>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/config">Config <span class="sr-only">(current)</span></a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/stats">Stats</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/volume">Volumes</a>
+          </li>
+        </ul>
+        <span class="navbar-text">Version %[1]v</span>
+      </div>
+    </nav>
+    <div class="container">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/">Home</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Volumes</li>
+        </ol>
+      </nav>
+
+      <h1 class="display-4">Volumes</h1>
+      <table class="table table-sm table-striped table-hover">
+        <thead>
+          <tr>
+            <th scope="col">Volume Name</th>
+            <th class="fit">&nbsp;</th>
+            <th class="fit">&nbsp;</th>
+            <th class="fit">&nbsp;</th>
+            <th class="fit">&nbsp;</th>
+            <th class="fit">&nbsp;</th>
+          </tr>
+        </thead>
+        <tbody>
+        <tr>
+        <tr>
+      </table>
+    </div>
+    <script src="/jquery.min.js"></script>
+    <script src="/popper.min.js"></script>
+    <script src="/bootstrap.min.js"></script>
   </body>
 </html>
 `
