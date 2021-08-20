@@ -190,17 +190,21 @@ const volumeListTemplate string = `<!doctype html>
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
-          <li class="breadcrumb-item active" aria-current="page""><a href="/volume">Volumes</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Volumes</li>
         </ol>
       </nav>
 
-      <div id="table-container">
-        <br>
-
-        <table class="table table-sm table-striped table-hover">
-          <tbody id="key-pair-data"></tbody>
-        </table>
-      </div>
+      <h1 class="display-4">Volumes</h1>
+      <table class="table table-sm table-striped table-hover">
+        <thead>
+          <tr>
+            <th scope="col">Volume Name</th>
+            <th class="fit">&nbsp;</th>
+          </tr>
+        </thead>
+        <tbody id="volumes-data"></tbody>
+        </tbody>
+      </table>
       <!-- Back to top button -->
       <button type="button" class="btn btn-primary btn-floating btn-lg" id="btn-back-to-top">
         <span class="oi oi-chevron-top"></span>
@@ -212,14 +216,14 @@ const volumeListTemplate string = `<!doctype html>
     <script type="text/javascript">
       const json_data = %[2]v;
 
-      const getSimpleKeyValuePairsTableMarkupWithData = function(data) {
+      const getVolumesTableMarkupWithData = function(data) {
         let table_markup = "";
-        for (let key in data) {
+        data.forEach((volume) => {
           table_markup += "          <tr>\n";
-          table_markup += "            <th scope=\"row\">" + data[key].Name + "</th>\n";
-          table_markup += "            <td class=\"fit\"><a href=\"/volume/" + data[key].Name + "\" class=\"btn btn-sm btn-primary\">Details</a></td>\n";
-          table_markup += "          </tr>\n";
-        }
+          table_markup += "            <td>" + volume["Name"] + "</td>\n";
+          table_markup += "            <td class=\"fit\"><a href=\"/volume/" + volume["Name"] + "\" class=\"btn btn-sm btn-primary\">Details</a></td>\n";
+          table_markup += "          </tr>";
+        });
         return table_markup;
       };
 
@@ -228,7 +232,8 @@ const volumeListTemplate string = `<!doctype html>
         document.documentElement.scrollTop = 0;
       };
 
-      document.getElementById("key-pair-data").innerHTML = getSimpleKeyValuePairsTableMarkupWithData(json_data);
+      // Fill table
+      document.getElementById("volumes-data").innerHTML = getVolumesTableMarkupWithData(json_data);
 
       // Fancy back to top behavior
       let back_to_top_button = document.getElementById("btn-back-to-top");
