@@ -527,7 +527,7 @@ const inodeTemplate string = `<!doctype html>
       const json_data = %[4]v;
 
       /*********************************************************************************
-      * WARNING! A lot of the code in this page is duplicated in the inode details     *
+      * WARNING! A lot of the code in this page is duplicated in the volume details    *
       * page, so if you're changing anything here, you might as well want to change    *
       * it in the other page.                                                          *
       *********************************************************************************/
