@@ -43,18 +43,19 @@
 #
 # To run the resultant image:
 #
-#   docker run                                            \
-#          [-d|--detach]                                  \
-#          [-it]                                          \
-#          [--rm]                                         \
-#          [--privileged]                                 \
-#          [--mount src="$(pwd)",target="/src",type=bind] \
+#   docker run                                                        \
+#          [-d|--detach]                                              \
+#          [-it]                                                      \
+#          [--rm]                                                     \
+#          [--privileged]                                             \
+#          [--mount src="$(pwd)",target="/src",type=bind]             \
+#          [--env DISPLAY=<hostOrIP>:<displayNumber>[.<screenNumber]] \
 #          <image id>|<repository>[:<tag>]
 #
 #   Notes:
-#     -d|--detach:  tells Docker to detach from running container 
-#     -it:          tells Docker to run container interactively
-#     --rm:         tells Docker to destroy container upon exit
+#     -d|--detach:   tells Docker to detach from running container 
+#     -it:           tells Docker to run container interactively
+#     --rm:          tells Docker to destroy container upon exit
 #     --privileged:
 #       1) tells Docker to, among other things, grant access to /dev/fuse
 #       2) only useful for --target dev and --target iclient
@@ -64,6 +65,7 @@
 #       3) only useful for --target dev
 #       4) /src will be a local copy instead for --target build
 #       5) /src doesn't exist for --target build
+#     --env DISPLAY: tells Docker to set ENV DISPLAY for X apps (e.g. wireshark)
 
 FROM alpine:3.14.0 as base
 ARG GolangVersion=1.17
@@ -71,18 +73,22 @@ ARG MakeTarget
 RUN apk add --no-cache libc6-compat
 
 FROM base as dev
-RUN apk add --no-cache bind-tools \
-                       curl       \
-                       fuse       \
-                       gcc        \
-                       git        \
-                       jq         \
-                       libc-dev   \
-                       make       \
-                       tar
+RUN apk add --no-cache bind-tools    \
+                       curl          \
+                       fuse          \
+                       gcc           \
+                       git           \
+                       jq            \
+                       libc-dev      \
+                       make          \
+                       tar           \
+                       terminus-font \
+                       wireshark
 RUN curl -sSL https://github.com/coreos/etcd/releases/download/v3.5.0/etcd-v3.5.0-linux-amd64.tar.gz    \
     | tar -vxz -C /usr/local/bin --strip=1 etcd-v3.5.0-linux-amd64/etcd etcd-v3.5.0-linux-amd64/etcdctl \
     && chown root:root /usr/local/bin/etcd /usr/local/bin/etcdctl
+ENV LIBGL_ALWAYS_INDIRECT 1
+ENV XDG_RUNTIME_DIR /tmp/runtime-root
 ENV GolangBasename "go${GolangVersion}.linux-amd64.tar.gz"
 ENV GolangURL      "https://golang.org/dl/${GolangBasename}"
 WORKDIR /tmp
