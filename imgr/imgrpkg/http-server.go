@@ -721,6 +721,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		volumeListGET                      []*volumeListGETEntryStruct
 		volumeListGETIndex                 int
 		volumeListGETAsJSON                []byte
+		volumeListGETAsHTML                []byte
 		volumeListGETLen                   int
 		volumeName                         string
 	)
@@ -777,13 +778,28 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			logFatal(err)
 		}
 
-		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeListGETAsJSON)))
-		responseWriter.Header().Set("Content-Type", "application/json")
-		responseWriter.WriteHeader(http.StatusOK)
+		acceptHeader = request.Header.Get("Accept")
 
-		_, err = responseWriter.Write(volumeListGETAsJSON)
-		if nil != err {
-			logWarnf("responseWriter.Write(volumeListGETAsJSON) failed: %v", err)
+		if strings.Contains(acceptHeader, "text/html") {
+			volumeListGETAsHTML = []byte(fmt.Sprintf(volumeListTemplate, version.ProxyFSVersion, string(volumeListGETAsJSON)))
+
+			responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeListGETAsHTML)))
+			responseWriter.Header().Set("Content-Type", "text/html")
+			responseWriter.WriteHeader(http.StatusOK)
+
+			_, err = responseWriter.Write(volumeListGETAsHTML)
+			if nil != err {
+				logWarnf("responseWriter.Write(volumeListGETAsHTML) failed: %v", err)
+			}
+		} else {
+			responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeListGETAsJSON)))
+			responseWriter.Header().Set("Content-Type", "application/json")
+			responseWriter.WriteHeader(http.StatusOK)
+
+			_, err = responseWriter.Write(volumeListGETAsJSON)
+			if nil != err {
+				logWarnf("responseWriter.Write(volumeListGETAsJSON) failed: %v", err)
+			}
 		}
 	case 3:
 		// Form: /volume/<VolumeName>

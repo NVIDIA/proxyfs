@@ -160,6 +160,7 @@ const volumeListTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
+    <link href="/open-iconic/font/css/open-iconic-bootstrap.min.css" rel="stylesheet">
     <title>Volumes</title>
   </head>
   <body>
@@ -172,13 +173,13 @@ const volumeListTemplate string = `<!doctype html>
           <li class="nav-item">
             <a class="nav-link" href="/">Home</a>
           </li>
-          <li class="nav-item active">
+          <li class="nav-item">
             <a class="nav-link" href="/config">Config</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/stats">Stats</a>
           </li>
-          <li class="nav-item">
+          <li class="nav-item active">
             <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
@@ -189,30 +190,57 @@ const volumeListTemplate string = `<!doctype html>
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
-          <li class="breadcrumb-item active" aria-current="page">Volumes</li>
+          <li class="breadcrumb-item active" aria-current="page""><a href="/volume">Volumes</a></li>
         </ol>
       </nav>
 
-      <h1 class="display-4">Volumes</h1>
-      <table class="table table-sm table-striped table-hover">
-        <thead>
-          <tr>
-            <th scope="col">Volume Name</th>
-            <th class="fit">&nbsp;</th>
-            <th class="fit">&nbsp;</th>
-            <th class="fit">&nbsp;</th>
-            <th class="fit">&nbsp;</th>
-            <th class="fit">&nbsp;</th>
-          </tr>
-        </thead>
-        <tbody>
-        <tr>
-        <tr>
-      </table>
+      <div id="table-container">
+        <br>
+
+        <table class="table table-sm table-striped table-hover">
+          <tbody id="key-pair-data"></tbody>
+        </table>
+      </div>
+      <!-- Back to top button -->
+      <button type="button" class="btn btn-primary btn-floating btn-lg" id="btn-back-to-top">
+        <span class="oi oi-chevron-top"></span>
+      </button>
     </div>
     <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
+    <script type="text/javascript">
+      const json_data = %[2]v;
+
+      const getSimpleKeyValuePairsTableMarkupWithData = function(data) {
+        let table_markup = "";
+        for (let key in data) {
+          table_markup += "          <tr>\n";
+          table_markup += "            <th scope=\"row\">" + data[key].Name + "</th>\n";
+          table_markup += "            <td class=\"fit\"><a href=\"/volume/" + data[key].Name + "\" class=\"btn btn-sm btn-primary\">Details</a></td>\n";
+          table_markup += "          </tr>\n";
+        }
+        return table_markup;
+      };
+
+      const backToTop = function () {
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+      };
+
+      document.getElementById("key-pair-data").innerHTML = getSimpleKeyValuePairsTableMarkupWithData(json_data);
+
+      // Fancy back to top behavior
+      let back_to_top_button = document.getElementById("btn-back-to-top");
+      window.onscroll = function () {
+        if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
+          back_to_top_button.style.display = "block";
+        } else {
+          back_to_top_button.style.display = "none";
+        }
+      };
+      back_to_top_button.addEventListener("click", backToTop);
+    </script>
   </body>
 </html>
 `
@@ -239,13 +267,13 @@ const volumeTemplate string = `<!doctype html>
           <li class="nav-item">
             <a class="nav-link" href="/">Home</a>
           </li>
-          <li class="nav-item active">
+          <li class="nav-item">
             <a class="nav-link" href="/config">Config</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/stats">Stats</a>
           </li>
-          <li class="nav-item">
+          <li class="nav-item active">
             <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
@@ -444,13 +472,13 @@ const inodeTemplate string = `<!doctype html>
           <li class="nav-item">
             <a class="nav-link" href="/">Home</a>
           </li>
-          <li class="nav-item active">
+          <li class="nav-item">
             <a class="nav-link" href="/config">Config</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/stats">Stats</a>
           </li>
-          <li class="nav-item">
+          <li class="nav-item active">
             <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
