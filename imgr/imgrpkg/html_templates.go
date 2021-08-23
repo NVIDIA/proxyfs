@@ -213,6 +213,7 @@ const volumeListTemplate string = `<!doctype html>
     <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
+    <script src="/utils.js"></script>
     <script type="text/javascript">
       const json_data = %[2]v;
 
@@ -227,24 +228,11 @@ const volumeListTemplate string = `<!doctype html>
         return table_markup;
       };
 
-      const backToTop = function () {
-        document.body.scrollTop = 0;
-        document.documentElement.scrollTop = 0;
-      };
-
       // Fill table
       document.getElementById("volumes-data").innerHTML = getVolumesTableMarkupWithData(json_data);
 
       // Fancy back to top behavior
-      let back_to_top_button = document.getElementById("btn-back-to-top");
-      window.onscroll = function () {
-        if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
-          back_to_top_button.style.display = "block";
-        } else {
-          back_to_top_button.style.display = "none";
-        }
-      };
-      back_to_top_button.addEventListener("click", backToTop);
+      addBackToTopBehavior();
     </script>
   </body>
 </html>
@@ -314,6 +302,7 @@ const volumeTemplate string = `<!doctype html>
     <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
+    <script src="/utils.js"></script>
     <script type="text/javascript">
       const json_data = %[3]v;
 
@@ -430,26 +419,13 @@ const volumeTemplate string = `<!doctype html>
         document.getElementById("table-container").innerHTML = document.getElementById("table-container").innerHTML + complex_tables_markup;
       }
 
-      const backToTop = function () {
-        document.body.scrollTop = 0;
-        document.documentElement.scrollTop = 0;
-      };
-
       // Create / fill tables
       const complex_keys = getListOfComplexKeys(json_data);
       document.getElementById("key-pair-data").innerHTML = getSimpleKeyValuePairsTableMarkupWithData(json_data, complex_keys);
       addTablesForComplexData(json_data, complex_keys);
 
       // Fancy back to top behavior
-      let back_to_top_button = document.getElementById("btn-back-to-top");
-      window.onscroll = function () {
-        if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
-          back_to_top_button.style.display = "block";
-        } else {
-          back_to_top_button.style.display = "none";
-        }
-      };
-      back_to_top_button.addEventListener("click", backToTop);
+      addBackToTopBehavior();
     </script>
   </body>
 </html>
@@ -523,6 +499,7 @@ const inodeTemplate string = `<!doctype html>
     <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
+    <script src="/utils.js"></script>
     <script type="text/javascript">
       const json_data = %[4]v;
 
@@ -641,26 +618,13 @@ const inodeTemplate string = `<!doctype html>
         document.getElementById("table-container").innerHTML = document.getElementById("table-container").innerHTML + complex_tables_markup;
       }
 
-      const backToTop = function () {
-        document.body.scrollTop = 0;
-        document.documentElement.scrollTop = 0;
-      };
-
       // Create / fill tables
       const complex_keys = getListOfComplexKeys(json_data);
       document.getElementById("key-pair-data").innerHTML = getSimpleKeyValuePairsTableMarkupWithData(json_data, complex_keys);
       addTablesForComplexData(json_data, complex_keys);
 
       // Fancy back to top behavior
-      let back_to_top_button = document.getElementById("btn-back-to-top");
-      window.onscroll = function () {
-        if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
-          back_to_top_button.style.display = "block";
-        } else {
-          back_to_top_button.style.display = "none";
-        }
-      };
-      back_to_top_button.addEventListener("click", backToTop);
+      addBackToTopBehavior();
     </script>
   </body>
 </html>

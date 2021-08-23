@@ -218,6 +218,10 @@ func serveHTTPGet(responseWriter http.ResponseWriter, request *http.Request, req
 		responseWriter.Header().Set("Content-Type", stylesDotCSSContentType)
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write([]byte(stylesDotCSSContent))
+	case "/utils.js" == requestPath:
+		responseWriter.Header().Set("Content-Type", utilsDotJSContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write([]byte(utilsDotJSContent))
 	case "/version" == requestPath:
 		serveHTTPGetOfVersion(responseWriter, request)
 	case strings.HasPrefix(requestPath, "/volume"):

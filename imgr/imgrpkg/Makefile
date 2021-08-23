@@ -16,6 +16,7 @@ generatedfiles := \
 	open_iconic_dot_ttf_.go \
 	open_iconic_dot_woff_.go \
 	popper_dot_min_dot_js_.go \
-	styles_dot_css_.go
+	styles_dot_css_.go \
+	utils_dot_js_.go
 
 include ../../GoMakefile

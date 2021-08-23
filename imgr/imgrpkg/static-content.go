@@ -5,6 +5,8 @@ package imgrpkg
 
 //go:generate ../../make-static-content/make-static-content imgrpkg stylesDotCSS              text/css                      s static-content/styles.css                                         styles_dot_css_.go
 
+//go:generate ../../make-static-content/make-static-content imgrpkg utilsDotJS                application/javascript        s static-content/utils.js                                           utils_dot_js_.go
+
 //go:generate ../../make-static-content/make-static-content imgrpkg jsontreeDotJS             application/javascript        s static-content/jsontree.js                                        jsontree_dot_js_.go
 
 //go:generate ../../make-static-content/make-static-content imgrpkg bootstrapDotCSS           text/css                      s static-content/bootstrap.min.css                                  bootstrap_dot_min_dot_css_.go
