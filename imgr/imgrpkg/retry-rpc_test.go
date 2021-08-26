@@ -709,13 +709,13 @@ func TestRetryRPC(t *testing.T) {
 
 	putObjectDataObjectNumber, putObjectDataObjectOffset, err = testFileInode.putObjectData([]byte("ABC"), true)
 	if nil != err {
-		t.Fatalf("testFileInode.putObjectData([]byte(\"A\"), true) failed: %v", err)
+		t.Fatalf("testFileInode.putObjectData([]byte(\"ABC\"), true) failed: %v", err)
 	}
 	if putObjectDataObjectNumber != fileInodeObjectA {
-		t.Fatalf("testFileInode.putObjectData([]byte(\"A\"), true) returned unexpected putObjectDataObjectNumber (%v) - expected fileInodeObjectA (%v)", putObjectDataObjectNumber, fileInodeObjectA)
+		t.Fatalf("testFileInode.putObjectData([]byte(\"ABC\"), true) returned unexpected putObjectDataObjectNumber (%v) - expected fileInodeObjectA (%v)", putObjectDataObjectNumber, fileInodeObjectA)
 	}
 	if putObjectDataObjectOffset != 0 {
-		t.Fatalf("testFileInode.putObjectData([]byte(\"A\"), true) returned unexpected putObjectDataObjectOffset (%v) - expected 0", putObjectDataObjectOffset)
+		t.Fatalf("testFileInode.putObjectData([]byte(\"ABC\"), true) returned unexpected putObjectDataObjectOffset (%v) - expected 0", putObjectDataObjectOffset)
 	}
 
 	ok, err = testFileInode.extentMap.Put(uint64(0), &ilayout.ExtentMapEntryValueV1Struct{Length: 3, ObjectNumber: putObjectDataObjectNumber, ObjectOffset: putObjectDataObjectOffset})
@@ -731,13 +731,21 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("testFileInode.extentMap.Flush() failed: %v", err)
 	}
 	if testFileInode.inodeHeadV1.PayloadObjectNumber != fileInodeObjectA {
-		t.Fatalf("testFileInode.extentMap.Put(0,) returned unexpected PayloadObjectNumber: %v", testFileInode.inodeHeadV1.PayloadObjectNumber)
+		t.Fatalf("testFileInode.extentMap.Flush() returned unexpected PayloadObjectNumber: %v", testFileInode.inodeHeadV1.PayloadObjectNumber)
 	}
 	if testFileInode.inodeHeadV1.PayloadObjectOffset != 3 {
-		t.Fatalf("testFileInode.extentMap.Put(0,) returned unexpected PayloadObjectOffset: %v", testFileInode.inodeHeadV1.PayloadObjectOffset)
+		t.Fatalf("testFileInode.extentMap.Flush() returned unexpected PayloadObjectOffset: %v", testFileInode.inodeHeadV1.PayloadObjectOffset)
 	}
 	if testFileInode.inodeHeadV1.PayloadObjectLength != 58 {
-		t.Fatalf("testFileInode.extentMap.Put(0,) returned unexpected PayloadObjectOffset: %v", testFileInode.inodeHeadV1.PayloadObjectOffset)
+		t.Fatalf("testFileInode.extentMap.Flush() returned unexpected PayloadObjectLength: %v", testFileInode.inodeHeadV1.PayloadObjectLength)
+	}
+
+	err = testFileInode.extentMap.Prune()
+	if nil != err {
+		t.Fatalf("testFileInode.extentMap.Prune() failed: %v", err)
+	}
+	if len(testFileInode.dereferencedObjectNumberArray) != 0 {
+		t.Fatalf("len(testFileInode.dereferencedObjectNumberArray) had unexpected length: %v", len(testFileInode.dereferencedObjectNumberArray))
 	}
 
 	testFileInode.externalizeInodeHeadV1Layout()
@@ -767,7 +775,7 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("testFileInode.putObjectData(inodeHeadV1Buf, false) returned unexpected putObjectDataObjectNumber (%v) - expected fileInodeObjectA (%v)", putObjectDataObjectNumber, fileInodeObjectA)
 	}
 	if putObjectDataObjectOffset != 3+58 {
-		t.Fatalf("testFileInode.putObjectData(inodeHeadV1Buf, false) returned unexpected putObjectDataObjectOffset (%v) - expected 0", putObjectDataObjectOffset)
+		t.Fatalf("testFileInode.putObjectData(inodeHeadV1Buf, false) returned unexpected putObjectDataObjectOffset (%v) - expected %v", putObjectDataObjectOffset, 3+58)
 	}
 
 	err = testFileInode.closeObject()
@@ -812,14 +820,7 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"PutInodeTableEntries(,{ilayout.RootDirInodeNumber,,})\",,) failed: %v", err)
 	}
 
-	// TODO: Remove this early exit skipping of following TODOs
-
-	if nil == err {
-		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
-		return
-	}
-
-	// TODO: Append some data (to new Object) for FileInode... and new stat
+	// Append some data (to new Object) for FileInode... and new stat
 
 	if 1 > fetchNonceRangeResponse.NumNoncesFetched {
 		t.Fatalf("fetchNonceRangeResponse contained insufficient NumNoncesFetched")
@@ -830,9 +831,118 @@ func TestRetryRPC(t *testing.T) {
 	fetchNonceRangeResponse.NextNonce++
 	fetchNonceRangeResponse.NumNoncesFetched--
 
-	t.Logf("fileInodeObjectB: %016X", fileInodeObjectB)
+	err = testFileInode.openObject(fileInodeObjectB)
+	if nil != err {
+		t.Fatalf("testFileInode.openObject(fileInodeObjectB) failed: %v", err)
+	}
 
-	// TODO: Perform a PutInodeTableEntries() for FileInode
+	putObjectDataObjectNumber, putObjectDataObjectOffset, err = testFileInode.putObjectData([]byte("DEFG"), true)
+	if nil != err {
+		t.Fatalf("testFileInode.putObjectData([]byte(\"DEFG\"), true) failed: %v", err)
+	}
+	if putObjectDataObjectNumber != fileInodeObjectB {
+		t.Fatalf("testFileInode.putObjectData([]byte(\"DEFG\"), true) returned unexpected putObjectDataObjectNumber (%v) - expected fileInodeObjectB (%v)", putObjectDataObjectNumber, fileInodeObjectB)
+	}
+	if putObjectDataObjectOffset != 0 {
+		t.Fatalf("testFileInode.putObjectData([]byte(\"DEFG\"), true) returned unexpected putObjectDataObjectOffset (%v) - expected 0", putObjectDataObjectOffset)
+	}
+
+	ok, err = testFileInode.extentMap.Put(uint64(3), &ilayout.ExtentMapEntryValueV1Struct{Length: 4, ObjectNumber: putObjectDataObjectNumber, ObjectOffset: putObjectDataObjectOffset})
+	if nil != err {
+		t.Fatalf("testFileInode.extentMap.Put(3,) failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("testFileInode.extentMap.Put(3,) returned !ok")
+	}
+
+	testFileInode.inodeHeadV1.PayloadObjectNumber, testFileInode.inodeHeadV1.PayloadObjectOffset, testFileInode.inodeHeadV1.PayloadObjectLength, err = testFileInode.extentMap.Flush(false)
+	if nil != err {
+		t.Fatalf("testFileInode.extentMap.Flush() failed: %v", err)
+	}
+	if testFileInode.inodeHeadV1.PayloadObjectNumber != fileInodeObjectB {
+		t.Fatalf("testFileInode.extentMap.Put(0,) returned unexpected PayloadObjectNumber: %v", testFileInode.inodeHeadV1.PayloadObjectNumber)
+	}
+	if testFileInode.inodeHeadV1.PayloadObjectOffset != 4 {
+		t.Fatalf("testFileInode.extentMap.Put(0,) returned unexpected PayloadObjectOffset: %v", testFileInode.inodeHeadV1.PayloadObjectOffset)
+	}
+	if testFileInode.inodeHeadV1.PayloadObjectLength != 90 {
+		t.Fatalf("testFileInode.extentMap.Put(0,) returned unexpected PayloadObjectLength: %v", testFileInode.inodeHeadV1.PayloadObjectLength)
+	}
+
+	err = testFileInode.extentMap.Prune()
+	if nil != err {
+		t.Fatalf("testFileInode.extentMap.Prune() failed: %v", err)
+	}
+	if len(testFileInode.dereferencedObjectNumberArray) != 0 {
+		t.Fatalf("len(testFileInode.dereferencedObjectNumberArray) had unexpected length: %v", len(testFileInode.dereferencedObjectNumberArray))
+	}
+
+	testFileInode.externalizeInodeHeadV1Layout()
+	if len(testFileInode.inodeHeadV1.Layout) != 2 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), len(testFileInode.inodeHeadV1.Layout) was unexpected: %v", len(testFileInode.inodeHeadV1.Layout))
+	}
+	if testFileInode.inodeHeadV1.Layout[0].ObjectNumber != fileInodeObjectA {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectNumber)
+	}
+	if testFileInode.inodeHeadV1.Layout[0].ObjectSize != 3+58 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectSize)
+	}
+	if testFileInode.inodeHeadV1.Layout[0].BytesReferenced != 3 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].BytesReferenced)
+	}
+	if testFileInode.inodeHeadV1.Layout[1].ObjectNumber != fileInodeObjectB {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectNumber)
+	}
+	if testFileInode.inodeHeadV1.Layout[1].ObjectSize != 4+90 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectSize)
+	}
+	if testFileInode.inodeHeadV1.Layout[1].BytesReferenced != 4+90 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].BytesReferenced)
+	}
+
+	inodeHeadV1Buf, err = testFileInode.inodeHeadV1.MarshalInodeHeadV1()
+	if nil != err {
+		t.Fatalf("testFileInode.inodeHeadV1.MarshalInodeHeadV1() failed: %v", err)
+	}
+
+	putObjectDataObjectNumber, putObjectDataObjectOffset, err = testFileInode.putObjectData(inodeHeadV1Buf, false)
+	if nil != err {
+		t.Fatalf("testFileInode.putObjectData(inodeHeadV1Buf, false) failed: %v", err)
+	}
+	if putObjectDataObjectNumber != fileInodeObjectB {
+		t.Fatalf("testFileInode.putObjectData(inodeHeadV1Buf, false) returned unexpected putObjectDataObjectNumber (%v) - expected fileInodeObjectA (%v)", putObjectDataObjectNumber, fileInodeObjectB)
+	}
+	if putObjectDataObjectOffset != 4+90 {
+		t.Fatalf("testFileInode.putObjectData(inodeHeadV1Buf, false) returned unexpected putObjectDataObjectOffset (%v) - expected %v", putObjectDataObjectOffset, 4+90)
+	}
+
+	err = testFileInode.closeObject()
+	if nil != err {
+		t.Fatalf("testFileInode.closeObject() failed: %v", err)
+	}
+
+	// Perform a PutInodeTableEntries() for FileInode
+
+	putInodeTableEntriesRequest = &PutInodeTableEntriesRequestStruct{
+		MountID: mountResponse.MountID,
+		UpdatedInodeTableEntryArray: []PutInodeTableEntryStruct{
+			{
+				InodeNumber:           fileInodeNumber,
+				InodeHeadObjectNumber: fileInodeObjectB,
+				InodeHeadLength:       uint64(len(inodeHeadV1Buf)),
+			},
+		},
+		SuperBlockInodeObjectCountAdjustment:     testFileInode.superBlockInodeObjectCountAdjustment,
+		SuperBlockInodeObjectSizeAdjustment:      testFileInode.superBlockInodeObjectSizeAdjustment,
+		SuperBlockInodeBytesReferencedAdjustment: testFileInode.superBlockInodeBytesReferencedAdjustment,
+		DereferencedObjectNumberArray:            testFileInode.dereferencedObjectNumberArray,
+	}
+	putInodeTableEntriesResponse = &PutInodeTableEntriesResponseStruct{}
+
+	err = retryrpcClient.Send("PutInodeTableEntries", putInodeTableEntriesRequest, putInodeTableEntriesResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"PutInodeTableEntries(,{ilayout.RootDirInodeNumber,,})\",,) failed: %v", err)
+	}
 
 	// Perform a Flush()
 
@@ -846,7 +956,7 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"Flush()\",,) failed: %v", err)
 	}
 
-	// TODO: Overwrite the original data in FileInode (to new Object)... and new stat dereferencing 1st Object
+	// Overwrite the original data in FileInode (to new Object)... and new stat dereferencing 1st Object
 
 	if 1 > fetchNonceRangeResponse.NumNoncesFetched {
 		t.Fatalf("fetchNonceRangeResponse contained insufficient NumNoncesFetched")
@@ -857,7 +967,132 @@ func TestRetryRPC(t *testing.T) {
 	fetchNonceRangeResponse.NextNonce++
 	fetchNonceRangeResponse.NumNoncesFetched--
 
-	t.Logf("fileInodeObjectC: %016X", fileInodeObjectC)
+	err = testFileInode.openObject(fileInodeObjectC)
+	if nil != err {
+		t.Fatalf("testFileInode.openObject(fileInodeObjectC) failed: %v", err)
+	}
+
+	putObjectDataObjectNumber, putObjectDataObjectOffset, err = testFileInode.putObjectData([]byte("abc"), true)
+	if nil != err {
+		t.Fatalf("testFileInode.putObjectData([]byte(\"abc\"), true) failed: %v", err)
+	}
+	if putObjectDataObjectNumber != fileInodeObjectC {
+		t.Fatalf("testFileInode.putObjectData([]byte(\"abc\"), true) returned unexpected putObjectDataObjectNumber (%v) - expected fileInodeObjectC (%v)", putObjectDataObjectNumber, fileInodeObjectC)
+	}
+	if putObjectDataObjectOffset != 0 {
+		t.Fatalf("testFileInode.putObjectData([]byte(\"abc\"), true) returned unexpected putObjectDataObjectOffset (%v) - expected 0", putObjectDataObjectOffset)
+	}
+
+	ok, err = testFileInode.extentMap.PatchByKey(uint64(0), &ilayout.ExtentMapEntryValueV1Struct{Length: 3, ObjectNumber: putObjectDataObjectNumber, ObjectOffset: putObjectDataObjectOffset})
+	if nil != err {
+		t.Fatalf("testFileInode.extentMap.PatchByKey(0,) failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("testFileInode.extentMap.PatchByKey(0,) returned !ok")
+	}
+
+	err = testFileInode.discardObjectData(fileInodeObjectA, 3)
+	if nil != err {
+		t.Fatalf("testFileInode.discardObjectData(objectNumber: %v, 3) failed: %v", fileInodeObjectA, err)
+	}
+	if len(testFileInode.dereferencedObjectNumberArray) != 1 {
+		t.Fatalf("len(testFileInode.dereferencedObjectNumberArray) had unexpected length: %v", len(testFileInode.dereferencedObjectNumberArray))
+	}
+	if testFileInode.dereferencedObjectNumberArray[0] != fileInodeObjectA {
+		t.Fatalf("testFileInode.dereferencedObjectNumberArray[0] had unexpected objectNumber: %v", testFileInode.dereferencedObjectNumberArray[0])
+	}
+
+	testFileInode.inodeHeadV1.PayloadObjectNumber, testFileInode.inodeHeadV1.PayloadObjectOffset, testFileInode.inodeHeadV1.PayloadObjectLength, err = testFileInode.extentMap.Flush(false)
+	if nil != err {
+		t.Fatalf("testFileInode.extentMap.Flush() failed: %v", err)
+	}
+	if testFileInode.inodeHeadV1.PayloadObjectNumber != fileInodeObjectC {
+		t.Fatalf("testFileInode.extentMap.Put(0,) returned unexpected PayloadObjectNumber: %v", testFileInode.inodeHeadV1.PayloadObjectNumber)
+	}
+	if testFileInode.inodeHeadV1.PayloadObjectOffset != 3 {
+		t.Fatalf("testFileInode.extentMap.Put(0,) returned unexpected PayloadObjectOffset: %v", testFileInode.inodeHeadV1.PayloadObjectOffset)
+	}
+	if testFileInode.inodeHeadV1.PayloadObjectLength != 90 {
+		t.Fatalf("testFileInode.extentMap.Put(0,) returned unexpected PayloadObjectLength: %v", testFileInode.inodeHeadV1.PayloadObjectLength)
+	}
+
+	err = testFileInode.extentMap.Prune()
+	if nil != err {
+		t.Fatalf("testFileInode.extentMap.Prune() failed: %v", err)
+	}
+	if len(testFileInode.dereferencedObjectNumberArray) != 1 {
+		t.Fatalf("len(testFileInode.dereferencedObjectNumberArray) had unexpected length: %v", len(testFileInode.dereferencedObjectNumberArray))
+	}
+	if testFileInode.dereferencedObjectNumberArray[0] != fileInodeObjectA {
+		t.Fatalf("testFileInode.dereferencedObjectNumberArray[0] had unexpected objectNumber: %v", testFileInode.dereferencedObjectNumberArray[0])
+	}
+
+	testFileInode.externalizeInodeHeadV1Layout()
+	if len(testFileInode.inodeHeadV1.Layout) != 2 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), len(testFileInode.inodeHeadV1.Layout) was unexpected: %v", len(testFileInode.inodeHeadV1.Layout))
+	}
+	if testFileInode.inodeHeadV1.Layout[0].ObjectNumber != fileInodeObjectB {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectNumber)
+	}
+	if testFileInode.inodeHeadV1.Layout[0].ObjectSize != 4+90 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectSize)
+	}
+	if testFileInode.inodeHeadV1.Layout[0].BytesReferenced != 4 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].BytesReferenced)
+	}
+	if testFileInode.inodeHeadV1.Layout[1].ObjectNumber != fileInodeObjectC {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectNumber)
+	}
+	if testFileInode.inodeHeadV1.Layout[1].ObjectSize != 3+90 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectSize)
+	}
+	if testFileInode.inodeHeadV1.Layout[1].BytesReferenced != 3+90 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].BytesReferenced)
+	}
+
+	inodeHeadV1Buf, err = testFileInode.inodeHeadV1.MarshalInodeHeadV1()
+	if nil != err {
+		t.Fatalf("testFileInode.inodeHeadV1.MarshalInodeHeadV1() failed: %v", err)
+	}
+
+	putObjectDataObjectNumber, putObjectDataObjectOffset, err = testFileInode.putObjectData(inodeHeadV1Buf, false)
+	if nil != err {
+		t.Fatalf("testFileInode.putObjectData(inodeHeadV1Buf, false) failed: %v", err)
+	}
+	if putObjectDataObjectNumber != fileInodeObjectC {
+		t.Fatalf("testFileInode.putObjectData(inodeHeadV1Buf, false) returned unexpected putObjectDataObjectNumber (%v) - expected fileInodeObjectC (%v)", putObjectDataObjectNumber, fileInodeObjectC)
+	}
+	if putObjectDataObjectOffset != 3+90 {
+		t.Fatalf("testFileInode.putObjectData(inodeHeadV1Buf, false) returned unexpected putObjectDataObjectOffset (%v) - expected %v", putObjectDataObjectOffset, 3+90)
+	}
+
+	err = testFileInode.closeObject()
+	if nil != err {
+		t.Fatalf("testFileInode.closeObject() failed: %v", err)
+	}
+
+	// Perform a PutInodeTableEntries() for FileInode
+
+	putInodeTableEntriesRequest = &PutInodeTableEntriesRequestStruct{
+		MountID: mountResponse.MountID,
+		UpdatedInodeTableEntryArray: []PutInodeTableEntryStruct{
+			{
+				InodeNumber:           fileInodeNumber,
+				InodeHeadObjectNumber: fileInodeObjectC,
+				InodeHeadLength:       uint64(len(inodeHeadV1Buf)),
+			},
+		},
+		SuperBlockInodeObjectCountAdjustment:     testFileInode.superBlockInodeObjectCountAdjustment,
+		SuperBlockInodeObjectSizeAdjustment:      testFileInode.superBlockInodeObjectSizeAdjustment,
+		SuperBlockInodeBytesReferencedAdjustment: testFileInode.superBlockInodeBytesReferencedAdjustment,
+		DereferencedObjectNumberArray:            testFileInode.dereferencedObjectNumberArray,
+	}
+	putInodeTableEntriesResponse = &PutInodeTableEntriesResponseStruct{}
+
+	err = retryrpcClient.Send("PutInodeTableEntries", putInodeTableEntriesRequest, putInodeTableEntriesResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"PutInodeTableEntries(,{ilayout.RootDirInodeNumber,,})\",,) failed: %v", err)
+	}
 
 	// Perform a Flush()
 
@@ -871,7 +1106,15 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"Flush()\",,) failed: %v", err)
 	}
 
+	// TODO: Remove this early exit skipping of following TODOs
+
+	if nil == err {
+		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
+		return
+	}
+
 	// TODO: Verify that 1st Object for FileInode gets deleted... but not 2nd nor 3rd
+	//       Note that this requires a checkpoint & async deletes to have completed
 
 	// Perform an AdjustInodeTableEntryOpenCount(+1) for FileInode
 

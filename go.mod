@@ -20,7 +20,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	go.etcd.io/etcd v3.3.25+incompatible
 	golang.org/x/net v0.0.0-20210813160813-60bc85c4be6d
-	golang.org/x/sys v0.0.0-20210819135213-f52c844e1c1c
+	golang.org/x/sys v0.0.0-20210823070655-63515b42dcdf
 )
 
 require (
