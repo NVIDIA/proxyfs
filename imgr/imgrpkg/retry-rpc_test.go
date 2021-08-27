@@ -913,9 +913,6 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), len(testFileInode.inodeHeadV1.Layout) was unexpected: %v", len(testFileInode.inodeHeadV1.Layout))
 	}
 	if testFileInode.inodeHeadV1.Layout[0].ObjectNumber != fileInodeObjectA {
-		fmt.Printf("UNDO: fileInodeObjectA: %v\n", fileInodeObjectA)
-		fmt.Printf("UNDO: testFileInode.inodeHeadV1.Layout: %+v\n", testFileInode.inodeHeadV1.Layout)
-		fmt.Printf("UNDO: testFileInode.inodeHeadV1.Layout[0]: %+v\n", testFileInode.inodeHeadV1.Layout[0])
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectNumber)
 	}
 	if testFileInode.inodeHeadV1.Layout[0].ObjectSize != 3+58 {
