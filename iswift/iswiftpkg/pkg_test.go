@@ -21,7 +21,7 @@ func TestEmulator(t *testing.T) {
 		confMap                conf.ConfMap
 		confStrings            = []string{
 			"ISWIFT.SwiftProxyIPAddr=127.0.0.1",
-			"ISWIFT.SwiftProxyTCPPort=9997",
+			"ISWIFT.SwiftProxyTCPPort=8080",
 			"ISWIFT.MaxAccountNameLength=256",
 			"ISWIFT.MaxContainerNameLength=256",
 			"ISWIFT.MaxObjectNameLength=1024",

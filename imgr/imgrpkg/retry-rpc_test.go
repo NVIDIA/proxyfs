@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -122,24 +123,54 @@ func oldTestFileInode(inodeHeadV1 *ilayout.InodeHeadV1Struct) (testFileInode *te
 	return
 }
 
+type testByObjectNumber []uint64
+
+func (s testByObjectNumber) Len() int {
+	return len(s)
+}
+
+func (s testByObjectNumber) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func (s testByObjectNumber) Less(i, j int) bool {
+	return s[i] < s[j]
+}
+
 func (testFileInode *testFileInodeStruct) externalizeInodeHeadV1Layout() {
 	var (
-		layoutIndex                int
-		objectNumber               uint64
-		testInodeHeadLayoutEntryV1 *testInodeHeadLayoutEntryV1Struct
+		inodeHeadLayoutEntryV1StructObjectNumberSlice testByObjectNumber
+		layoutIndex                                   int
+		objectNumber                                  uint64
 	)
 
+	inodeHeadLayoutEntryV1StructObjectNumberSlice = make(testByObjectNumber, len(testFileInode.layoutAsMap))
 	testFileInode.inodeHeadV1.Layout = make([]ilayout.InodeHeadLayoutEntryV1Struct, len(testFileInode.layoutAsMap))
+
+	// First fetch the objectNumber's from testFileInode.layoutAsMap
+	// Note that iterating over a map could return keys (and their values) in any order
+
 	layoutIndex = 0
 
-	for objectNumber, testInodeHeadLayoutEntryV1 = range testFileInode.layoutAsMap {
+	for objectNumber = range testFileInode.layoutAsMap {
+		inodeHeadLayoutEntryV1StructObjectNumberSlice[layoutIndex] = objectNumber
+		layoutIndex++
+	}
+
+	// Next, sort the list of objectNumber's
+	// Having the list in sorted order makes comparison against expected results simple
+	// Non-test implementations may skip this step
+
+	sort.Sort(testByObjectNumber(inodeHeadLayoutEntryV1StructObjectNumberSlice))
+
+	// Finally, iterate through inodeHeadLayoutEntryV1StructObjectNumberSlice to populate testFileInode.inodeHeadV1.Layout in sorted order
+
+	for layoutIndex, objectNumber = range inodeHeadLayoutEntryV1StructObjectNumberSlice {
 		testFileInode.inodeHeadV1.Layout[layoutIndex] = ilayout.InodeHeadLayoutEntryV1Struct{
 			ObjectNumber:    objectNumber,
-			ObjectSize:      testInodeHeadLayoutEntryV1.objectSize,
-			BytesReferenced: testInodeHeadLayoutEntryV1.bytesReferenced,
+			ObjectSize:      testFileInode.layoutAsMap[objectNumber].objectSize,
+			BytesReferenced: testFileInode.layoutAsMap[objectNumber].bytesReferenced,
 		}
-
-		layoutIndex++
 	}
 }
 
@@ -882,6 +913,9 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), len(testFileInode.inodeHeadV1.Layout) was unexpected: %v", len(testFileInode.inodeHeadV1.Layout))
 	}
 	if testFileInode.inodeHeadV1.Layout[0].ObjectNumber != fileInodeObjectA {
+		fmt.Printf("UNDO: fileInodeObjectA: %v\n", fileInodeObjectA)
+		fmt.Printf("UNDO: testFileInode.inodeHeadV1.Layout: %+v\n", testFileInode.inodeHeadV1.Layout)
+		fmt.Printf("UNDO: testFileInode.inodeHeadV1.Layout[0]: %+v\n", testFileInode.inodeHeadV1.Layout[0])
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectNumber)
 	}
 	if testFileInode.inodeHeadV1.Layout[0].ObjectSize != 3+58 {
@@ -1032,22 +1066,22 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), len(testFileInode.inodeHeadV1.Layout) was unexpected: %v", len(testFileInode.inodeHeadV1.Layout))
 	}
 	if testFileInode.inodeHeadV1.Layout[0].ObjectNumber != fileInodeObjectB {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectNumber)
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectNumber)
 	}
 	if testFileInode.inodeHeadV1.Layout[0].ObjectSize != 4+90 {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectSize)
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectSize)
 	}
 	if testFileInode.inodeHeadV1.Layout[0].BytesReferenced != 4 {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].BytesReferenced)
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].BytesReferenced)
 	}
 	if testFileInode.inodeHeadV1.Layout[1].ObjectNumber != fileInodeObjectC {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectNumber)
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectNumber)
 	}
 	if testFileInode.inodeHeadV1.Layout[1].ObjectSize != 3+90 {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectSize)
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectSize)
 	}
 	if testFileInode.inodeHeadV1.Layout[1].BytesReferenced != 3+90 {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].BytesReferenced)
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].BytesReferenced)
 	}
 
 	inodeHeadV1Buf, err = testFileInode.inodeHeadV1.MarshalInodeHeadV1()

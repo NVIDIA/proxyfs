@@ -22,9 +22,9 @@ import (
 
 const (
 	testIPAddr             = "127.0.0.1"
-	testRetryRPCPort       = 32357
-	testHTTPServerPort     = 15347
-	testSwiftProxyTCPPort  = 24367
+	testRetryRPCPort       = 32356
+	testHTTPServerPort     = 15346
+	testSwiftProxyTCPPort  = 8080
 	testSwiftAuthUser      = "test"
 	testSwiftAuthKey       = "test"
 	testContainer          = "testContainer"

@@ -17,7 +17,7 @@ func TestSwiftAuth(t *testing.T) {
 		confMap     conf.ConfMap
 		confStrings = []string{
 			"ISWIFT.SwiftProxyIPAddr=127.0.0.1",
-			"ISWIFT.SwiftProxyTCPPort=9997",
+			"ISWIFT.SwiftProxyTCPPort=8443",
 			"ISWIFT.MaxAccountNameLength=256",
 			"ISWIFT.MaxContainerNameLength=256",
 			"ISWIFT.MaxObjectNameLength=1024",
@@ -39,7 +39,7 @@ func TestSwiftAuth(t *testing.T) {
 	}
 
 	authInJSON = "{" +
-		"    \"AuthURL\" : \"http://127.0.0.1:9997/auth/v1.0\"," +
+		"    \"AuthURL\" : \"http://127.0.0.1:8443/auth/v1.0\"," +
 		"    \"AuthUser\" : \"test:tester\"," +
 		"    \"AuthKey\" : \"testing\"," +
 		"    \"Account\" : \"AUTH_test\"," +
