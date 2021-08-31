@@ -188,7 +188,7 @@ retryGenerateMountID:
 		}
 
 		for _, superBlockPendingDeleteObjectNumber = range volume.superBlock.PendingDeleteObjectNumberArray {
-			volume.activeObjectNumberDeleteList.PushBack(superBlockPendingDeleteObjectNumber)
+			volume.pendingDeleteObjectNumberList.PushBack(superBlockPendingDeleteObjectNumber)
 		}
 
 		volume.checkPointControlChan = make(chan chan error)
@@ -428,7 +428,7 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 	volume.superBlock.InodeBytesReferenced = uint64(int64(volume.superBlock.InodeBytesReferenced) + putInodeTableEntriesRequest.SuperBlockInodeBytesReferencedAdjustment)
 
 	for _, dereferencedObjectNumber = range putInodeTableEntriesRequest.DereferencedObjectNumberArray {
-		_ = volume.pendingObjectNumberDeleteList.PushBack(dereferencedObjectNumber)
+		_ = volume.pendingDeleteObjectNumberList.PushBack(dereferencedObjectNumber)
 	}
 
 	globals.Unlock()

@@ -4,6 +4,7 @@
 package imgrpkg
 
 import (
+	"bytes"
 	"container/list"
 	"fmt"
 	"io"
@@ -624,9 +625,11 @@ func putVolume(name string, storageURL string, authToken string) (err error) {
 		inodeTableLayout:              nil,
 		nextNonce:                     0,
 		numNoncesReserved:             0,
-		activeObjectNumberDeleteList:  list.New(),
-		pendingObjectNumberDeleteList: list.New(),
+		activeDeleteObjectNumberList:  list.New(),
+		pendingDeleteObjectNumberList: list.New(),
 		checkPointControlChan:         nil,
+		checkPointPutObjectNumber:     0,
+		checkPointPutObjectBuffer:     nil,
 		inodeLeaseMap:                 make(map[uint64]*inodeLeaseStruct),
 	}
 
@@ -686,7 +689,17 @@ func (volume *volumeStruct) checkPointDaemon(checkPointControlChan chan chan err
 
 func (volume *volumeStruct) doCheckPoint() (err error) {
 	var (
-		startTime time.Time = time.Now()
+		authOK                        bool
+		checkPointV1String            string
+		deleteObjectNumberListElement *list.Element
+		inodeTableLayoutElement       *inodeTableLayoutElementStruct
+		inodeTableRootObjectLength    uint64
+		inodeTableRootObjectNumber    uint64
+		inodeTableRootObjectOffset    uint64
+		objectNumber                  uint64
+		ok                            bool
+		startTime                     time.Time = time.Now()
+		superBlockV1Buf               []byte
 	)
 
 	defer func() {
@@ -695,10 +708,130 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 
 	globals.Lock()
 
-	err = nil // TODO: perform the actual doCheckPoint()
+	for volume.numNoncesReserved == 0 {
+		volume.nextNonce, volume.numNoncesReserved, err = volume.fetchNonceRangeWhileLocked()
+		if nil != err {
+			globals.Unlock()
+			err = fmt.Errorf("volume.fetchNonceRangeWhileLocked() failed: %v", err)
+			return
+		}
+	}
+
+	volume.checkPointPutObjectNumber = volume.nextNonce
+
+	volume.nextNonce++
+	volume.numNoncesReserved--
+
+	inodeTableRootObjectNumber, inodeTableRootObjectOffset, inodeTableRootObjectLength, err = volume.inodeTable.Flush(false)
+	if nil != err {
+		globals.Unlock()
+		err = fmt.Errorf("volume.inodeTable.Flush(false) failed: %v", err)
+		return
+	}
+
+	if nil == volume.checkPointPutObjectBuffer {
+		// No need to create a new CheckPoint since nothing changed since the last one
+		volume.checkPointPutObjectNumber = 0
+		volume.nextNonce--
+		volume.numNoncesReserved++
+		globals.Unlock()
+		err = nil
+		return
+	}
+
+	err = volume.inodeTable.Prune()
+	if nil != err {
+		globals.Unlock()
+		err = fmt.Errorf("volume.inodeTable.inodeTable.Prune() failed: %v", err)
+		return
+	}
+
+	volume.superBlock.InodeTableRootObjectNumber = inodeTableRootObjectNumber
+	volume.superBlock.InodeTableRootObjectNumber = inodeTableRootObjectOffset
+	volume.superBlock.InodeTableRootObjectNumber = inodeTableRootObjectLength
+
+	volume.superBlock.InodeTableLayout = make([]ilayout.InodeTableLayoutEntryV1Struct, 0, len(volume.inodeTableLayout))
+
+	for objectNumber, inodeTableLayoutElement = range volume.inodeTableLayout {
+		volume.superBlock.InodeTableLayout = append(volume.superBlock.InodeTableLayout, ilayout.InodeTableLayoutEntryV1Struct{
+			ObjectNumber:    objectNumber,
+			ObjectSize:      inodeTableLayoutElement.objectSize,
+			BytesReferenced: inodeTableLayoutElement.bytesReferenced,
+		})
+	}
+
+	// volume.superBlock.InodeObjectCount     is already set
+	// volume.superBlock.InodeObjectSize      is already set
+	// volume.superBlock.InodeBytesReferenced is already set
+
+	volume.superBlock.PendingDeleteObjectNumberArray = make([]uint64, 0, volume.activeDeleteObjectNumberList.Len()+volume.pendingDeleteObjectNumberList.Len())
+
+	deleteObjectNumberListElement = volume.activeDeleteObjectNumberList.Front()
+
+	for nil != deleteObjectNumberListElement {
+		objectNumber, ok = deleteObjectNumberListElement.Value.(uint64)
+		if !ok {
+			err = fmt.Errorf("deleteObjectNumberListElement.Value.(uint64) returned !ok")
+			logFatal(err)
+		}
+		volume.superBlock.PendingDeleteObjectNumberArray = append(volume.superBlock.PendingDeleteObjectNumberArray, objectNumber)
+		deleteObjectNumberListElement = deleteObjectNumberListElement.Next()
+	}
+
+	deleteObjectNumberListElement = volume.pendingDeleteObjectNumberList.Front()
+
+	for nil != deleteObjectNumberListElement {
+		objectNumber, ok = deleteObjectNumberListElement.Value.(uint64)
+		if !ok {
+			err = fmt.Errorf("deleteObjectNumberListElement.Value.(uint64) returned !ok")
+			logFatal(err)
+		}
+		volume.superBlock.PendingDeleteObjectNumberArray = append(volume.superBlock.PendingDeleteObjectNumberArray, objectNumber)
+		deleteObjectNumberListElement = deleteObjectNumberListElement.Next()
+	}
+
+	superBlockV1Buf, err = volume.superBlock.MarshalSuperBlockV1()
+	if nil != err {
+		err = fmt.Errorf("deleteObjectNumberListElement.Value.(uint64) failed: %v", err)
+		logFatal(err)
+	}
+
+	_, _ = volume.checkPointPutObjectBuffer.Write(superBlockV1Buf)
+
+	volume.checkPoint.SuperBlockObjectNumber = volume.checkPointPutObjectNumber
+	volume.checkPoint.SuperBlockLength = uint64(volume.checkPointPutObjectBuffer.Len())
+
+	authOK, err = volume.swiftObjectPut(volume.checkPointPutObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes()))
+	if nil != err {
+		err = fmt.Errorf("volume.swiftObjectPut(volume.checkPointPutObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes())) failed: %v", err)
+		logFatal(err)
+	}
+	if !authOK {
+		globals.Unlock()
+		err = fmt.Errorf("volume.swiftObjectPut(volume.checkPointPutObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes())) returned !authOK")
+		return
+	}
+
+	checkPointV1String, err = volume.checkPoint.MarshalCheckPointV1()
+	if nil != err {
+		err = fmt.Errorf("volume.checkPoint.MarshalCheckPointV1() failed: %v", err)
+		logFatal(err)
+	}
+
+	authOK, err = volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String))
+	if nil != err {
+		err = fmt.Errorf("volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String)) failed: %v", err)
+		logFatal(err)
+	}
+	if !authOK {
+		globals.Unlock()
+		err = fmt.Errorf("volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String)) returned !authOK")
+		return
+	}
 
 	globals.Unlock()
 
+	err = nil
 	return
 }
 

@@ -4,6 +4,7 @@
 package imgrpkg
 
 import (
+	"bytes"
 	"container/list"
 	"fmt"
 	"net/http"
@@ -52,6 +53,8 @@ type configStruct struct {
 
 	SwiftTimeout            time.Duration
 	SwiftConnectionPoolSize uint32
+
+	ParallelObjectDeleteMax uint32
 
 	InodeTableCacheEvictLowLimit  uint64
 	InodeTableCacheEvictHighLimit uint64
@@ -236,10 +239,12 @@ type volumeStruct struct {
 	inodeTableLayout              map[uint64]*inodeTableLayoutElementStruct // == nil if not currently mounted and/or checkpointing; key == objectNumber (matching ilayout.InodeTableLayoutEntryV1Struct.ObjectNumber)
 	nextNonce                     uint64                                    // next nonce in that checkpoint reserve
 	numNoncesReserved             uint64                                    // number of nonce's reserved for checkpointing
-	activeObjectNumberDeleteList  *list.List                                // list of objectNumber's to be deleted since last CheckPoint
-	pendingObjectNumberDeleteList *list.List                                // list of objectNumber's pending deletion after next CheckPoint
+	activeDeleteObjectNumberList  *list.List                                // list of objectNumber's to be deleted since last CheckPoint
+	pendingDeleteObjectNumberList *list.List                                // list of objectNumber's pending deletion after next CheckPoint
 	checkPointControlChan         chan chan error                           // send chan error to chan to request a CheckPoint; close it to terminate checkPointDaemon()
 	checkPointControlWG           sync.WaitGroup                            // checkPointDeamon() indicates it is done by calling .Done() on this WG
+	checkPointPutObjectNumber     uint64                                    //
+	checkPointPutObjectBuffer     *bytes.Buffer                             // if nil, no CheckPoint data to PUT has yet accumulated
 	inodeLeaseMap                 map[uint64]*inodeLeaseStruct              // key == inodeLeaseStruct.inodeNumber
 	leaseHandlerWG                sync.WaitGroup                            // .Add(1) each inodeLease insertion into inodeLeaseMap
 	//                                                                         .Done() each inodeLease after it is removed from inodeLeaseMap
@@ -417,6 +422,11 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 
+	globals.config.ParallelObjectDeleteMax, err = confMap.FetchOptionValueUint32("IMGR", "ParallelObjectDeleteMax")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.InodeTableCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("IMGR", "InodeTableCacheEvictLowLimit")
 	if nil != err {
 		logFatal(err)
@@ -497,6 +507,8 @@ func uninitializeGlobals() (err error) {
 
 	globals.config.SwiftTimeout = time.Duration(0)
 	globals.config.SwiftConnectionPoolSize = 0
+
+	globals.config.ParallelObjectDeleteMax = 0
 
 	globals.config.InodeTableCacheEvictLowLimit = 0
 	globals.config.InodeTableCacheEvictHighLimit = 0
