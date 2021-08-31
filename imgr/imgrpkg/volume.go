@@ -622,6 +622,8 @@ func putVolume(name string, storageURL string, authToken string) (err error) {
 		superBlock:                    nil,
 		inodeTable:                    nil,
 		inodeTableLayout:              nil,
+		nextNonce:                     0,
+		numNoncesReserved:             0,
 		activeObjectNumberDeleteList:  list.New(),
 		pendingObjectNumberDeleteList: list.New(),
 		checkPointControlChan:         nil,
@@ -684,16 +686,16 @@ func (volume *volumeStruct) checkPointDaemon(checkPointControlChan chan chan err
 
 func (volume *volumeStruct) doCheckPoint() (err error) {
 	var (
-		startTime time.Time
+		startTime time.Time = time.Now()
 	)
+
+	defer func() {
+		globals.stats.VolumeCheckPointUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
 
 	globals.Lock()
 
-	startTime = time.Now()
-
 	err = nil // TODO: perform the actual doCheckPoint()
-
-	globals.stats.VolumeCheckPointUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 
 	globals.Unlock()
 
@@ -898,6 +900,44 @@ func (volume *volumeStruct) fetchInodeHead(inodeHeadObjectNumber uint64, inodeHe
 	}
 
 	inodeHeadV1, err = ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf)
+
+	return
+}
+
+func (volume *volumeStruct) fetchNonceRangeWhileLocked() (nextNonce uint64, numNoncesFetched uint64, err error) {
+	var (
+		authOK                         bool
+		nonceUpdatedCheckPoint         *ilayout.CheckPointV1Struct
+		nonceUpdatedCheckPointAsString string
+	)
+
+	nonceUpdatedCheckPoint = &ilayout.CheckPointV1Struct{}
+	*nonceUpdatedCheckPoint = *volume.checkPoint
+
+	nonceUpdatedCheckPoint.ReservedToNonce += globals.config.FetchNonceRangeToReturn
+
+	nextNonce = volume.checkPoint.ReservedToNonce + 1
+	numNoncesFetched = globals.config.FetchNonceRangeToReturn
+
+	nonceUpdatedCheckPointAsString, err = nonceUpdatedCheckPoint.MarshalCheckPointV1()
+	if nil != err {
+		logFatalf("nonceUpdatedCheckPoint.MarshalCheckPointV1() failed: %v", err)
+	}
+
+	authOK, err = volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString))
+	if nil == err {
+		if authOK {
+			volume.checkPoint = nonceUpdatedCheckPoint
+		} else {
+			nextNonce = 0
+			numNoncesFetched = 0
+			err = fmt.Errorf("volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString)) returned !authOK")
+		}
+	} else {
+		nextNonce = 0
+		numNoncesFetched = 0
+		err = fmt.Errorf("volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString)) failed: %v", err)
+	}
 
 	return
 }
