@@ -742,7 +742,7 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 	err = volume.inodeTable.Prune()
 	if nil != err {
 		globals.Unlock()
-		err = fmt.Errorf("volume.inodeTable.inodeTable.Prune() failed: %v", err)
+		err = fmt.Errorf("volume.inodeTable.Prune() failed: %v", err)
 		return
 	}
 
@@ -812,6 +812,9 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 		return
 	}
 
+	volume.checkPointPutObjectNumber = 0
+	volume.checkPointPutObjectBuffer = nil
+
 	checkPointV1String, err = volume.checkPoint.MarshalCheckPointV1()
 	if nil != err {
 		err = fmt.Errorf("volume.checkPoint.MarshalCheckPointV1() failed: %v", err)
@@ -856,12 +859,12 @@ func (volume *volumeStruct) DumpKey(key sortedmap.Key) (keyAsString string, err 
 func (volume *volumeStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
 	var (
 		ok                          bool
-		valueAsInodeTableEntryValue *ilayout.InodeTableEntryValueV1Struct
+		valueAsInodeTableEntryValue ilayout.InodeTableEntryValueV1Struct
 	)
 
-	valueAsInodeTableEntryValue, ok = value.(*ilayout.InodeTableEntryValueV1Struct)
+	valueAsInodeTableEntryValue, ok = value.(ilayout.InodeTableEntryValueV1Struct)
 	if !ok {
-		err = fmt.Errorf("value.(*ilayout.InodeTableEntryValueV1Struct) returned !ok")
+		err = fmt.Errorf("value.(ilayout.InodeTableEntryValueV1Struct) returned !ok")
 		return
 	}
 
@@ -889,12 +892,69 @@ func (volume *volumeStruct) GetNode(objectNumber uint64, objectOffset uint64, ob
 }
 
 func (volume *volumeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
-	err = fmt.Errorf("%s %s", ETODO, "PutNode()")
+	var (
+		inodeTableLayoutElement *inodeTableLayoutElementStruct
+		ok                      bool
+	)
+
+	if volume.checkPointPutObjectNumber == 0 {
+		err = fmt.Errorf("(*volumeStruct)PutNode() called with volume.checkPointPutObjectNumber == 0")
+		logFatal(err)
+	}
+
+	if nil == volume.checkPointPutObjectBuffer {
+		volume.checkPointPutObjectBuffer = &bytes.Buffer{}
+
+		inodeTableLayoutElement = &inodeTableLayoutElementStruct{
+			objectSize:      uint64(len(nodeByteSlice)),
+			bytesReferenced: uint64(len(nodeByteSlice)),
+		}
+
+		volume.inodeTableLayout[volume.checkPointPutObjectNumber] = inodeTableLayoutElement
+	} else {
+		inodeTableLayoutElement, ok = volume.inodeTableLayout[volume.checkPointPutObjectNumber]
+		if !ok {
+			err = fmt.Errorf("volume.inodeTableLayout[volume.checkPointPutObjectNumber] returned !ok")
+			return
+		}
+
+		inodeTableLayoutElement.objectSize += uint64(uint64(len(nodeByteSlice)))
+		inodeTableLayoutElement.bytesReferenced += uint64(uint64(len(nodeByteSlice)))
+	}
+
+	objectNumber = volume.checkPointPutObjectNumber
+	objectOffset = uint64(volume.checkPointPutObjectBuffer.Len())
+	_, _ = volume.checkPointPutObjectBuffer.Write(nodeByteSlice)
+
+	err = nil
 	return
 }
 
 func (volume *volumeStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
-	err = fmt.Errorf("%s %s", ETODO, "DiscardNode()")
+	var (
+		inodeTableLayoutElement *inodeTableLayoutElementStruct
+		ok                      bool
+	)
+
+	inodeTableLayoutElement, ok = volume.inodeTableLayout[objectNumber]
+	if !ok {
+		err = fmt.Errorf("volume.inodeTableLayout[objectNumber] returned !ok")
+		return
+	}
+
+	if inodeTableLayoutElement.bytesReferenced < objectLength {
+		err = fmt.Errorf("inodeTableLayoutElement.bytesReferenced < objectLength")
+		return
+	}
+
+	inodeTableLayoutElement.bytesReferenced -= objectLength
+
+	if inodeTableLayoutElement.bytesReferenced == 0 {
+		delete(volume.inodeTableLayout, objectNumber)
+		volume.superBlock.PendingDeleteObjectNumberArray = append(volume.superBlock.PendingDeleteObjectNumberArray, objectNumber)
+	}
+
+	err = nil
 	return
 }
 
@@ -961,14 +1021,16 @@ func (volume *volumeStruct) PackValue(value sortedmap.Value) (packedValue []byte
 
 func (volume *volumeStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
 	var (
-		bytesConsumedAsInt int
+		bytesConsumedAsInt     int
+		inodeTableEntryValueV1 *ilayout.InodeTableEntryValueV1Struct
 	)
 
-	value, bytesConsumedAsInt, err = ilayout.UnmarshalInodeTableEntryValueV1(payloadData)
+	inodeTableEntryValueV1, bytesConsumedAsInt, err = ilayout.UnmarshalInodeTableEntryValueV1(payloadData)
 	if (nil == err) && (bytesConsumedAsInt != 24) {
 		err = fmt.Errorf("ilayout.UnmarshalInodeTableEntryValueV1(payloadData) consumed %v bytes (24 expected)", bytesConsumedAsInt)
 	}
 
+	value = *inodeTableEntryValueV1
 	bytesConsumed = 24
 
 	return

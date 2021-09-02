@@ -299,7 +299,7 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 
 func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryResponse *GetInodeTableEntryResponseStruct) (err error) {
 	var (
-		inodeTableEntryValue    *ilayout.InodeTableEntryValueV1Struct
+		inodeTableEntryValue    ilayout.InodeTableEntryValueV1Struct
 		inodeTableEntryValueRaw sortedmap.Value
 		leaseRequest            *leaseRequestStruct
 		mount                   *mountStruct
@@ -346,9 +346,9 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 		return
 	}
 
-	inodeTableEntryValue, ok = inodeTableEntryValueRaw.(*ilayout.InodeTableEntryValueV1Struct)
+	inodeTableEntryValue, ok = inodeTableEntryValueRaw.(ilayout.InodeTableEntryValueV1Struct)
 	if !ok {
-		logFatalf("inodeTableEntryValueRaw.(*ilayout.InodeTableEntryValueV1Struct) returned !ok")
+		logFatalf("inodeTableEntryValueRaw.(ilayout.InodeTableEntryValueV1Struct) returned !ok")
 	}
 
 	getInodeTableEntryResponse.InodeHeadObjectNumber = inodeTableEntryValue.InodeHeadObjectNumber
@@ -363,7 +363,7 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesResponse *PutInodeTableEntriesResponseStruct) (err error) {
 	var (
 		dereferencedObjectNumber uint64
-		inodeTableEntryValue     *ilayout.InodeTableEntryValueV1Struct
+		inodeTableEntryValue     ilayout.InodeTableEntryValueV1Struct
 		leaseRequest             *leaseRequestStruct
 		mount                    *mountStruct
 		ok                       bool
@@ -403,7 +403,7 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 	volume = mount.volume
 
 	for _, putInodeTableEntry = range putInodeTableEntriesRequest.UpdatedInodeTableEntryArray {
-		inodeTableEntryValue = &ilayout.InodeTableEntryValueV1Struct{
+		inodeTableEntryValue = ilayout.InodeTableEntryValueV1Struct{
 			InodeHeadObjectNumber: putInodeTableEntry.InodeHeadObjectNumber,
 			InodeHeadLength:       putInodeTableEntry.InodeHeadLength,
 		}
