@@ -49,4 +49,4 @@ else
   curl -v -s -f imgr:15346/volume/testvol -X PUT -d "{\"StorageURL\":\"http://swift:8080/v1/AUTH_test/con\"}"
 fi
 
-sleep 100000
+./iclient iclient.conf
