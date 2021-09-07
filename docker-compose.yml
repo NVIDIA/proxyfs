@@ -86,7 +86,7 @@ services:
       - type: bind
         source: .
         target: /src
-    command: ["sleep", "100000"]
+    command: ["sleep", "infinity"]
   imgr:
     build:
       context: .
