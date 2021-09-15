@@ -24,6 +24,7 @@ func main() {
 	var (
 		confMap        conf.ConfMap
 		err            error
+		fissionErrChan chan error
 		signalChan     chan os.Signal
 		signalReceived os.Signal
 	)
@@ -47,7 +48,9 @@ func main() {
 
 	// Start iclient
 
-	err = iclientpkg.Start(confMap)
+	fissionErrChan = make(chan error, 1)
+
+	err = iclientpkg.Start(confMap, fissionErrChan)
 	if nil != err {
 		fmt.Fprintf(os.Stderr, "iclientpkg.Start(confMap) failed: %v\n", err)
 		os.Exit(1)
@@ -64,26 +67,32 @@ func main() {
 
 	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
 
+	// Now await an indication to exit
+
 	for {
-		signalReceived = <-signalChan
-		if unix.SIGHUP == signalReceived {
-			iclientpkg.LogInfof("Received SIGHUP")
-			err = iclientpkg.Signal()
-			if nil != err {
-				iclientpkg.LogWarnf("iclientpkg.Signal() failed: %v", err)
+		select {
+		case signalReceived = <-signalChan:
+			if unix.SIGHUP == signalReceived {
+				iclientpkg.LogInfof("Received SIGHUP")
+				err = iclientpkg.Signal()
+				if nil != err {
+					iclientpkg.LogWarnf("iclientpkg.Signal() failed: %v", err)
+				}
+			} else {
+				// Stop iclient
+
+				iclientpkg.LogInfof("DOWN")
+
+				err = iclientpkg.Stop()
+				if nil == err {
+					os.Exit(0)
+				} else {
+					fmt.Fprintf(os.Stderr, "iclientpkg.Stop() failed: %v\n", err)
+					os.Exit(1)
+				}
 			}
-		} else {
-			break
+		case err = <-fissionErrChan:
+			iclientpkg.LogFatalf("unexpected error from package fission: %v", err)
 		}
-	}
-
-	// Stop iclient
-
-	iclientpkg.LogInfof("DOWN")
-
-	err = iclientpkg.Stop()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "iclientpkg.Stop() failed: %v\n", err)
-		os.Exit(1)
 	}
 }

@@ -9,26 +9,31 @@ import (
 	"os"
 	"time"
 
+	"github.com/NVIDIA/fission"
+
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/conf"
 	"github.com/NVIDIA/proxyfs/utils"
 )
 
 type configStruct struct {
-	VolumeName              string
-	MountPointDirPath       string
-	AllowOther              bool
-	PlugInPath              string
-	PlugInEnvName           string
-	PlugInEnvValue          string
-	RetryRPCPublicIPAddr    string
-	RetryRPCPort            uint16
-	RetryRPCDeadlineIO      time.Duration
-	RetryRPCKeepAlivePeriod time.Duration
-	RetryRPCCACertFilePath  string // Defaults to /dev/null
-	LogFilePath             string // Unless starting with '/', relative to $CWD; == "" means disabled
-	LogToConsole            bool
-	TraceEnabled            bool
+	VolumeName               string
+	MountPointDirPath        string
+	FUSEAllowOther           bool
+	FUSEMaxBackground        uint16
+	FUSECongestionThreshhold uint16
+	FUSEMaxWrite             uint32
+	PlugInPath               string
+	PlugInEnvName            string
+	PlugInEnvValue           string
+	RetryRPCPublicIPAddr     string
+	RetryRPCPort             uint16
+	RetryRPCDeadlineIO       time.Duration
+	RetryRPCKeepAlivePeriod  time.Duration
+	RetryRPCCACertFilePath   string // Defaults to /dev/null
+	LogFilePath              string // Unless starting with '/', relative to $CWD; == "" means disabled
+	LogToConsole             bool
+	TraceEnabled             bool
 }
 
 type statsStruct struct {
@@ -45,15 +50,17 @@ type statsStruct struct {
 }
 
 type globalsStruct struct {
-	config            configStruct //
-	logFile           *os.File     // == nil if config.LogFilePath == ""
-	retryRPCCACertPEM []byte       // == nil if config.RetryRPCCACertFilePath == ""
-	stats             *statsStruct //
+	config            configStruct   //
+	logFile           *os.File       // == nil if config.LogFilePath == ""
+	retryRPCCACertPEM []byte         // == nil if config.RetryRPCCACertFilePath == ""
+	fissionErrChan    chan error     //
+	stats             *statsStruct   //
+	fissionVolume     fission.Volume //
 }
 
 var globals globalsStruct
 
-func initializeGlobals(confMap conf.ConfMap) (err error) {
+func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err error) {
 	var (
 		configJSONified     string
 		plugInEnvValueSlice []string
@@ -75,7 +82,19 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		logFatal(err)
 	}
-	globals.config.AllowOther, err = confMap.FetchOptionValueBool("ICLIENT", "AllowOther")
+	globals.config.FUSEAllowOther, err = confMap.FetchOptionValueBool("ICLIENT", "FUSEAllowOther")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.FUSEMaxBackground, err = confMap.FetchOptionValueUint16("ICLIENT", "FUSEMaxBackground")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.FUSECongestionThreshhold, err = confMap.FetchOptionValueUint16("ICLIENT", "FUSECongestionThreshhold")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.FUSEMaxWrite, err = confMap.FetchOptionValueUint32("ICLIENT", "FUSEMaxWrite")
 	if nil != err {
 		logFatal(err)
 	}
@@ -160,6 +179,8 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		}
 	}
 
+	globals.fissionErrChan = fissionErrChan
+
 	globals.stats = &statsStruct{}
 
 	bucketstats.Register("ICLIENT", "", globals.stats)
@@ -171,7 +192,10 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 func uninitializeGlobals() (err error) {
 	globals.config.VolumeName = ""
 	globals.config.MountPointDirPath = ""
-	globals.config.AllowOther = false
+	globals.config.FUSEAllowOther = false
+	globals.config.FUSEMaxBackground = 0
+	globals.config.FUSECongestionThreshhold = 0
+	globals.config.FUSEMaxWrite = 0
 	globals.config.PlugInPath = ""
 	globals.config.PlugInEnvValue = ""
 	globals.config.RetryRPCPublicIPAddr = ""
@@ -184,6 +208,8 @@ func uninitializeGlobals() (err error) {
 	globals.config.TraceEnabled = false
 
 	globals.retryRPCCACertPEM = nil
+
+	globals.fissionErrChan = nil
 
 	bucketstats.UnRegister("ICLIENT", "")
 

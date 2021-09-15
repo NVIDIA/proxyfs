@@ -5,6 +5,7 @@ package iclientpkg
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"time"
 )
@@ -90,4 +91,13 @@ func logSIGHUP() {
 		_ = globals.logFile.Close()
 		globals.logFile = nil
 	}
+}
+
+func newLogger() *log.Logger {
+	return log.New(&globals, "", 0)
+}
+
+func (dummy *globalsStruct) Write(p []byte) (n int, err error) {
+	logf("FISSION", "%s", string(p[:]))
+	return 0, nil
 }

@@ -7,8 +7,15 @@ import (
 	"github.com/NVIDIA/proxyfs/conf"
 )
 
-func start(confMap conf.ConfMap) (err error) {
-	err = initializeGlobals(confMap)
+func start(confMap conf.ConfMap, fissionErrChan chan error) (err error) {
+	err = initializeGlobals(confMap, fissionErrChan)
+	if nil != err {
+		return
+	}
+
+	// TODO
+
+	err = performMountFUSE()
 	if nil != err {
 		return
 	}
@@ -19,6 +26,13 @@ func start(confMap conf.ConfMap) (err error) {
 }
 
 func stop() (err error) {
+	// TODO
+
+	err = performUnmountFUSE()
+	if nil != err {
+		return
+	}
+
 	// TODO
 
 	err = uninitializeGlobals()
