@@ -113,9 +113,10 @@ COPY --from=build /src/imgr/imgr      ./
 COPY --from=build /src/imgr/imgr.conf ./
 
 FROM imgr as iclient
-RUN rm caKey.pem cert.pem key.pem imgr imgr.conf
+RUN rm icert caKey.pem cert.pem key.pem imgr imgr.conf
 RUN apk add --no-cache fuse
-COPY --from=build /src/iclient/iclient      ./
-COPY --from=build /src/iclient/iclient.conf ./
-COPY --from=build /src/iclient/iclient.sh   ./
+COPY --from=build /src/iclient/iclient                  ./
+COPY --from=build /src/iclient/iclient.conf             ./
+COPY --from=build /src/iclient/iclient.sh               ./
+COPY --from=build /src/iauth/iauth-swift/iauth-swift.so ./
 RUN apk add --no-cache curl
