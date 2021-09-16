@@ -15,10 +15,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NVIDIA/sortedmap"
+
 	"github.com/NVIDIA/proxyfs/bucketstats"
+	"github.com/NVIDIA/proxyfs/ihtml"
 	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/proxyfs/version"
-	"github.com/NVIDIA/sortedmap"
 )
 
 const (
@@ -155,77 +157,32 @@ func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, request *http.R
 }
 
 func serveHTTPGet(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
+	var (
+		ok bool
+	)
+
 	switch {
 	case "" == requestPath:
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write([]byte(fmt.Sprintf(indexDotHTMLTemplate, version.ProxyFSVersion)))
-	case "/bootstrap.min.css" == requestPath:
-		responseWriter.Header().Set("Content-Type", bootstrapDotCSSContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write([]byte(bootstrapDotCSSContent))
-	case "/bootstrap.min.js" == requestPath:
-		responseWriter.Header().Set("Content-Type", bootstrapDotJSContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write([]byte(bootstrapDotJSContent))
 	case "/config" == requestPath:
 		serveHTTPGetOfConfig(responseWriter, request)
 	case "/index.html" == requestPath:
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write([]byte(fmt.Sprintf(indexDotHTMLTemplate, version.ProxyFSVersion)))
-	case "/jquery.min.js" == requestPath:
-		responseWriter.Header().Set("Content-Type", jqueryDotJSContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write([]byte(jqueryDotJSContent))
-	case "/jsontree.js" == requestPath:
-		responseWriter.Header().Set("Content-Type", jsontreeDotJSContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write([]byte(jsontreeDotJSContent))
-	case "/open-iconic/font/css/open-iconic-bootstrap.min.css" == requestPath:
-		responseWriter.Header().Set("Content-Type", openIconicBootstrapDotCSSContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write([]byte(openIconicBootstrapDotCSSContent))
-	case "/open-iconic/font/fonts/open-iconic.eot" == requestPath:
-		responseWriter.Header().Set("Content-Type", openIconicDotEOTContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write(openIconicDotEOTContent)
-	case "/open-iconic/font/fonts/open-iconic.otf" == requestPath:
-		responseWriter.Header().Set("Content-Type", openIconicDotOTFContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write(openIconicDotOTFContent)
-	case "/open-iconic/font/fonts/open-iconic.svg" == requestPath:
-		responseWriter.Header().Set("Content-Type", openIconicDotSVGContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write([]byte(openIconicDotSVGContent))
-	case "/open-iconic/font/fonts/open-iconic.ttf" == requestPath:
-		responseWriter.Header().Set("Content-Type", openIconicDotTTFContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write(openIconicDotTTFContent)
-	case "/open-iconic/font/fonts/open-iconic.woff" == requestPath:
-		responseWriter.Header().Set("Content-Type", openIconicDotWOFFContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write(openIconicDotWOFFContent)
-	case "/popper.min.js" == requestPath:
-		responseWriter.Header().Set("Content-Type", popperDotJSContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write(popperDotJSContent)
 	case "/stats" == requestPath:
 		serveHTTPGetOfStats(responseWriter, request)
-	case "/styles.css" == requestPath:
-		responseWriter.Header().Set("Content-Type", stylesDotCSSContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write([]byte(stylesDotCSSContent))
-	case "/utils.js" == requestPath:
-		responseWriter.Header().Set("Content-Type", utilsDotJSContentType)
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write([]byte(utilsDotJSContent))
 	case "/version" == requestPath:
 		serveHTTPGetOfVersion(responseWriter, request)
 	case strings.HasPrefix(requestPath, "/volume"):
 		serveHTTPGetOfVolume(responseWriter, request, requestPath)
 	default:
-		responseWriter.WriteHeader(http.StatusNotFound)
+		ok = ihtml.ServeHTTPGet(responseWriter, requestPath)
+		if !ok {
+			responseWriter.WriteHeader(http.StatusNotFound)
+		}
 	}
 }
 

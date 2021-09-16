@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 gopregeneratedirs = \
-	make-static-content
+	ihtml/make-static-content
 
 gopkgdirs = \
 	bucketstats \
 	conf \
 	iauth \
+	ihtml \
 	ilayout \
 	retryrpc \
 	utils \
