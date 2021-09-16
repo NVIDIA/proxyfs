@@ -62,7 +62,7 @@ func startHTTPServer() (err error) {
 	}()
 
 	for startHTTPServerUpCheckRetries = 0; startHTTPServerUpCheckRetries < startHTTPServerUpCheckMaxRetries; startHTTPServerUpCheckRetries++ {
-		_, err = http.Get("http://" + ipAddrTCPPort + "/config")
+		_, err = http.Get("http://" + ipAddrTCPPort + "/version")
 		if nil == err {
 			return
 		}
@@ -132,10 +132,8 @@ func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, request *http.R
 	var (
 		err       error
 		pathSplit []string
-		startTime time.Time
+		startTime time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	pathSplit = strings.Split(requestPath, "/")
 
@@ -235,10 +233,9 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Requ
 	var (
 		confMapJSON []byte
 		err         error
-		startTime   time.Time
+		startTime   time.Time = time.Now()
 	)
 
-	startTime = time.Now()
 	defer func() {
 		globals.stats.GetConfigUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -271,11 +268,10 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Requ
 func serveHTTPGetOfStats(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
 		err           error
-		startTime     time.Time
+		startTime     time.Time = time.Now()
 		statsAsString string
 	)
 
-	startTime = time.Now()
 	defer func() {
 		globals.stats.GetStatsUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -714,7 +710,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		pathSplit                          []string
 		pendingDeleteObjectNameArrayIndex  int
 		requestAuthToken                   string
-		startTime                          time.Time
+		startTime                          time.Time = time.Now()
 		superBlockV1                       *ilayout.SuperBlockV1Struct
 		volumeAsStruct                     *volumeStruct
 		volumeAsValue                      sortedmap.Value
@@ -729,8 +725,6 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		volumeListGETLen                   int
 		volumeName                         string
 	)
-
-	startTime = time.Now()
 
 	pathSplit = strings.Split(requestPath, "/")
 
@@ -1354,10 +1348,8 @@ func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Req
 	var (
 		err               error
 		requestBodyAsJSON serveHTTPPostOfVolumeRequestBodyAsJSONStruct
-		startTime         time.Time
+		startTime         time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	defer func() {
 		globals.stats.PostVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1396,10 +1388,8 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		err               error
 		pathSplit         []string
 		requestBodyAsJSON serveHTTPPutOfVolumeRequestBodyAsJSONStruct
-		startTime         time.Time
+		startTime         time.Time = time.Now()
 	)
-
-	startTime = time.Now()
 
 	pathSplit = strings.Split(requestPath, "/")
 

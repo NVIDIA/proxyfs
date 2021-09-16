@@ -72,14 +72,18 @@ services:
     expose:
       - 32356                                 # IMGR.RetryRPCPort
       - 15346                                 # IMGR.HTTPServerPort
+      - 15347                                 # ICLIENT.HTTPServerPort
     ports:
       - target: 32356
         published: 32356
         protocol: tcp
         mode: host
-    ports:
       - target: 15346
         published: 15346
+        protocol: tcp
+        mode: host
+      - target: 15347
+        published: 15347
         protocol: tcp
         mode: host
     volumes:
@@ -103,7 +107,6 @@ services:
         published: 32356
         protocol: tcp
         mode: host
-    ports:
       - target: 15346
         published: 15346
         protocol: tcp
@@ -118,5 +121,12 @@ services:
       - swift
       - imgr
     privileged: true
+    expose:
+      - 15347                                 # ICLIENT.HTTPServerPort
+    ports:
+      - target: 15347
+        published: 15347
+        protocol: tcp
+        mode: host
     command: ["./iclient.sh", "-s"]
  

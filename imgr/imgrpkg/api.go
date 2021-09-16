@@ -70,7 +70,7 @@
 // the RPCs will be available via <PublicIPAddr>:<RetryRPCPort>.
 //
 // The RESTful API is provided by an embedded HTTP Server
-// (at URL http://<PrivateIPAddr>:<HTTPServerPort>) responsing to the following:
+// (at URL http://<PrivateIPAddr>:<HTTPServerPort>) responds to the following:
 //
 //  DELETE /volume/<volumeName>
 //
@@ -85,6 +85,10 @@
 //  GET /stats
 //
 // This will return a raw bucketstats dump.
+//
+//  GET /version
+//
+// This will return the imgr version.
 //
 //  GET /volume
 //

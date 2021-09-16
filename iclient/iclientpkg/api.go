@@ -25,6 +25,26 @@
 //  LogFilePath:              iclient.log
 //  LogToConsole:             true
 //  TraceEnabled:             false
+//  HTTPServerIPAddr:         # Defaults to 0.0.0.0 (i.e. all interfaces)
+//  HTTPServerPort:           # Defaults to disabling the embedded HTTP Server
+//
+// Most of the config keys are required and must have values. The exceptions are
+// the HTTPServer{IPAddr|Port} keys that, if not present (or HTTPServerPort is zero)
+// will disable the embedded HTTP Server.
+//
+// The embedded HTTP Server (at URL http://<HTTPServerIPAddr>:<HTTPServerPort>)
+// responds to the following:
+//
+//  GET /config
+//
+// This will return a JSON document that matches the conf.ConfMap used to
+// launch this package.
+//
+//  GET /stats
+//
+// This will return a raw bucketstats dump.
+//
+//  GET /version
 //
 package iclientpkg
 

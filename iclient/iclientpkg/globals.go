@@ -6,7 +6,9 @@ package iclientpkg
 import (
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/NVIDIA/fission"
@@ -34,19 +36,68 @@ type configStruct struct {
 	LogFilePath              string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole             bool
 	TraceEnabled             bool
+	HTTPServerIPAddr         string
+	HTTPServerPort           uint16 // To be served on HTTPServerIPAddr via TCP
 }
 
 type statsStruct struct {
-	AdjustInodeTableEntryOpenCountUsecs bucketstats.BucketLog2Round // imgrpkg AdjustInodeTableEntryOpenCount
-	DeleteInodeTableEntryUsecs          bucketstats.BucketLog2Round // imgrpkg DeleteInodeTableEntry
-	FetchNonceRangeUsecs                bucketstats.BucketLog2Round // imgrpkg FetchNonceRange
-	FlushUsecs                          bucketstats.BucketLog2Round // imgrpkg Flush
-	GetInodeTableEntryUsecs             bucketstats.BucketLog2Round // imgrpkg GetInodeTableEntry
-	LeaseUsecs                          bucketstats.BucketLog2Round // imgrpkg Lease
-	MountUsecs                          bucketstats.BucketLog2Round // imgrpkg Mount
-	PutInodeTableEntriesUsecs           bucketstats.BucketLog2Round // imgrpkg PutInodeTableEntries
-	RenewMountUsecs                     bucketstats.BucketLog2Round // imgrpkg RenewMount
-	UnmountUsecs                        bucketstats.BucketLog2Round // imgrpkg Unmount
+	GetConfigUsecs  bucketstats.BucketLog2Round // GET /config
+	GetStatsUsecs   bucketstats.BucketLog2Round // GET /stats
+	GetVersionUsecs bucketstats.BucketLog2Round // GET /version
+
+	AdjustInodeTableEntryOpenCountUsecs bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)AdjustInodeTableEntryOpenCount()
+	DeleteInodeTableEntryUsecs          bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)DeleteInodeTableEntry()
+	FetchNonceRangeUsecs                bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)FetchNonceRange()
+	FlushUsecs                          bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)Flush()
+	GetInodeTableEntryUsecs             bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)GetInodeTableEntry()
+	LeaseUsecs                          bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)Lease()
+	MountUsecs                          bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)Mount()
+	PutInodeTableEntriesUsecs           bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)PutInodeTableEntries()
+	RenewMountUsecs                     bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)RenewMount()
+	UnmountUsecs                        bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)Unmount()
+
+	DoLookupUsecs      bucketstats.BucketLog2Round // (*globalsStruct)DoLookup()
+	DoForgetUsecs      bucketstats.BucketLog2Round // (*globalsStruct)DoForget()
+	DoGetAttrUsecs     bucketstats.BucketLog2Round // (*globalsStruct)DoGetAttr()
+	DoSetAttrUsecs     bucketstats.BucketLog2Round // (*globalsStruct)DoSetAttr()
+	DoReadLinkUsecs    bucketstats.BucketLog2Round // (*globalsStruct)DoReadLink()
+	DoSymLinkUsecs     bucketstats.BucketLog2Round // (*globalsStruct)DoSymLink()
+	DoMkNodUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoMkNod()
+	DoMkDirUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoMkDir()
+	DoUnlinkUsecs      bucketstats.BucketLog2Round // (*globalsStruct)DoUnlink()
+	DoRmDirUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoRmDir()
+	DoRenameUsecs      bucketstats.BucketLog2Round // (*globalsStruct)DoRename()
+	DoLinkUsecs        bucketstats.BucketLog2Round // (*globalsStruct)DoLink()
+	DoOpenUsecs        bucketstats.BucketLog2Round // (*globalsStruct)DoOpen()
+	DoReadUsecs        bucketstats.BucketLog2Round // (*globalsStruct)DoRead()
+	DoWriteUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoWrite()
+	DoStatFSUsecs      bucketstats.BucketLog2Round // (*globalsStruct)DoStatFS()
+	DoReleaseUsecs     bucketstats.BucketLog2Round // (*globalsStruct)DoRelease()
+	DoFSyncUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoFSync()
+	DoSetXAttrUsecs    bucketstats.BucketLog2Round // (*globalsStruct)DoSetXAttr()
+	DoGetXAttrUsecs    bucketstats.BucketLog2Round // (*globalsStruct)DoGetXAttr()
+	DoListXAttrUsecs   bucketstats.BucketLog2Round // (*globalsStruct)DoListXAttr()
+	DoRemoveXAttrUsecs bucketstats.BucketLog2Round // (*globalsStruct)DoRemoveXAttr()
+	DoFlushUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoFlush()
+	DoInitUsecs        bucketstats.BucketLog2Round // (*globalsStruct)DoInit()
+	DoOpenDirUsecs     bucketstats.BucketLog2Round // (*globalsStruct)DoOpenDir()
+	DoReadDirUsecs     bucketstats.BucketLog2Round // (*globalsStruct)DoReadDir()
+	DoReleaseDirUsecs  bucketstats.BucketLog2Round // (*globalsStruct)DoReleaseDir()
+	DoFSyncDirUsecs    bucketstats.BucketLog2Round // (*globalsStruct)DoFSyncDir()
+	DoGetLKUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoGetLK()
+	DoSetLKUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoSetLK()
+	DoSetLKWUsecs      bucketstats.BucketLog2Round // (*globalsStruct)DoSetLKW()
+	DoAccessUsecs      bucketstats.BucketLog2Round // (*globalsStruct)DoAccess()
+	DoCreateUsecs      bucketstats.BucketLog2Round // (*globalsStruct)DoCreate()
+	DoInterruptUsecs   bucketstats.BucketLog2Round // (*globalsStruct)DoInterrupt()
+	DoBMapUsecs        bucketstats.BucketLog2Round // (*globalsStruct)DoBMap()
+	DoDestroyUsecs     bucketstats.BucketLog2Round // (*globalsStruct)DoDestroy()
+	DoPollUsecs        bucketstats.BucketLog2Round // (*globalsStruct)DoPoll()
+	DoBatchForgetUsecs bucketstats.BucketLog2Round // (*globalsStruct)DoBatchForget()
+	DoFAllocateUsecs   bucketstats.BucketLog2Round // (*globalsStruct)DoFAllocate()
+	DoReadDirPlusUsecs bucketstats.BucketLog2Round // (*globalsStruct)DoReadDirPlus()
+	DoRename2Usecs     bucketstats.BucketLog2Round // (*globalsStruct)DoRename2()
+	DoLSeekUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoLSeek()
 }
 
 type globalsStruct struct {
@@ -54,6 +105,8 @@ type globalsStruct struct {
 	logFile           *os.File       // == nil if config.LogFilePath == ""
 	retryRPCCACertPEM []byte         // == nil if config.RetryRPCCACertFilePath == ""
 	fissionErrChan    chan error     //
+	httpServer        *http.Server   //
+	httpServerWG      sync.WaitGroup //
 	stats             *statsStruct   //
 	fissionVolume     fission.Volume //
 }
@@ -165,6 +218,14 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	if nil != err {
 		logFatal(err)
 	}
+	globals.config.HTTPServerIPAddr, err = confMap.FetchOptionValueString("ICLIENT", "HTTPServerIPAddr")
+	if nil != err {
+		globals.config.HTTPServerIPAddr = "0.0.0.0"
+	}
+	globals.config.HTTPServerPort, err = confMap.FetchOptionValueUint16("ICLIENT", "HTTPServerPort")
+	if nil != err {
+		globals.config.HTTPServerPort = 0
+	}
 
 	configJSONified = utils.JSONify(globals.config, true)
 
@@ -206,6 +267,8 @@ func uninitializeGlobals() (err error) {
 	globals.config.LogFilePath = ""
 	globals.config.LogToConsole = false
 	globals.config.TraceEnabled = false
+	globals.config.HTTPServerIPAddr = ""
+	globals.config.HTTPServerPort = 0
 
 	globals.retryRPCCACertPEM = nil
 

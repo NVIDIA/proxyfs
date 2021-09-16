@@ -22,10 +22,20 @@ func start(confMap conf.ConfMap, fissionErrChan chan error) (err error) {
 
 	// TODO
 
+	err = startHTTPServer()
+	if nil != err {
+		return
+	}
+
 	return
 }
 
 func stop() (err error) {
+	err = stopHTTPServer()
+	if nil != err {
+		return
+	}
+
 	// TODO
 
 	err = performUnmountFUSE()
