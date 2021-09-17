@@ -40,6 +40,18 @@
 // This will return a JSON document that matches the conf.ConfMap used to
 // launch this package.
 //
+//  GET /leases
+//
+// This will display the state of every lease.
+//
+//  POST /leases/demote
+//
+// This will trigger the demotion of any Exclusive Leases held.
+//
+//  POST /leases/release
+//
+// This will trigger the release of any {Exclusive|Shared} Leases held.
+//
 //  GET /stats
 //
 // This will return a raw bucketstats dump.

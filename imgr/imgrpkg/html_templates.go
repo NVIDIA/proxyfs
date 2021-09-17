@@ -76,7 +76,7 @@ const indexDotHTMLTemplate string = `<!doctype html>
         <div class="card mb-4">
           <div class="card-body">
             <h5 class="card-title">Volumes</h5>
-            <p class="card-text">Examine volumes currently active on this imgr node.</p>
+            <p class="card-text">Examine volumes currently active on this imgr instance.</p>
           </div>
           <ul class="list-group list-group-flush">
             <li class="list-group-item">

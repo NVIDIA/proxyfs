@@ -111,6 +111,8 @@ func (dummy *globalsStruct) ServeHTTP(responseWriter http.ResponseWriter, reques
 	switch request.Method {
 	case http.MethodGet:
 		serveHTTPGet(responseWriter, request, requestPath)
+	case http.MethodPost:
+		serveHTTPPost(responseWriter, request, requestPath)
 	default:
 		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -132,6 +134,8 @@ func serveHTTPGet(responseWriter http.ResponseWriter, request *http.Request, req
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write([]byte(fmt.Sprintf(indexDotHTMLTemplate, version.ProxyFSVersion)))
+	case "/leases" == requestPath:
+		serveHTTPGetOfLeases(responseWriter, request)
 	case "/stats" == requestPath:
 		serveHTTPGetOfStats(responseWriter, request)
 	case "/version" == requestPath:
@@ -180,6 +184,18 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Requ
 	}
 }
 
+func serveHTTPGetOfLeases(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.GetLeasesUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+}
+
 func serveHTTPGetOfStats(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
 		err           error
@@ -221,4 +237,39 @@ func serveHTTPGetOfVersion(responseWriter http.ResponseWriter, request *http.Req
 	if nil != err {
 		logWarnf("responseWriter.Write([]byte(statsAsString)) failed: %v", err)
 	}
+}
+
+func serveHTTPPost(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
+	switch {
+	case "/leases/demote" == requestPath:
+		serveHTTPPostOfLeasesDemote(responseWriter, request)
+	case "/leases/release" == requestPath:
+		serveHTTPPostOfLeasesRelease(responseWriter, request)
+	default:
+		responseWriter.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func serveHTTPPostOfLeasesDemote(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.PostLeasesDemoteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+}
+
+func serveHTTPPostOfLeasesRelease(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.PostLeasesReleaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
 }

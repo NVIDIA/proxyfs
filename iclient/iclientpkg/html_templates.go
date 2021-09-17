@@ -30,6 +30,9 @@ const indexDotHTMLTemplate string = `<!doctype html>
           <li class="nav-item">
             <a class="nav-link" href="/stats">Stats</a>
           </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/leases">Leases</a>
+          </li>
         </ul>
         <span class="navbar-text">Version %[1]v</span>
       </div>
@@ -70,6 +73,16 @@ const indexDotHTMLTemplate string = `<!doctype html>
         <div class="w-100 d-none d-lg-block d-xl-none"><!-- wrap every 2 on lg--></div>
         <div class="w-100 d-none d-xl-block"><!-- wrap every 3 on xl--></div>
         <div class="w-100 d-none d-sm-block d-md-none"><!-- wrap every 1 on sm--></div>
+        <div class="card mb-4">
+          <div class="card-body">
+            <h5 class="card-title">Leases</h5>
+            <p class="card-text">Examine leases currently active on this iclient instance.</p>
+          </div>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">
+              <a href="/leases" class="card-link">Leases Page</a>
+          </ul>
+        </div>
       </div>
     </div>
     <script src="/jquery.min.js"></script>
@@ -105,6 +118,9 @@ const configTemplate string = `<!doctype html>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="/stats">Stats</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/leases">Leases</a>
           </li>
         </ul>
         <span class="navbar-text">Version %[1]v</span>

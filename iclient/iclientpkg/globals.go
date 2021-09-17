@@ -42,8 +42,12 @@ type configStruct struct {
 
 type statsStruct struct {
 	GetConfigUsecs  bucketstats.BucketLog2Round // GET /config
+	GetLeasesUsecs  bucketstats.BucketLog2Round // GET /leases
 	GetStatsUsecs   bucketstats.BucketLog2Round // GET /stats
 	GetVersionUsecs bucketstats.BucketLog2Round // GET /version
+
+	PostLeasesDemoteUsecs  bucketstats.BucketLog2Round // POST /leases/demote
+	PostLeasesReleaseUsecs bucketstats.BucketLog2Round // POST /leases/release
 
 	AdjustInodeTableEntryOpenCountUsecs bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)AdjustInodeTableEntryOpenCount()
 	DeleteInodeTableEntryUsecs          bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)DeleteInodeTableEntry()
