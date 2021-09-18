@@ -40,6 +40,26 @@ type configStruct struct {
 	HTTPServerPort           uint16 // To be served on HTTPServerIPAddr via TCP
 }
 
+type inodeLeaseStateType uint32
+
+const (
+	inodeLeaseStateNone inodeLeaseStateType = iota
+	inodeLeaseStateSharedRequested
+	inodeLeaseStateSharedGranted
+	inodeLeaseStateSharedPromoting
+	inodeLeaseStateSharedReleasing
+	inodeLeaseStateSharedExpired
+	inodeLeaseStateExclusiveRequested
+	inodeLeaseStateExclusiveGranted
+	inodeLeaseStateExclusiveDemoting
+	inodeLeaseStateExclusiveReleasing
+	inodeLeaseStateExclusiveExpired
+)
+
+type inodeLeaseStruct struct {
+	state inodeLeaseStateType
+}
+
 type statsStruct struct {
 	GetConfigUsecs  bucketstats.BucketLog2Round // GET /config
 	GetLeasesUsecs  bucketstats.BucketLog2Round // GET /leases
@@ -105,14 +125,16 @@ type statsStruct struct {
 }
 
 type globalsStruct struct {
-	config            configStruct   //
-	logFile           *os.File       // == nil if config.LogFilePath == ""
-	retryRPCCACertPEM []byte         // == nil if config.RetryRPCCACertFilePath == ""
-	fissionErrChan    chan error     //
-	httpServer        *http.Server   //
-	httpServerWG      sync.WaitGroup //
-	stats             *statsStruct   //
-	fissionVolume     fission.Volume //
+	sync.Mutex                                     // serializes access to inodeLeaseTable
+	config            configStruct                 //
+	logFile           *os.File                     // == nil if config.LogFilePath == ""
+	retryRPCCACertPEM []byte                       // == nil if config.RetryRPCCACertFilePath == ""
+	fissionErrChan    chan error                   //
+	inodeLeaseTable   map[uint64]*inodeLeaseStruct //
+	httpServer        *http.Server                 //
+	httpServerWG      sync.WaitGroup               //
+	stats             *statsStruct                 //
+	fissionVolume     fission.Volume               //
 }
 
 var globals globalsStruct
@@ -246,6 +268,8 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 
 	globals.fissionErrChan = fissionErrChan
 
+	globals.inodeLeaseTable = make(map[uint64]*inodeLeaseStruct)
+
 	globals.stats = &statsStruct{}
 
 	bucketstats.Register("ICLIENT", "", globals.stats)
@@ -275,6 +299,8 @@ func uninitializeGlobals() (err error) {
 	globals.config.HTTPServerPort = 0
 
 	globals.retryRPCCACertPEM = nil
+
+	globals.inodeLeaseTable = nil
 
 	globals.fissionErrChan = nil
 

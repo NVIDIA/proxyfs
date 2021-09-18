@@ -150,3 +150,62 @@ const configTemplate string = `<!doctype html>
   </body>
 </html>
 `
+
+// To use: fmt.Sprintf(leasesTemplate, proxyfsVersion, inodeLeaseTableJSONString)
+//                                          %[1]v            %[2]v
+const leasesTemplate string = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/styles.css">
+    <title>Leases</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNavDropdown">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/config">Config</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/stats">Stats</a>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/leases">Leases <span class="sr-only">(current)</span></a>
+          </li>
+        </ul>
+        <span class="navbar-text">Version %[1]v</span>
+      </div>
+    </nav>
+    <div class="container">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/">Home</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Leases</li>
+        </ol>
+      </nav>
+      <h1 class="display-4">
+        Leases
+      </h1>
+      <pre class="code" id="json_data"></pre>
+    </div>
+    <script src="/jquery.min.js"></script>
+    <script src="/popper.min.js"></script>
+    <script src="/bootstrap.min.js"></script>
+    <script src="/jsontree.js"></script>
+    <script type="text/javascript">
+      var json_data = %[2]v;
+      document.getElementById("json_data").innerHTML = JSONTree.create(json_data, null, 1);
+      JSONTree.collapse();
+    </script>
+  </body>
+</html>
+`

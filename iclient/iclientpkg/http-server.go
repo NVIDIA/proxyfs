@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -184,16 +185,127 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Requ
 	}
 }
 
+type inodeLeaseTableByInodeNumberElement struct {
+	InodeNumber uint64
+	State       string
+}
+
+type inodeLeaseTableByInodeNumberSlice []inodeLeaseTableByInodeNumberElement
+
+func (s inodeLeaseTableByInodeNumberSlice) Len() int {
+	return len(s)
+}
+
+func (s inodeLeaseTableByInodeNumberSlice) Swap(i, j int) {
+	s[i].InodeNumber, s[j].InodeNumber = s[j].InodeNumber, s[i].InodeNumber
+	s[i].State, s[j].State = s[j].State, s[i].State
+}
+
+func (s inodeLeaseTableByInodeNumberSlice) Less(i, j int) bool {
+	return s[i].InodeNumber < s[j].InodeNumber
+}
+
 func serveHTTPGetOfLeases(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		startTime time.Time = time.Now()
+		err                  error
+		inodeLease           *inodeLeaseStruct
+		inodeLeaseTable      inodeLeaseTableByInodeNumberSlice
+		inodeLeaseTableJSON  []byte
+		inodeLeaseTableIndex int
+		inodeNumber          uint64
+		startTime            time.Time = time.Now()
 	)
 
 	defer func() {
 		globals.stats.GetLeasesUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+	globals.Lock()
+
+	globals.inodeLeaseTable[1] = &inodeLeaseStruct{state: inodeLeaseStateNone}                // UNDO
+	globals.inodeLeaseTable[2] = &inodeLeaseStruct{state: inodeLeaseStateSharedRequested}     // UNDO
+	globals.inodeLeaseTable[3] = &inodeLeaseStruct{state: inodeLeaseStateSharedGranted}       // UNDO
+	globals.inodeLeaseTable[4] = &inodeLeaseStruct{state: inodeLeaseStateSharedPromoting}     // UNDO
+	globals.inodeLeaseTable[5] = &inodeLeaseStruct{state: inodeLeaseStateSharedReleasing}     // UNDO
+	globals.inodeLeaseTable[6] = &inodeLeaseStruct{state: inodeLeaseStateSharedExpired}       // UNDO
+	globals.inodeLeaseTable[7] = &inodeLeaseStruct{state: inodeLeaseStateExclusiveRequested}  // UNDO
+	globals.inodeLeaseTable[8] = &inodeLeaseStruct{state: inodeLeaseStateExclusiveGranted}    // UNDO
+	globals.inodeLeaseTable[9] = &inodeLeaseStruct{state: inodeLeaseStateExclusiveDemoting}   // UNDO
+	globals.inodeLeaseTable[10] = &inodeLeaseStruct{state: inodeLeaseStateExclusiveReleasing} // UNDO
+	globals.inodeLeaseTable[11] = &inodeLeaseStruct{state: inodeLeaseStateExclusiveExpired}   // UNDO
+
+	inodeLeaseTable = make(inodeLeaseTableByInodeNumberSlice, len(globals.inodeLeaseTable))
+	inodeLeaseTableIndex = 0
+	for inodeNumber, inodeLease = range globals.inodeLeaseTable {
+		inodeLeaseTable[inodeLeaseTableIndex].InodeNumber = inodeNumber
+		switch inodeLease.state {
+		case inodeLeaseStateNone:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "None"
+		case inodeLeaseStateSharedRequested:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "SharedRequested:"
+		case inodeLeaseStateSharedGranted:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "SharedGranted"
+		case inodeLeaseStateSharedPromoting:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "SharedPromoting"
+		case inodeLeaseStateSharedReleasing:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "SharedReleasing"
+		case inodeLeaseStateSharedExpired:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "SharedExpired"
+		case inodeLeaseStateExclusiveRequested:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveRequested"
+		case inodeLeaseStateExclusiveGranted:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveGranted"
+		case inodeLeaseStateExclusiveDemoting:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveDemoting"
+		case inodeLeaseStateExclusiveReleasing:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveReleasing"
+		case inodeLeaseStateExclusiveExpired:
+			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveExpired"
+		default:
+			logFatalf("globals.inodeLeaseTable[inudeNumber:0x%016X].state (%v) unrecognized", inodeNumber, inodeLease.state)
+		}
+		inodeLeaseTableIndex++
+	}
+
+	delete(globals.inodeLeaseTable, 1)  // UNDO
+	delete(globals.inodeLeaseTable, 2)  // UNDO
+	delete(globals.inodeLeaseTable, 3)  // UNDO
+	delete(globals.inodeLeaseTable, 4)  // UNDO
+	delete(globals.inodeLeaseTable, 5)  // UNDO
+	delete(globals.inodeLeaseTable, 6)  // UNDO
+	delete(globals.inodeLeaseTable, 7)  // UNDO
+	delete(globals.inodeLeaseTable, 8)  // UNDO
+	delete(globals.inodeLeaseTable, 9)  // UNDO
+	delete(globals.inodeLeaseTable, 10) // UNDO
+	delete(globals.inodeLeaseTable, 11) // UNDO
+
+	globals.Unlock()
+
+	sort.Sort(inodeLeaseTable)
+
+	inodeLeaseTableJSON, err = json.Marshal(inodeLeaseTable)
+	if nil != err {
+		logFatalf("json.Marshal(inodeLeaseTable) failed: %v", err)
+	}
+
+	if strings.Contains(request.Header.Get("Accept"), "text/html") {
+		responseWriter.Header().Set("Content-Type", "text/html")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, err = responseWriter.Write([]byte(fmt.Sprintf(leasesTemplate, version.ProxyFSVersion, string(inodeLeaseTableJSON[:]))))
+		if nil != err {
+			logWarnf("responseWriter.Write([]byte(fmt.Sprintf(leasesTemplate, version.ProxyFSVersion, string(inodeLeaseTableJSON[:])))) failed: %v", err)
+		}
+	} else {
+		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(inodeLeaseTableJSON)))
+		responseWriter.Header().Set("Content-Type", "application/json")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, err = responseWriter.Write(inodeLeaseTableJSON)
+		if nil != err {
+			logWarnf("responseWriter.Write(inodeLeaseTableJSON) failed: %v", err)
+		}
+	}
 }
 
 func serveHTTPGetOfStats(responseWriter http.ResponseWriter, request *http.Request) {
