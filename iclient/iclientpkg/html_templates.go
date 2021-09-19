@@ -160,6 +160,7 @@ const leasesTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
+    <link href="/open-iconic/font/css/open-iconic-bootstrap.min.css" rel="stylesheet">
     <title>Leases</title>
   </head>
   <body>
@@ -195,16 +196,75 @@ const leasesTemplate string = `<!doctype html>
       <h1 class="display-4">
         Leases
       </h1>
+      <!-- Back to top button -->
+      <button type="button" class="btn btn-primary btn-floating btn-lg" id="btn-back-to-top">
+        <span class="oi oi-chevron-top"></span>
+      </button>
       <pre class="code" id="json_data"></pre>
     </div>
     <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
-    <script src="/jsontree.js"></script>
+    <script src="/utils.js"></script>
     <script type="text/javascript">
       var json_data = %[2]v;
-      document.getElementById("json_data").innerHTML = JSONTree.create(json_data, null, 1);
-      JSONTree.collapse();
+
+      function doDemote() {
+        console.log("in doDemote");
+        fetch("/leases/demote", {
+          method: 'POST'
+        }).then(res => {
+          location.reload();
+        });
+      }
+
+      function doRelease() {
+        console.log("in doRelease");
+        fetch("/leases/release", {
+          method: 'POST'
+        }).then(res => {
+          location.reload();
+        });
+      }
+
+      const addMarkup = function(json_data) {
+        let table_markup = "";
+
+        table_markup += "      <table class=\"table table-sm table-striped table-hover\" id=\"leases-table\">";
+        table_markup += "        <tbody>";
+        table_markup += "          <tr>";
+        table_markup += "            <td class=\"row\"><a href=\"#\" onclick=\"doDemote()\" class=\"btn btn-sm btn-primary\">Demote All</a></td>\n";
+        table_markup += "            <td class=\"text-right\"><a href=\"#\" onclick=\"doRelease()\" class=\"btn btn-sm btn-primary\">Release All</a></td>\n";
+        table_markup += "          </tr>";
+        table_markup += "        </tbody>";
+        table_markup += "      </table>";
+
+        table_markup += "      <table class=\"table table-sm table-striped table-hover\" id=\"leases-table\">";
+        table_markup += "        <thead>";
+        table_markup += "          <tr>";
+        table_markup += "            <th scope=\"row\">InodeNumber</th>";
+        table_markup += "            <th class=\"text-right\">LeaseState</th>";
+        table_markup += "          </tr>";
+        table_markup += "        </thead>";
+        table_markup += "        <tbody>";
+
+        for (const lease of json_data) {
+          table_markup += "          <tr>";
+          table_markup += "            <td scope=\"row\">" + lease.InodeNumber + "</td>";
+          table_markup += "            <td class=\"text-right\">" + lease.State + "</td>";
+          table_markup += "          </tr>";
+        }
+
+        table_markup += "        </tbody>";
+        table_markup += "      </table>";
+
+        return table_markup;
+      }
+
+      document.getElementById("json_data").innerHTML = addMarkup(json_data);
+
+      // Fancy back to top behavior
+      addBackToTopBehavior();
     </script>
   </body>
 </html>
