@@ -4,6 +4,7 @@
 package iclientpkg
 
 import (
+	"container/list"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -43,7 +44,7 @@ type configStruct struct {
 type inodeLeaseStateType uint32
 
 const (
-	inodeLeaseStateNone inodeLeaseStateType = iota
+	inodeLeaseStateNone inodeLeaseStateType = iota // Only used if (*inodeLeaseStruct).requestList is non-empty
 	inodeLeaseStateSharedRequested
 	inodeLeaseStateSharedGranted
 	inodeLeaseStateSharedPromoting
@@ -56,8 +57,26 @@ const (
 	inodeLeaseStateExclusiveExpired
 )
 
+type inodeLeaseRequestTagType uint32
+
+const (
+	inodeLeaseRequestShared    inodeLeaseRequestTagType = iota
+	inodeLeaseRequestPromote                            // upgraded to inodeLeaseRequestExclusive if intervening inodeLeaseRequestRelease results in inodeLeaseStateNone
+	inodeLeaseRequestExclusive                          // upgraded to inodeLeaseRequestPromote if intervening inodeLeaseRequestShared results in inodeLeaseStateSharedGranted
+	inodeLeaseRequestDemote                             //
+	inodeLeaseRequestRelease                            //
+)
+
+type inodeLeaseRequestStruct struct {
+	sync.WaitGroup // signaled when the request has been processed
+	listElement    *list.Element
+	tag            inodeLeaseRequestTagType
+}
+
 type inodeLeaseStruct struct {
-	state inodeLeaseStateType
+	sync.WaitGroup // Signaled to tell (*inodeLeaseStruct).goroutine() to drain it's now non-empty inodeLeaseStruct.requestList
+	state          inodeLeaseStateType
+	requestList    *list.List // List of inodeLeaseRequestStruct's
 }
 
 type statsStruct struct {
@@ -125,12 +144,13 @@ type statsStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex                                     // serializes access to inodeLeaseTable
+	sync.Mutex                                     // Serializes access to inodeLeaseTable
 	config            configStruct                 //
 	logFile           *os.File                     // == nil if config.LogFilePath == ""
 	retryRPCCACertPEM []byte                       // == nil if config.RetryRPCCACertFilePath == ""
 	fissionErrChan    chan error                   //
 	inodeLeaseTable   map[uint64]*inodeLeaseStruct //
+	inodeLeaseWG      sync.WaitGroup               // Signaled as each (*inodeLeaseStruct).goroutine() exits
 	httpServer        *http.Server                 //
 	httpServerWG      sync.WaitGroup               //
 	stats             *statsStruct                 //
