@@ -196,6 +196,7 @@ const leasesTemplate string = `<!doctype html>
       <h1 class="display-4">
         Leases
       </h1>
+      <a id="lease-actions-and-table"></a>
       <!-- Back to top button -->
       <button type="button" class="btn btn-primary btn-floating btn-lg" id="btn-back-to-top">
         <span class="oi oi-chevron-top"></span>
@@ -228,40 +229,37 @@ const leasesTemplate string = `<!doctype html>
       }
 
       const addMarkup = function(json_data) {
-        let table_markup = "";
+        let markup = "";
 
-        table_markup += "      <table class=\"table table-sm table-striped table-hover\" id=\"leases-table\">";
-        table_markup += "        <tbody>";
-        table_markup += "          <tr>";
-        table_markup += "            <td class=\"row\"><a href=\"#\" onclick=\"doDemote()\" class=\"btn btn-sm btn-primary\">Demote All</a></td>\n";
-        table_markup += "            <td class=\"text-right\"><a href=\"#\" onclick=\"doRelease()\" class=\"btn btn-sm btn-primary\">Release All</a></td>\n";
-        table_markup += "          </tr>";
-        table_markup += "        </tbody>";
-        table_markup += "      </table>";
+        markup += "      <a href=\"#\" onclick=\"doDemote()\" class=\"btn btn-sm btn-primary float-right\">Demote All</a>";
+        markup += "      <div class=\"divider float-right\"></div>";
+        markup += "      <a href=\"#\" onclick=\"doRelease()\" class=\"btn btn-sm btn-primary float-right\">Release All</a>";
+        markup += "      <br>";
+        markup += "      <br>";
 
-        table_markup += "      <table class=\"table table-sm table-striped table-hover\" id=\"leases-table\">";
-        table_markup += "        <thead>";
-        table_markup += "          <tr>";
-        table_markup += "            <th scope=\"row\">InodeNumber</th>";
-        table_markup += "            <th class=\"text-right\">LeaseState</th>";
-        table_markup += "          </tr>";
-        table_markup += "        </thead>";
-        table_markup += "        <tbody>";
+        markup += "      <table class=\"table table-sm table-striped table-hover\" id=\"lease-table\">";
+        markup += "        <thead>";
+        markup += "          <tr>";
+        markup += "            <th scope=\"row\">InodeNumber</th>";
+        markup += "            <th class=\"text-right\">LeaseState</th>";
+        markup += "          </tr>";
+        markup += "        </thead>";
+        markup += "        <tbody>";
 
         for (const lease of json_data) {
-          table_markup += "          <tr>";
-          table_markup += "            <td scope=\"row\">" + lease.InodeNumber + "</td>";
-          table_markup += "            <td class=\"text-right\">" + lease.State + "</td>";
-          table_markup += "          </tr>";
+          markup += "          <tr>";
+          markup += "            <td scope=\"row\">" + lease.InodeNumber + "</td>";
+          markup += "            <td class=\"text-right\">" + lease.State + "</td>";
+          markup += "          </tr>";
         }
 
-        table_markup += "        </tbody>";
-        table_markup += "      </table>";
+        markup += "        </tbody>";
+        markup += "      </table>";
 
-        return table_markup;
+        return markup;
       }
 
-      document.getElementById("json_data").innerHTML = addMarkup(json_data);
+      document.getElementById("lease-actions-and-table").innerHTML = addMarkup(json_data);
 
       // Fancy back to top behavior
       addBackToTopBehavior();
