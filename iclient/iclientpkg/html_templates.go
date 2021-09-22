@@ -196,12 +196,11 @@ const leasesTemplate string = `<!doctype html>
       <h1 class="display-4">
         Leases
       </h1>
-      <a id="lease-actions-and-table"></a>
       <!-- Back to top button -->
       <button type="button" class="btn btn-primary btn-floating btn-lg" id="btn-back-to-top">
         <span class="oi oi-chevron-top"></span>
       </button>
-      <pre class="code" id="json_data"></pre>
+      <a id="lease-actions-and-table"></a>
     </div>
     <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
@@ -231,9 +230,9 @@ const leasesTemplate string = `<!doctype html>
       const addMarkup = function(json_data) {
         let markup = "";
 
-        markup += "      <a href=\"#\" onclick=\"doDemote()\" class=\"btn btn-sm btn-primary float-right\">Demote All</a>";
-        markup += "      <div class=\"divider float-right\"></div>";
         markup += "      <a href=\"#\" onclick=\"doRelease()\" class=\"btn btn-sm btn-primary float-right\">Release All</a>";
+        markup += "      <div class=\"divider float-right\"></div>";
+        markup += "      <a href=\"#\" onclick=\"doDemote()\" class=\"btn btn-sm btn-primary float-right\">Demote All</a>";
         markup += "      <br>";
         markup += "      <br>";
 
