@@ -98,6 +98,8 @@ func newLogger() *log.Logger {
 }
 
 func (dummy *globalsStruct) Write(p []byte) (n int, err error) {
-	logf("FISSION", "%s", string(p[:]))
+	if globals.config.FUSELogEnabled {
+		logf("FISSION", "%s", string(p[:]))
+	}
 	return 0, nil
 }

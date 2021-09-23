@@ -25,6 +25,7 @@
 //  LogFilePath:              iclient.log
 //  LogToConsole:             true
 //  TraceEnabled:             false
+//  FUSELogEnabled:           false
 //  HTTPServerIPAddr:         # Defaults to 0.0.0.0 (i.e. all interfaces)
 //  HTTPServerPort:           # Defaults to disabling the embedded HTTP Server
 //

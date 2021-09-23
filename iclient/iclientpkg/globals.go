@@ -37,6 +37,7 @@ type configStruct struct {
 	LogFilePath              string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole             bool
 	TraceEnabled             bool
+	FUSELogEnabled           bool
 	HTTPServerIPAddr         string
 	HTTPServerPort           uint16 // To be served on HTTPServerIPAddr via TCP
 }
@@ -264,6 +265,10 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	if nil != err {
 		logFatal(err)
 	}
+	globals.config.FUSELogEnabled, err = confMap.FetchOptionValueBool("ICLIENT", "FUSELogEnabled")
+	if nil != err {
+		logFatal(err)
+	}
 	globals.config.HTTPServerIPAddr, err = confMap.FetchOptionValueString("ICLIENT", "HTTPServerIPAddr")
 	if nil != err {
 		globals.config.HTTPServerIPAddr = "0.0.0.0"
@@ -315,6 +320,7 @@ func uninitializeGlobals() (err error) {
 	globals.config.LogFilePath = ""
 	globals.config.LogToConsole = false
 	globals.config.TraceEnabled = false
+	globals.config.FUSELogEnabled = false
 	globals.config.HTTPServerIPAddr = ""
 	globals.config.HTTPServerPort = 0
 
