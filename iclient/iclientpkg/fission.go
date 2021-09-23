@@ -58,11 +58,17 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoLookup(inHeader: %+v, lookupIn: %+v)", inHeader, lookupIn)
+	defer func() {
+		logTracef("<== DoLookup(lookupOut: %+v, errno: %v)", lookupOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoLookupUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	lookupOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -71,6 +77,11 @@ func (dummy *globalsStruct) DoForget(inHeader *fission.InHeader, forgetIn *fissi
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoForget(inHeader: %+v, forgetIn: %+v)", inHeader, forgetIn)
+	defer func() {
+		logTracef("<== DoForget()")
+	}()
 
 	defer func() {
 		globals.stats.DoForgetUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -85,11 +96,17 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoGetAttr(inHeader: %+v, getAttrIn: %+v)", inHeader, getAttrIn)
+	defer func() {
+		logTracef("<== DoGetAttr(getAttrOut: %+v, errno: %v)", getAttrOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoGetAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	getAttrOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -99,11 +116,17 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoSetAttr(inHeader: %+v, setAttrIn: %+v)", inHeader, setAttrIn)
+	defer func() {
+		logTracef("<== DoSetAttr(setAttrOut: %+v, errno: %v)", setAttrOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoSetAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	setAttrOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -113,11 +136,17 @@ func (dummy *globalsStruct) DoReadLink(inHeader *fission.InHeader) (readLinkOut 
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoReadLink(inHeader: %+v)", inHeader)
+	defer func() {
+		logTracef("<== DoReadLink(readLinkOut: %+v, errno: %v)", readLinkOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoReadLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	readLinkOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -127,11 +156,17 @@ func (dummy *globalsStruct) DoSymLink(inHeader *fission.InHeader, symLinkIn *fis
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoSymLink(inHeader: %+v, symLinkIn: %+v)", inHeader, symLinkIn)
+	defer func() {
+		logTracef("<== DoSymLink(symLinkOut: %+v, errno: %v)", symLinkOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoSymLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	symLinkOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -141,10 +176,16 @@ func (dummy *globalsStruct) DoMkNod(inHeader *fission.InHeader, mkNodIn *fission
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoMkNod(inHeader: %+v, mkNodIn: %+v)", inHeader, mkNodIn)
+	defer func() {
+		logTracef("<== DoMkNod(mkNodOut: %+v, errno: %v)", mkNodOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoMkNodUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	mkNodOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -154,11 +195,17 @@ func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoMkDir(inHeader: %+v, mkDirIn: %+v)", inHeader, mkDirIn)
+	defer func() {
+		logTracef("<== DoMkDir(mkDirOut: %+v, errno: %v)", mkDirOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoMkDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	mkDirOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -167,6 +214,11 @@ func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fissi
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoUnlink(inHeader: %+v, unlinkIn: %+v)", inHeader, unlinkIn)
+	defer func() {
+		logTracef("<== DoUnlink(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoUnlinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -182,6 +234,11 @@ func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoRmDir(inHeader: %+v, rmDirIn: %+v)", inHeader, rmDirIn)
+	defer func() {
+		logTracef("<== DoRmDir(errno: %v)", errno)
+	}()
+
 	defer func() {
 		globals.stats.DoRmDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -195,6 +252,11 @@ func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fissi
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoRename(inHeader: %+v, renameIn: %+v)", inHeader, renameIn)
+	defer func() {
+		logTracef("<== DoRename(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoRenameUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -210,11 +272,17 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoLink(inHeader: %+v, linkIn: %+v)", inHeader, linkIn)
+	defer func() {
+		logTracef("<== DoLink(linkOut: %+v, errno: %v)", linkOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	linkOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -224,11 +292,17 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoOpen(inHeader: %+v, openIn: %+v)", inHeader, openIn)
+	defer func() {
+		logTracef("<== DoOpen(openOut: %+v, errno: %v)", openOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoOpenUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	openOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -238,11 +312,21 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoRead(inHeader: %+v, readIn: %+v)", inHeader, readIn)
+	defer func() {
+		if errno == 0 {
+			logTracef("<== DoRead(readOut: &{len(Data):%v}, errno: %v)", len(readOut.Data), errno)
+		} else {
+			logTracef("<== DoRead(readOut: %+v, errno: %v)", readOut, errno)
+		}
+	}()
+
 	defer func() {
 		globals.stats.DoReadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	readOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -252,11 +336,17 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoWrite(inHeader: %+v, writeIn: &{FH:%v Offset:%v Size:%v: WriteFlags:%v LockOwner:%v Flags:%v Padding:%v len(Data):%v})", inHeader, writeIn.FH, writeIn.Offset, writeIn.Size, writeIn.WriteFlags, writeIn.LockOwner, writeIn.Flags, writeIn.Padding, len(writeIn.Data))
+	defer func() {
+		logTracef("<== DoWrite(writeOut: %+v, errno: %v)", writeOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoWriteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	writeOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -266,11 +356,17 @@ func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fis
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoStatFS(inHeader: %+v)", inHeader)
+	defer func() {
+		logTracef("<== DoStatFS(statFSOut: %+v, errno: %v)", statFSOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoStatFSUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	statFSOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -279,6 +375,11 @@ func (dummy *globalsStruct) DoRelease(inHeader *fission.InHeader, releaseIn *fis
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoRelease(inHeader: %+v, releaseIn: %+v)", inHeader, releaseIn)
+	defer func() {
+		logTracef("<== DoRelease(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoReleaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -294,6 +395,11 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoFSync(inHeader: %+v, fSyncIn: %+v)", inHeader, fSyncIn)
+	defer func() {
+		logTracef("<== DoFSync(errno: %v)", errno)
+	}()
+
 	defer func() {
 		globals.stats.DoFSyncUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -307,6 +413,11 @@ func (dummy *globalsStruct) DoSetXAttr(inHeader *fission.InHeader, setXAttrIn *f
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoSetXAttr(inHeader: %+v, setXAttrIn: %+v)", inHeader, setXAttrIn)
+	defer func() {
+		logTracef("<== DoSetXAttr(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoSetXAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -322,11 +433,17 @@ func (dummy *globalsStruct) DoGetXAttr(inHeader *fission.InHeader, getXAttrIn *f
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoGetXAttr(inHeader: %+v, getXAttrIn: %+v)", inHeader, getXAttrIn)
+	defer func() {
+		logTracef("<== DoGetXAttr(getXAttrOut: %+v, errno: %v)", getXAttrOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoGetXAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	getXAttrOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -336,11 +453,17 @@ func (dummy *globalsStruct) DoListXAttr(inHeader *fission.InHeader, listXAttrIn 
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoListXAttr(inHeader: %+v, listXAttrIn: %+v)", inHeader, listXAttrIn)
+	defer func() {
+		logTracef("<== DoListXAttr(listXAttrOut: %+v, errno: %v)", listXAttrOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoListXAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	listXAttrOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -349,6 +472,11 @@ func (dummy *globalsStruct) DoRemoveXAttr(inHeader *fission.InHeader, removeXAtt
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoRemoveXAttr(inHeader: %+v, removeXAttrIn: %+v)", inHeader, removeXAttrIn)
+	defer func() {
+		logTracef("<== DoRemoveXAttr(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoRemoveXAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -364,6 +492,11 @@ func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoFlush(inHeader: %+v, flushIn: %+v)", inHeader, flushIn)
+	defer func() {
+		logTracef("<== DoFlush(errno: %v)", errno)
+	}()
+
 	defer func() {
 		globals.stats.DoFlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -377,6 +510,11 @@ func (dummy *globalsStruct) DoInit(inHeader *fission.InHeader, initIn *fission.I
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoInit(inHeader: %+v, initIn: %+v)", inHeader, initIn)
+	defer func() {
+		logTracef("<== DoInit(initOut: %+v, errno: %v)", initOut, errno)
+	}()
 
 	defer func() {
 		globals.stats.DoInitUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -403,11 +541,17 @@ func (dummy *globalsStruct) DoOpenDir(inHeader *fission.InHeader, openDirIn *fis
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoOpenDir(inHeader: %+v, openDirIn: %+v)", inHeader, openDirIn)
+	defer func() {
+		logTracef("<== DoOpenDir(openDirOut: %+v, errno: %v)", openDirOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoOpenDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	openDirOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -417,11 +561,17 @@ func (dummy *globalsStruct) DoReadDir(inHeader *fission.InHeader, readDirIn *fis
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoReadDir(inHeader: %+v, readDirIn: %+v)", inHeader, readDirIn)
+	defer func() {
+		logTracef("<== DoReadDir(readDirOut: %+v, errno: %v)", readDirOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoReadDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	readDirOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -430,6 +580,11 @@ func (dummy *globalsStruct) DoReleaseDir(inHeader *fission.InHeader, releaseDirI
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoReleaseDir(inHeader: %+v, releaseDirIn: %+v)", inHeader, releaseDirIn)
+	defer func() {
+		logTracef("<== DoReleaseDir(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoReleaseDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -445,6 +600,11 @@ func (dummy *globalsStruct) DoFSyncDir(inHeader *fission.InHeader, fSyncDirIn *f
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoFSyncDir(inHeader: %+v, fSyncDirIn: %+v)", inHeader, fSyncDirIn)
+	defer func() {
+		logTracef("<== DoFSyncDir(errno: %v)", errno)
+	}()
+
 	defer func() {
 		globals.stats.DoFSyncDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -459,10 +619,16 @@ func (dummy *globalsStruct) DoGetLK(inHeader *fission.InHeader, getLKIn *fission
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoGetLK(inHeader: %+v, getLKIn: %+v)", inHeader, getLKIn)
+	defer func() {
+		logTracef("<== DoGetLK(getLKOut: %+v, errno: %v)", getLKOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoGetLKUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	getLKOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -471,6 +637,11 @@ func (dummy *globalsStruct) DoSetLK(inHeader *fission.InHeader, setLKIn *fission
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoSetLK(inHeader: %+v, setLKIn: %+v)", inHeader, setLKIn)
+	defer func() {
+		logTracef("<== DoSetLK(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoSetLKUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -485,6 +656,11 @@ func (dummy *globalsStruct) DoSetLKW(inHeader *fission.InHeader, setLKWIn *fissi
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoSetLKW(inHeader: %+v, setLKWIn: %+v)", inHeader, setLKWIn)
+	defer func() {
+		logTracef("<== DoSetLKW(errno: %v)", errno)
+	}()
+
 	defer func() {
 		globals.stats.DoSetLKWUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -497,6 +673,11 @@ func (dummy *globalsStruct) DoAccess(inHeader *fission.InHeader, accessIn *fissi
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoAccess(inHeader: %+v, accessIn: %+v)", inHeader, accessIn)
+	defer func() {
+		logTracef("<== DoAccess(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoAccessUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -512,11 +693,17 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoCreate(inHeader: %+v, createIn: %+v)", inHeader, createIn)
+	defer func() {
+		logTracef("<== DoCreate(createOut: %+v, errno: %v)", createOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoCreateUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	createOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -525,6 +712,11 @@ func (dummy *globalsStruct) DoInterrupt(inHeader *fission.InHeader, interruptIn 
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoInterrupt(inHeader: %+v, interruptIn: %+v)", inHeader, interruptIn)
+	defer func() {
+		logTracef("<== DoInterrupt()")
+	}()
 
 	defer func() {
 		globals.stats.DoInterruptUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -539,10 +731,16 @@ func (dummy *globalsStruct) DoBMap(inHeader *fission.InHeader, bMapIn *fission.B
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoBMap(inHeader: %+v, bMapIn: %+v)", inHeader, bMapIn)
+	defer func() {
+		logTracef("<== DoBMap(bMapOut: %+v, errno: %v)", bMapOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoBMapUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	bMapOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -551,6 +749,11 @@ func (dummy *globalsStruct) DoDestroy(inHeader *fission.InHeader) (errno syscall
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoDestroy(inHeader: %+v)", inHeader)
+	defer func() {
+		logTracef("<== DoDestroy(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoDestroyUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -566,11 +769,17 @@ func (dummy *globalsStruct) DoPoll(inHeader *fission.InHeader, pollIn *fission.P
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoPoll(inHeader: %+v, pollIn: %+v)", inHeader, pollIn)
+	defer func() {
+		logTracef("<== DoPoll(pollOut: %+v, errno: %v)", pollOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoPollUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	pollOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -579,6 +788,11 @@ func (dummy *globalsStruct) DoBatchForget(inHeader *fission.InHeader, batchForge
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoBatchForget(inHeader: %+v, batchForgetIn: %+v)", inHeader, batchForgetIn)
+	defer func() {
+		logTracef("<== DoBatchForget()")
+	}()
 
 	defer func() {
 		globals.stats.DoBatchForgetUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -592,6 +806,11 @@ func (dummy *globalsStruct) DoFAllocate(inHeader *fission.InHeader, fAllocateIn 
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoFAllocate(inHeader: %+v, fAllocateIn: %+v)", inHeader, fAllocateIn)
+	defer func() {
+		logTracef("<== DoFAllocate(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoFAllocateUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -607,11 +826,17 @@ func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlu
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoReadDirPlus(inHeader: %+v, readDirPlusIn: %+v)", inHeader, readDirPlusIn)
+	defer func() {
+		logTracef("<== DoReadDirPlus(readDirPlusOut: %+v, errno: %v)", readDirPlusOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoReadDirPlusUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	readDirPlusOut = nil
 	errno = syscall.ENOSYS
 	return
 }
@@ -620,6 +845,11 @@ func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fis
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> DoRename2(inHeader: %+v, rename2In: %+v)", inHeader, rename2In)
+	defer func() {
+		logTracef("<== DoRename2(errno: %v)", errno)
+	}()
 
 	defer func() {
 		globals.stats.DoRename2Usecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -635,11 +865,17 @@ func (dummy *globalsStruct) DoLSeek(inHeader *fission.InHeader, lSeekIn *fission
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> DoLSeek(inHeader: %+v, lSeekIn: %+v)", inHeader, lSeekIn)
+	defer func() {
+		logTracef("<== DoLSeek(lSeekOut: %+v, errno: %v)", lSeekOut, errno)
+	}()
+
 	defer func() {
 		globals.stats.DoLSeekUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
 	// TODO
+	lSeekOut = nil
 	errno = syscall.ENOSYS
 	return
 }
