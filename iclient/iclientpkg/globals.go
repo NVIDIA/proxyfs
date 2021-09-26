@@ -58,26 +58,27 @@ const (
 	inodeLeaseStateExclusiveExpired
 )
 
-type inodeLeaseRequestTagType uint32
-
-const (
-	inodeLeaseRequestShared    inodeLeaseRequestTagType = iota
-	inodeLeaseRequestPromote                            // upgraded to inodeLeaseRequestExclusive if intervening inodeLeaseRequestRelease results in inodeLeaseStateNone
-	inodeLeaseRequestExclusive                          // upgraded to inodeLeaseRequestPromote if intervening inodeLeaseRequestShared results in inodeLeaseStateSharedGranted
-	inodeLeaseRequestDemote                             //
-	inodeLeaseRequestRelease                            //
-)
-
-type inodeLeaseRequestStruct struct {
-	sync.WaitGroup // signaled when the request has been processed
-	listElement    *list.Element
-	tag            inodeLeaseRequestTagType
+type inodeLeaseStruct struct {
+	sync.WaitGroup                     // TODO (fix this): Signaled to tell (*inodeLeaseStruct).goroutine() to drain it's now non-empty inodeLeaseStruct.requestList
+	state          inodeLeaseStateType //
+	heldList       *list.List          // List of granted inodeHeldLockStruct's
+	requestList    *list.List          // List of pending inodeLockRequestStruct's
 }
 
-type inodeLeaseStruct struct {
-	sync.WaitGroup // Signaled to tell (*inodeLeaseStruct).goroutine() to drain it's now non-empty inodeLeaseStruct.requestList
-	state          inodeLeaseStateType
-	requestList    *list.List // List of inodeLeaseRequestStruct's
+type inodeHeldLockStruct struct {
+	parent      *inodeLockRequestStruct
+	exclusive   bool
+	listElement *list.Element
+}
+
+type inodeLockRequestStruct struct {
+	sync.WaitGroup                                 // Signaled when the state of the lock request has been served
+	inodeNumber    uint64                          // The inodeNumber for which the latest lock request is being made
+	exclusive      bool                            // Indicates if the latest lock request is exclusive
+	listElement    *list.Element                   // Maintains position in .inodeNumber's indicated inodeLeaseStruct.requestList
+	locksHeld      map[uint64]*inodeHeldLockStruct // At entry, contains the list of inodeLock's already held (shared or exclusively)
+	//                                                At exit,  either contains the earlier list appended with the granted inodeLock
+	//                                                          or     is empty indicating the caller should restart lock request sequence
 }
 
 type statsStruct struct {
@@ -152,6 +153,7 @@ type globalsStruct struct {
 	fissionErrChan    chan error                   //
 	inodeLeaseTable   map[uint64]*inodeLeaseStruct //
 	inodeLeaseWG      sync.WaitGroup               // Signaled as each (*inodeLeaseStruct).goroutine() exits
+	inodeLockWG       sync.WaitGroup               // Signaled as each active inodeLockRequestStruct has signaled service complete with .locksHeld empty
 	httpServer        *http.Server                 //
 	httpServerWG      sync.WaitGroup               //
 	stats             *statsStruct                 //

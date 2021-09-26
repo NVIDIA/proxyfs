@@ -13,6 +13,16 @@ func start(confMap conf.ConfMap, fissionErrChan chan error) (err error) {
 		return
 	}
 
+	err = openRetryRPC()
+	if nil != err {
+		return
+	}
+
+	err = startLeaseHandler()
+	if nil != err {
+		return
+	}
+
 	// TODO
 
 	err = performMountFUSE()
@@ -44,6 +54,16 @@ func stop() (err error) {
 	}
 
 	// TODO
+
+	err = stopLeaseHandler()
+	if nil != err {
+		return
+	}
+
+	err = closeRetryRPC()
+	if nil != err {
+		return
+	}
 
 	err = uninitializeGlobals()
 
