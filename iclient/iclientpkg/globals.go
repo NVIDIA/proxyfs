@@ -16,6 +16,7 @@ import (
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/retryrpc"
 	"github.com/NVIDIA/proxyfs/utils"
 )
 
@@ -59,16 +60,16 @@ const (
 )
 
 type inodeLeaseStruct struct {
-	sync.WaitGroup                     // TODO (fix this): Signaled to tell (*inodeLeaseStruct).goroutine() to drain it's now non-empty inodeLeaseStruct.requestList
-	state          inodeLeaseStateType //
-	heldList       *list.List          // List of granted inodeHeldLockStruct's
-	requestList    *list.List          // List of pending inodeLockRequestStruct's
+	state       inodeLeaseStateType //
+	heldList    *list.List          // List of granted inodeHeldLockStruct's
+	requestList *list.List          // List of pending inodeLockRequestStruct's
 }
 
 type inodeHeldLockStruct struct {
-	parent      *inodeLockRequestStruct
-	exclusive   bool
-	listElement *list.Element
+	inodeLease       *inodeLeaseStruct
+	inodeLockRequest *inodeLockRequestStruct
+	exclusive        bool
+	listElement      *list.Element //Maintains position in .inodeNumber's indicated inodeLeaseStruct.heldList
 }
 
 type inodeLockRequestStruct struct {
@@ -146,18 +147,20 @@ type statsStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex                                     // Serializes access to inodeLeaseTable
-	config            configStruct                 //
-	logFile           *os.File                     // == nil if config.LogFilePath == ""
-	retryRPCCACertPEM []byte                       // == nil if config.RetryRPCCACertFilePath == ""
-	fissionErrChan    chan error                   //
-	inodeLeaseTable   map[uint64]*inodeLeaseStruct //
-	inodeLeaseWG      sync.WaitGroup               // Signaled as each (*inodeLeaseStruct).goroutine() exits
-	inodeLockWG       sync.WaitGroup               // Signaled as each active inodeLockRequestStruct has signaled service complete with .locksHeld empty
-	httpServer        *http.Server                 //
-	httpServerWG      sync.WaitGroup               //
-	stats             *statsStruct                 //
-	fissionVolume     fission.Volume               //
+	sync.Mutex                                        // Serializes access to inodeLeaseTable
+	config               configStruct                 //
+	logFile              *os.File                     // == nil if config.LogFilePath == ""
+	retryRPCCACertPEM    []byte                       // == nil if config.RetryRPCCACertFilePath == ""
+	retryRPCClientConfig *retryrpc.ClientConfig       //
+	retryRPCClient       *retryrpc.Client             //
+	fissionErrChan       chan error                   //
+	inodeLeaseTable      map[uint64]*inodeLeaseStruct //
+	inodeLeaseWG         sync.WaitGroup               // Signaled as each (*inodeLeaseStruct).goroutine() exits
+	inodeLockWG          sync.WaitGroup               // Signaled as each active inodeLockRequestStruct has signaled service complete with .locksHeld empty
+	httpServer           *http.Server                 //
+	httpServerWG         sync.WaitGroup               //
+	stats                *statsStruct                 //
+	fissionVolume        fission.Volume               //
 }
 
 var globals globalsStruct
