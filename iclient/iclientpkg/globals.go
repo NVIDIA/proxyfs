@@ -6,7 +6,6 @@ package iclientpkg
 import (
 	"container/list"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"sync"
@@ -27,9 +26,14 @@ type configStruct struct {
 	FUSEMaxBackground        uint16
 	FUSECongestionThreshhold uint16
 	FUSEMaxWrite             uint32
-	PlugInPath               string
-	PlugInEnvName            string
-	PlugInEnvValue           string
+	AuthPlugInPath           string
+	AuthPlugInEnvName        string
+	AuthPlugInEnvValue       string
+	SwiftRetryDelay          time.Duration
+	SwiftRetryExpBackoff     float64
+	SwiftRetryLimit          uint32
+	SwiftTimeout             time.Duration
+	SwiftConnectionPoolSize  uint32
 	RetryRPCPublicIPAddr     string
 	RetryRPCPort             uint16
 	RetryRPCDeadlineIO       time.Duration
@@ -151,6 +155,11 @@ type globalsStruct struct {
 	config               configStruct                 //
 	logFile              *os.File                     // == nil if config.LogFilePath == ""
 	retryRPCCACertPEM    []byte                       // == nil if config.RetryRPCCACertFilePath == ""
+	httpClient           *http.Client                 //
+	swiftAuthInString    string                       //
+	swiftAuthWaitGroup   *sync.WaitGroup              // != nil if updateAuthTokenAndStorageURL() is active
+	swiftAuthToken       string                       //
+	swiftStorageURL      string                       //
 	retryRPCClientConfig *retryrpc.ClientConfig       //
 	retryRPCClient       *retryrpc.Client             //
 	fissionErrChan       chan error                   //
@@ -167,8 +176,7 @@ var globals globalsStruct
 
 func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err error) {
 	var (
-		configJSONified     string
-		plugInEnvValueSlice []string
+		configJSONified string
 	)
 
 	// Default logging related globals
@@ -203,35 +211,62 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	if nil != err {
 		logFatal(err)
 	}
-	globals.config.PlugInPath, err = confMap.FetchOptionValueString("ICLIENT", "PlugInPath")
+	globals.config.AuthPlugInPath, err = confMap.FetchOptionValueString("ICLIENT", "AuthPlugInPath")
 	if nil != err {
 		logFatal(err)
 	}
-	globals.config.PlugInEnvName, err = confMap.FetchOptionValueString("ICLIENT", "PlugInEnvName")
-	if nil != err {
-		logFatal(err)
-	}
-	globals.config.PlugInEnvValue, err = confMap.FetchOptionValueString("ICLIENT", "PlugInEnvValue")
-	if nil != err {
-		logFatal(err)
-	}
-	err = confMap.VerifyOptionIsMissing("ICLIENT", "PlugInEnvValue")
+	err = confMap.VerifyOptionIsMissing("ICLIENT", "AuthPlugInEnvName")
 	if nil == err {
-		globals.config.PlugInEnvValue = ""
-	} else {
-		plugInEnvValueSlice, err = confMap.FetchOptionValueStringSlice("ICLIENT", "PlugInEnvValue")
+		globals.config.AuthPlugInEnvName = ""
+		globals.config.AuthPlugInEnvValue, err = confMap.FetchOptionValueString("ICLIENT", "AuthPlugInEnvValue")
 		if nil != err {
 			logFatal(err)
+		}
+	} else {
+		err = confMap.VerifyOptionValueIsEmpty("ICLIENT", "AuthPlugInEnvName")
+		if nil == err {
+			globals.config.AuthPlugInEnvName = ""
+			globals.config.AuthPlugInEnvValue, err = confMap.FetchOptionValueString("ICLIENT", "AuthPlugInEnvValue")
+			if nil != err {
+				logFatal(err)
+			}
 		} else {
-			switch len(plugInEnvValueSlice) {
-			case 0:
-				globals.config.PlugInEnvValue = ""
-			case 1:
-				globals.config.PlugInEnvValue = plugInEnvValueSlice[0]
-			default:
-				log.Fatalf("[ICLIENT]PlugInEnvValue must be missing, empty, or single-valued: %#v", plugInEnvValueSlice)
+			globals.config.AuthPlugInEnvName, err = confMap.FetchOptionValueString("ICLIENT", "AuthPlugInEnvName")
+			if nil != err {
+				logFatal(err)
+			}
+			err = confMap.VerifyOptionIsMissing("ICLIENT", "AuthPlugInEnvValue")
+			if nil == err {
+				globals.config.AuthPlugInEnvValue = ""
+			} else {
+				err = confMap.VerifyOptionValueIsEmpty("ICLIENT", "AuthPlugInEnvValue")
+				if nil == err {
+					globals.config.AuthPlugInEnvValue = ""
+				} else {
+					logFatalf("If [ICLIENT]AuthPlugInEnvName is present and non-empty, [ICLIENT]AuthPlugInEnvValue must be missing or empty")
+				}
 			}
 		}
+	}
+	globals.config.SwiftRetryDelay, err = confMap.FetchOptionValueDuration("ICLIENT", "SwiftRetryDelay")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.SwiftRetryExpBackoff, err = confMap.FetchOptionValueFloat64("ICLIENT", "SwiftRetryExpBackoff")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.SwiftRetryLimit, err = confMap.FetchOptionValueUint32("ICLIENT", "SwiftRetryLimit")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.SwiftTimeout, err = confMap.FetchOptionValueDuration("ICLIENT", "SwiftTimeout")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.SwiftConnectionPoolSize, err = confMap.FetchOptionValueUint32("ICLIENT", "SwiftConnectionPoolSize")
+	if nil != err {
+		logFatal(err)
 	}
 	globals.config.RetryRPCPublicIPAddr, err = confMap.FetchOptionValueString("ICLIENT", "RetryRPCPublicIPAddr")
 	if nil != err {
@@ -315,8 +350,14 @@ func uninitializeGlobals() (err error) {
 	globals.config.FUSEMaxBackground = 0
 	globals.config.FUSECongestionThreshhold = 0
 	globals.config.FUSEMaxWrite = 0
-	globals.config.PlugInPath = ""
-	globals.config.PlugInEnvValue = ""
+	globals.config.AuthPlugInPath = ""
+	globals.config.AuthPlugInEnvName = ""
+	globals.config.AuthPlugInEnvValue = ""
+	globals.config.SwiftRetryDelay = time.Duration(0)
+	globals.config.SwiftRetryExpBackoff = 0.0
+	globals.config.SwiftRetryLimit = 0
+	globals.config.SwiftTimeout = time.Duration(0)
+	globals.config.SwiftConnectionPoolSize = 0
 	globals.config.RetryRPCPublicIPAddr = ""
 	globals.config.RetryRPCPort = 0
 	globals.config.RetryRPCDeadlineIO = time.Duration(0)

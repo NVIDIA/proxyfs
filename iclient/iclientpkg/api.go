@@ -14,9 +14,14 @@
 //  FUSEMaxBackground:        1000
 //  FUSECongestionThreshhold: 0
 //  FUSEMaxWrite:             131076
-//  PlugInPath:               iauth-swift.so
-//  PlugInEnvName:            SwiftAuthBlob
-//  PlugInEnvValue:           {"AuthURL":"http://swift:8080/auth/v1.0"\u002C"AuthUser":"test:tester"\u002C"AuthKey":"testing"\u002C"Account":"AUTH_test"\u002C"Container":"con"}
+//  AuthPlugInPath:           iauth-swift.so
+//  AuthPlugInEnvName:        # Only used if not defining AuthPlugInEnvValue here
+//  AuthPlugInEnvValue:       {"AuthURL":"http://swift:8080/auth/v1.0"\u002C"AuthUser":"test:tester"\u002C"AuthKey":"testing"\u002C"Account":"AUTH_test"\u002C"Container":"con"}
+//  SwiftRetryDelay:          100ms
+//  SwiftRetryExpBackoff:     2
+//  SwiftRetryLimit:          4
+//  SwiftTimeout:             10m
+//  SwiftConnectionPoolSize:  128
 //  RetryRPCPublicIPAddr:     imgr
 //  RetryRPCPort:             32356
 //  RetryRPCDeadlineIO:       60s
@@ -29,9 +34,10 @@
 //  HTTPServerIPAddr:         # Defaults to 0.0.0.0 (i.e. all interfaces)
 //  HTTPServerPort:           # Defaults to disabling the embedded HTTP Server
 //
-// Most of the config keys are required and must have values. The exceptions are
-// the HTTPServer{IPAddr|Port} keys that, if not present (or HTTPServerPort is zero)
-// will disable the embedded HTTP Server.
+// Most of the config keys are required and must have values. One set of exceptions
+// are the HTTPServer{IPAddr|Port} keys that, if not present (or HTTPServerPort is
+// zero) will disable the embedded HTTP Server. Another set of exceptions are the
+// AuthPlungInEnv{Name|Value} keys of which exactly one must be present.
 //
 // The embedded HTTP Server (at URL http://<HTTPServerIPAddr>:<HTTPServerPort>)
 // responds to the following:

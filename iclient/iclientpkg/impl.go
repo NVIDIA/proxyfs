@@ -13,7 +13,7 @@ func start(confMap conf.ConfMap, fissionErrChan chan error) (err error) {
 		return
 	}
 
-	err = openRetryRPC()
+	err = startRPCHandler()
 	if nil != err {
 		return
 	}
@@ -60,7 +60,7 @@ func stop() (err error) {
 		return
 	}
 
-	err = closeRetryRPC()
+	err = stopRPCHandler()
 	if nil != err {
 		return
 	}
