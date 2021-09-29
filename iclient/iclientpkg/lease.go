@@ -5,6 +5,8 @@ package iclientpkg
 
 import (
 	"container/list"
+
+	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
 )
 
 func startLeaseHandler() (err error) {
@@ -44,8 +46,11 @@ func newLockRequest() (inodeLockRequest *inodeLockRequestStruct) {
 //
 func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	var (
+		err           error
 		inodeHeldLock *inodeHeldLockStruct
 		inodeLease    *inodeLeaseStruct
+		leaseRequest  *imgrpkg.LeaseRequestStruct
+		leaseResponse *imgrpkg.LeaseResponseStruct
 		ok            bool
 	)
 
@@ -122,10 +127,43 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	if inodeLockRequest.exclusive {
 		switch inodeLease.state {
 		case inodeLeaseStateNone:
+			inodeLockRequest.listElement = inodeLease.requestList.PushFront(inodeLockRequest)
 			inodeLease.state = inodeLeaseStateExclusiveRequested
-
-			// TODO - this is where we issue imgrpkg.LeaseRequestTypeExclusive
-
+			globals.Unlock()
+		RetryLeaseRequestTypeExclusive:
+			leaseRequest = &imgrpkg.LeaseRequestStruct{
+				MountID:          globals.mountID,
+				InodeNumber:      inodeLockRequest.inodeNumber,
+				LeaseRequestType: imgrpkg.LeaseRequestTypeExclusive,
+			}
+			leaseResponse = &imgrpkg.LeaseResponseStruct{}
+			err = globals.retryRPCClient.Send("Lease", leaseRequest, leaseResponse)
+			if nil != err {
+				err = renewRPCHandler()
+				if nil != err {
+					logFatal(err)
+				}
+				goto RetryLeaseRequestTypeExclusive
+			}
+			if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypeExclusive {
+				logFatalf("TODO: for now, we don't handle a Lease Request actually failing")
+			}
+			globals.Lock()
+			inodeLease.state = inodeLeaseStateExclusiveGranted
+			if inodeLease.requestList.Front() != inodeLockRequest.listElement {
+				logFatalf("inodeLease.requestList.Front() != inodeLockRequest.listElement")
+			}
+			_ = inodeLease.requestList.Remove(inodeLockRequest.listElement)
+			inodeLockRequest.listElement = nil
+			// We can immediately grant the exclusive inodeLockRequestStruct
+			inodeHeldLock = &inodeHeldLockStruct{
+				inodeLease:       inodeLease,
+				inodeLockRequest: inodeLockRequest,
+				exclusive:        true,
+			}
+			inodeHeldLock.listElement = inodeLease.heldList.PushBack(inodeHeldLock)
+			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+			globals.Unlock()
 		case inodeLeaseStateSharedRequested:
 			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
 			inodeLockRequest.Add(1)
@@ -133,10 +171,43 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			globals.Unlock()
 			inodeLockRequest.Wait()
 		case inodeLeaseStateSharedGranted:
+			inodeLockRequest.listElement = inodeLease.requestList.PushFront(inodeLockRequest)
 			inodeLease.state = inodeLeaseStateSharedPromoting
-
-			// TODO - this is where we issue imgrpkg.LeaseRequestTypePromote
-
+			globals.Unlock()
+		RetryLeaseRequestTypePromote:
+			leaseRequest = &imgrpkg.LeaseRequestStruct{
+				MountID:          globals.mountID,
+				InodeNumber:      inodeLockRequest.inodeNumber,
+				LeaseRequestType: imgrpkg.LeaseRequestTypePromote,
+			}
+			leaseResponse = &imgrpkg.LeaseResponseStruct{}
+			err = globals.retryRPCClient.Send("Lease", leaseRequest, leaseResponse)
+			if nil != err {
+				err = renewRPCHandler()
+				if nil != err {
+					logFatal(err)
+				}
+				goto RetryLeaseRequestTypePromote
+			}
+			if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypePromoted {
+				logFatalf("TODO: for now, we don't handle a Lease Request actually failing")
+			}
+			globals.Lock()
+			inodeLease.state = inodeLeaseStateExclusiveGranted
+			if inodeLease.requestList.Front() != inodeLockRequest.listElement {
+				logFatalf("inodeLease.requestList.Front() != inodeLockRequest.listElement")
+			}
+			_ = inodeLease.requestList.Remove(inodeLockRequest.listElement)
+			inodeLockRequest.listElement = nil
+			// We can immediately grant the exclusive inodeLockRequestStruct
+			inodeHeldLock = &inodeHeldLockStruct{
+				inodeLease:       inodeLease,
+				inodeLockRequest: inodeLockRequest,
+				exclusive:        true,
+			}
+			inodeHeldLock.listElement = inodeLease.heldList.PushBack(inodeHeldLock)
+			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+			globals.Unlock()
 		case inodeLeaseStateSharedPromoting:
 			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
 			inodeLockRequest.Add(1)
@@ -191,10 +262,46 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	} else {
 		switch inodeLease.state {
 		case inodeLeaseStateNone:
+			inodeLockRequest.listElement = inodeLease.requestList.PushFront(inodeLockRequest)
 			inodeLease.state = inodeLeaseStateSharedRequested
-
-			// TODO - this is where we issue imgrpkg.LeaseRequestTypeShared
-
+			globals.Unlock()
+		RetryLeaseRequestTypeShared:
+			leaseRequest = &imgrpkg.LeaseRequestStruct{
+				MountID:          globals.mountID,
+				InodeNumber:      inodeLockRequest.inodeNumber,
+				LeaseRequestType: imgrpkg.LeaseRequestTypeShared,
+			}
+			leaseResponse = &imgrpkg.LeaseResponseStruct{}
+			err = globals.retryRPCClient.Send("Lease", leaseRequest, leaseResponse)
+			if nil != err {
+				err = renewRPCHandler()
+				if nil != err {
+					logFatal(err)
+				}
+				goto RetryLeaseRequestTypeShared
+			}
+			if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypeShared {
+				logFatalf("TODO: for now, we don't handle a Lease Request actually failing")
+			}
+			globals.Lock()
+			inodeLease.state = inodeLeaseStateSharedGranted
+			if inodeLease.requestList.Front() != inodeLockRequest.listElement {
+				logFatalf("inodeLease.requestList.Front() != inodeLockRequest.listElement")
+			}
+			_ = inodeLease.requestList.Remove(inodeLockRequest.listElement)
+			inodeLockRequest.listElement = nil
+			// We can immediately grant the shared inodeLockRequestStruct
+			inodeHeldLock = &inodeHeldLockStruct{
+				inodeLease:       inodeLease,
+				inodeLockRequest: inodeLockRequest,
+				exclusive:        false,
+			}
+			inodeHeldLock.listElement = inodeLease.heldList.PushBack(inodeHeldLock)
+			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+			if inodeLease.requestList.Front() != nil {
+				logFatalf("TODO: for now, we don't handle multiple shared lock requests queued up")
+			}
+			globals.Unlock()
 		case inodeLeaseStateSharedRequested:
 			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
 			inodeLockRequest.Add(1)
@@ -276,5 +383,8 @@ func (inodeLockRequest *inodeLockRequestStruct) unlockAll() {
 // unlockAllWhileLocked is what unlockAll calls after obtaining globals.Lock().
 //
 func (inodeLockRequest *inodeLockRequestStruct) unlockAllWhileLocked() {
-	// TODO
+	logInfof("TODO: (*inodeLockRequestStruct)unlockAllWhileLocked() called to release %d lock(s)", len(inodeLockRequest.locksHeld))
+	for inodeNumber := range inodeLockRequest.locksHeld {
+		logInfof("TODO: ...inodeNumber %v", inodeNumber)
+	}
 }

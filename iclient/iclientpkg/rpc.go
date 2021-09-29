@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/NVIDIA/proxyfs/iauth"
+	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
@@ -17,6 +18,8 @@ func startRPCHandler() (err error) {
 	var (
 		customTransport  *http.Transport
 		defaultTransport *http.Transport
+		mountRequest     *imgrpkg.MountRequestStruct
+		mountResponse    *imgrpkg.MountResponseStruct
 		ok               bool
 	)
 
@@ -69,11 +72,62 @@ func startRPCHandler() (err error) {
 	}
 
 	globals.retryRPCClient, err = retryrpc.NewClient(globals.retryRPCClientConfig)
+	if nil != err {
+		return
+	}
 
-	return // err as set by call to retryrpc.NewClient() is sufficient
+	mountRequest = &imgrpkg.MountRequestStruct{
+		VolumeName: globals.config.VolumeName,
+		AuthToken:  fetchSwiftAuthToken(),
+	}
+	mountResponse = &imgrpkg.MountResponseStruct{}
+
+	err = globals.retryRPCClient.Send("Mount", mountRequest, mountResponse)
+	if nil != err {
+		return
+	}
+
+	globals.mountID = mountResponse.MountID
+
+	err = nil
+	return
+}
+
+func renewRPCHandler() (err error) {
+	var (
+		renewMountRequest  *imgrpkg.RenewMountRequestStruct
+		renewMountResponse *imgrpkg.RenewMountResponseStruct
+	)
+
+	updateSwithAuthTokenAndSwiftStorageURL()
+
+	renewMountRequest = &imgrpkg.RenewMountRequestStruct{
+		MountID:   globals.mountID,
+		AuthToken: fetchSwiftAuthToken(),
+	}
+	renewMountResponse = &imgrpkg.RenewMountResponseStruct{}
+
+	err = globals.retryRPCClient.Send("RenewMount", renewMountRequest, renewMountResponse)
+
+	return // err, as set by globals.retryRPCClient.Send("RenewMount", renewMountRequest, renewMountResponse) is sufficient
 }
 
 func stopRPCHandler() (err error) {
+	var (
+		unmountRequest  *imgrpkg.UnmountRequestStruct
+		unmountResponse *imgrpkg.UnmountResponseStruct
+	)
+
+	unmountRequest = &imgrpkg.UnmountRequestStruct{
+		MountID: globals.mountID,
+	}
+	unmountResponse = &imgrpkg.UnmountResponseStruct{}
+
+	err = globals.retryRPCClient.Send("Unmount", unmountRequest, unmountResponse)
+	if nil != err {
+		logWarn(err)
+	}
+
 	globals.retryRPCClient.Close()
 
 	globals.httpClient = nil

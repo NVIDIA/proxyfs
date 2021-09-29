@@ -4,6 +4,7 @@
 package iclientpkg
 
 import (
+	"fmt"
 	"syscall"
 	"time"
 
@@ -106,6 +107,18 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 	}()
 
 	// TODO
+	fmt.Printf("UNDO:  inHeader: %+v\n", inHeader)  // UNDO
+	fmt.Printf("UNDO: getAttrIn: %+v\n", getAttrIn) // UNDO
+	UNDOlockRequest := newLockRequest()
+	UNDOlockRequest.inodeNumber = uint64(inHeader.NodeID)
+	UNDOlockRequest.exclusive = false
+	fmt.Printf("UNDO: before addThisLock(), UNDOlockRequest: %+v\n", UNDOlockRequest)
+	UNDOlockRequest.addThisLock()
+	fmt.Printf("UNDO:  after addThisLock(), UNDOlockRequest: %+v\n", UNDOlockRequest)
+	for UNDOinodeNumber, UNDOinodeHeldLock := range UNDOlockRequest.locksHeld {
+		fmt.Printf("UNDO: ...UNDOinodeNumber: %v UNDOinodeHeldLock: %+v\n", UNDOinodeNumber, UNDOinodeHeldLock)
+	}
+	UNDOlockRequest.unlockAllWhileLocked()
 	getAttrOut = nil
 	errno = syscall.ENOSYS
 	return

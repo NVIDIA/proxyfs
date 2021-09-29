@@ -162,6 +162,7 @@ type globalsStruct struct {
 	swiftStorageURL      string                       //
 	retryRPCClientConfig *retryrpc.ClientConfig       //
 	retryRPCClient       *retryrpc.Client             //
+	mountID              string                       //
 	fissionErrChan       chan error                   //
 	inodeLeaseTable      map[uint64]*inodeLeaseStruct //
 	inodeLeaseWG         sync.WaitGroup               // Signaled as each (*inodeLeaseStruct).goroutine() exits
