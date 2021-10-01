@@ -64,6 +64,7 @@ const (
 )
 
 type inodeLeaseStruct struct {
+	inodeNumber uint64              //
 	state       inodeLeaseStateType //
 	heldList    *list.List          // List of granted inodeHeldLockStruct's
 	requestList *list.List          // List of pending inodeLockRequestStruct's
