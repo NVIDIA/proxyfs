@@ -205,8 +205,6 @@ func (s inodeLeaseTableByInodeNumberSlice) Less(i, j int) bool {
 	return s[i].InodeNumber < s[j].InodeNumber
 }
 
-var numUNDOs = uint64(1)
-
 func serveHTTPGetOfLeases(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
 		err                  error
@@ -223,20 +221,6 @@ func serveHTTPGetOfLeases(responseWriter http.ResponseWriter, request *http.Requ
 	}()
 
 	globals.Lock()
-
-	for i := uint64(0); i < numUNDOs; i++ {
-		globals.inodeLeaseTable[(13*i)+1] = &inodeLeaseStruct{state: inodeLeaseStateNone}                // UNDO
-		globals.inodeLeaseTable[(13*i)+2] = &inodeLeaseStruct{state: inodeLeaseStateSharedRequested}     // UNDO
-		globals.inodeLeaseTable[(13*i)+3] = &inodeLeaseStruct{state: inodeLeaseStateSharedGranted}       // UNDO
-		globals.inodeLeaseTable[(13*i)+4] = &inodeLeaseStruct{state: inodeLeaseStateSharedPromoting}     // UNDO
-		globals.inodeLeaseTable[(13*i)+5] = &inodeLeaseStruct{state: inodeLeaseStateSharedReleasing}     // UNDO
-		globals.inodeLeaseTable[(13*i)+6] = &inodeLeaseStruct{state: inodeLeaseStateSharedExpired}       // UNDO
-		globals.inodeLeaseTable[(13*i)+7] = &inodeLeaseStruct{state: inodeLeaseStateExclusiveRequested}  // UNDO
-		globals.inodeLeaseTable[(13*i)+8] = &inodeLeaseStruct{state: inodeLeaseStateExclusiveGranted}    // UNDO
-		globals.inodeLeaseTable[(13*i)+9] = &inodeLeaseStruct{state: inodeLeaseStateExclusiveDemoting}   // UNDO
-		globals.inodeLeaseTable[(13*i)+10] = &inodeLeaseStruct{state: inodeLeaseStateExclusiveReleasing} // UNDO
-		globals.inodeLeaseTable[(13*i)+11] = &inodeLeaseStruct{state: inodeLeaseStateExclusiveExpired}   // UNDO
-	} // UNDO
 
 	inodeLeaseTable = make(inodeLeaseTableByInodeNumberSlice, len(globals.inodeLeaseTable))
 	inodeLeaseTableIndex = 0
@@ -270,20 +254,6 @@ func serveHTTPGetOfLeases(responseWriter http.ResponseWriter, request *http.Requ
 		}
 		inodeLeaseTableIndex++
 	}
-
-	for i := uint64(0); i < numUNDOs; i++ {
-		delete(globals.inodeLeaseTable, (13*i)+1)  // UNDO
-		delete(globals.inodeLeaseTable, (13*i)+2)  // UNDO
-		delete(globals.inodeLeaseTable, (13*i)+3)  // UNDO
-		delete(globals.inodeLeaseTable, (13*i)+4)  // UNDO
-		delete(globals.inodeLeaseTable, (13*i)+5)  // UNDO
-		delete(globals.inodeLeaseTable, (13*i)+6)  // UNDO
-		delete(globals.inodeLeaseTable, (13*i)+7)  // UNDO
-		delete(globals.inodeLeaseTable, (13*i)+8)  // UNDO
-		delete(globals.inodeLeaseTable, (13*i)+9)  // UNDO
-		delete(globals.inodeLeaseTable, (13*i)+10) // UNDO
-		delete(globals.inodeLeaseTable, (13*i)+11) // UNDO
-	} // UNDO
 
 	globals.Unlock()
 
@@ -378,7 +348,6 @@ func serveHTTPPostOfLeasesDemote(responseWriter http.ResponseWriter, request *ht
 	}()
 
 	logWarnf("serveHTTPPostOfLeasesDemote() TODO")
-	numUNDOs++
 
 	responseWriter.WriteHeader(http.StatusOK)
 }
@@ -393,9 +362,6 @@ func serveHTTPPostOfLeasesRelease(responseWriter http.ResponseWriter, request *h
 	}()
 
 	logWarnf("serveHTTPPostOfLeasesRelease() TODO")
-	if numUNDOs > 0 {
-		numUNDOs--
-	} // UNDO
 
 	responseWriter.WriteHeader(http.StatusOK)
 }
