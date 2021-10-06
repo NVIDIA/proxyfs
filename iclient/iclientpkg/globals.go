@@ -15,6 +15,7 @@ import (
 
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/conf"
+	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/proxyfs/retryrpc"
 	"github.com/NVIDIA/proxyfs/utils"
 )
@@ -70,10 +71,12 @@ const (
 )
 
 type inodeLeaseStruct struct {
-	inodeNumber uint64              //
-	state       inodeLeaseStateType //
-	heldList    *list.List          // List of granted inodeHeldLockStruct's
-	requestList *list.List          // List of pending inodeLockRequestStruct's
+	inodeNumber uint64                     //
+	state       inodeLeaseStateType        //
+	listElement *list.Element              // Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
+	heldList    *list.List                 // List of granted inodeHeldLockStruct's
+	requestList *list.List                 // List of pending inodeLockRequestStruct's
+	inodeHeadV1 *ilayout.InodeHeadV1Struct //
 }
 
 type inodeHeldLockStruct struct {
@@ -174,6 +177,8 @@ type globalsStruct struct {
 	inodeLeaseTable      map[uint64]*inodeLeaseStruct //
 	inodeLeaseWG         sync.WaitGroup               // Signaled as each (*inodeLeaseStruct).goroutine() exits
 	inodeLockWG          sync.WaitGroup               // Signaled as each active inodeLockRequestStruct has signaled service complete with .locksHeld empty
+	sharedLeaseLRU       *list.List                   // LRU-ordered list of inodeLeaseStruct.listElement's in or transitioning to inodeLeaseStateSharedGranted
+	exclusiveLeaseLRU    *list.List                   // LRU-ordered list of inodeLeaseStruct.listElement's in or transitioning to inodeLeaseStateExclusiveGranted
 	httpServer           *http.Server                 //
 	httpServerWG         sync.WaitGroup               //
 	stats                *statsStruct                 //
@@ -366,6 +371,8 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	globals.fissionErrChan = fissionErrChan
 
 	globals.inodeLeaseTable = make(map[uint64]*inodeLeaseStruct)
+	globals.sharedLeaseLRU = list.New()
+	globals.exclusiveLeaseLRU = list.New()
 
 	globals.stats = &statsStruct{}
 
@@ -411,6 +418,8 @@ func uninitializeGlobals() (err error) {
 	globals.retryRPCCACertPEM = nil
 
 	globals.inodeLeaseTable = nil
+	globals.sharedLeaseLRU = nil
+	globals.exclusiveLeaseLRU = nil
 
 	globals.fissionErrChan = nil
 

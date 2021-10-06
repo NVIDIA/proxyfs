@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/NVIDIA/proxyfs/iauth"
 	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
@@ -82,7 +83,7 @@ func startRPCHandler() (err error) {
 	}
 	mountResponse = &imgrpkg.MountResponseStruct{}
 
-	err = globals.retryRPCClient.Send("Mount", mountRequest, mountResponse)
+	err = rpcMount(mountRequest, mountResponse)
 	if nil != err {
 		return
 	}
@@ -107,9 +108,9 @@ func renewRPCHandler() (err error) {
 	}
 	renewMountResponse = &imgrpkg.RenewMountResponseStruct{}
 
-	err = globals.retryRPCClient.Send("RenewMount", renewMountRequest, renewMountResponse)
+	err = rpcRenewMount(renewMountRequest, renewMountResponse)
 
-	return // err, as set by globals.retryRPCClient.Send("RenewMount", renewMountRequest, renewMountResponse) is sufficient
+	return // err, as set by rpcRenewMount(renewMountRequest, renewMountResponse) is sufficient
 }
 
 func stopRPCHandler() (err error) {
@@ -123,7 +124,7 @@ func stopRPCHandler() (err error) {
 	}
 	unmountResponse = &imgrpkg.UnmountResponseStruct{}
 
-	err = globals.retryRPCClient.Send("Unmount", unmountRequest, unmountResponse)
+	err = rpcUnmount(unmountRequest, unmountResponse)
 	if nil != err {
 		logWarn(err)
 	}
@@ -213,4 +214,171 @@ func updateSwithAuthTokenAndSwiftStorageURL() {
 	globals.swiftAuthWaitGroup.Done()
 	globals.swiftAuthWaitGroup = nil
 	globals.Unlock()
+}
+
+func performRenewableRPC(method string, request interface{}, reply interface{}) (err error) {
+Retry:
+
+	err = globals.retryRPCClient.Send(method, request, reply)
+	if nil != err {
+		err = renewRPCHandler()
+		if nil != err {
+			logFatal(err)
+		}
+		goto Retry
+	}
+
+	return
+}
+
+func rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountResponse *imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.AdjustInodeTableEntryOpenCountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = performRenewableRPC("AdjustInodeTableEntryOpenCount", adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+
+	return
+}
+
+func rpcDeleteInodeTableEntry(deleteInodeTableEntryRequest *imgrpkg.DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *imgrpkg.DeleteInodeTableEntryResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.DeleteInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = performRenewableRPC("DeleteInodeTableEntry", deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)
+
+	return
+}
+
+func rpcFetchNonceRange(fetchNonceRangeRequest *imgrpkg.FetchNonceRangeRequestStruct, fetchNonceRangeResponse *imgrpkg.FetchNonceRangeResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.FetchNonceRangeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = performRenewableRPC("FetchNonceRange", fetchNonceRangeRequest, fetchNonceRangeResponse)
+
+	return
+}
+
+func rpcFlush(flushRequest *imgrpkg.FlushRequestStruct, flushResponse *imgrpkg.FlushResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.FlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = performRenewableRPC("Flush", flushRequest, flushResponse)
+
+	return
+}
+
+func rpcGetInodeTableEntry(getInodeTableEntryRequest *imgrpkg.GetInodeTableEntryRequestStruct, getInodeTableEntryResponse *imgrpkg.GetInodeTableEntryResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.GetInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = performRenewableRPC("GetInodeTableEntry", getInodeTableEntryRequest, getInodeTableEntryResponse)
+
+	return
+}
+
+func rpcLease(leaseRequest *imgrpkg.LeaseRequestStruct, leaseResponse *imgrpkg.LeaseResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.LeaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = performRenewableRPC("Lease", leaseRequest, leaseResponse)
+
+	return
+}
+
+func rpcMount(mountRequest *imgrpkg.MountRequestStruct, mountResponse *imgrpkg.MountResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.MountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = globals.retryRPCClient.Send("Mount", mountRequest, mountResponse)
+
+	return
+}
+
+func rpcPutInodeTableEntries(putInodeTableEntriesRequest *imgrpkg.PutInodeTableEntriesRequestStruct, putInodeTableEntriesResponse *imgrpkg.PutInodeTableEntriesResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.PutInodeTableEntriesUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = performRenewableRPC("PutInodeTableEntries", putInodeTableEntriesRequest, putInodeTableEntriesResponse)
+
+	return
+}
+
+func rpcRenewMount(renewMountRequest *imgrpkg.RenewMountRequestStruct, renewMountResponse *imgrpkg.RenewMountResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.DoGetAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = globals.retryRPCClient.Send("RenewMount", renewMountRequest, renewMountResponse)
+
+	return
+}
+
+func rpcUnmount(unmountRequest *imgrpkg.UnmountRequestStruct, unmountResponse *imgrpkg.UnmountResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.UnmountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = performRenewableRPC("Unmount", unmountRequest, unmountResponse)
+
+	return
+}
+
+func performObjectGETRange(objectNumber uint64, offset uint64, length uint64) (buf []byte, err error) {
+	return nil, nil // TODO
+}
+
+func performObjectTAIL(objectNumber uint64, length uint64) (buf []byte, err error) {
+	return nil, nil // TODO
+}
+
+func performObjectGETWithRangeHeader(objectNumber uint64, rangeHeader string) (buf []byte, err error) {
+	return nil, nil // TODO
 }

@@ -4,10 +4,14 @@
 package iclientpkg
 
 import (
+	"fmt"
 	"syscall"
 	"time"
 
 	"github.com/NVIDIA/fission"
+
+	"github.com/NVIDIA/proxyfs/ilayout"
+	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
 )
 
 const (
@@ -93,8 +97,12 @@ func (dummy *globalsStruct) DoForget(inHeader *fission.InHeader, forgetIn *fissi
 
 func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fission.GetAttrIn) (getAttrOut *fission.GetAttrOut, errno syscall.Errno) {
 	var (
-		inodeLockRequest *inodeLockRequestStruct
-		startTime        time.Time = time.Now()
+		err                        error
+		getInodeTableEntryRequest  *imgrpkg.GetInodeTableEntryRequestStruct
+		getInodeTableEntryResponse *imgrpkg.GetInodeTableEntryResponseStruct
+		inodeLease                 *inodeLeaseStruct
+		inodeLockRequest           *inodeLockRequestStruct
+		startTime                  time.Time = time.Now()
 	)
 
 	logTracef("==> DoGetAttr(inHeader: %+v, getAttrIn: %+v)", inHeader, getAttrIn)
@@ -106,12 +114,39 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 		globals.stats.DoGetAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = uint64(inHeader.NodeID)
 	inodeLockRequest.exclusive = false
 	inodeLockRequest.addThisLock()
-	inodeLockRequest.unlockAllWhileLocked()
+
+	inodeLease = lookupInodeLease(uint64(inHeader.NodeID))
+	if nil == inodeLease {
+		inodeLockRequest.unlockAll()
+		getAttrOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == inodeLease.inodeHeadV1 {
+		getInodeTableEntryRequest = &imgrpkg.GetInodeTableEntryRequestStruct{
+			MountID:     globals.mountID,
+			InodeNumber: uint64(inHeader.NodeID),
+		}
+		getInodeTableEntryResponse = &imgrpkg.GetInodeTableEntryResponseStruct{}
+
+		err = rpcGetInodeTableEntry(getInodeTableEntryRequest, getInodeTableEntryResponse)
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			getAttrOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+
+		fmt.Printf("TODO: need to fetch .inodeHeadV1 via getInodeTableEntryResponse: %+v\n", getInodeTableEntryResponse)
+		inodeLease.inodeHeadV1 = &ilayout.InodeHeadV1Struct{}
+	}
+
+	inodeLockRequest.unlockAll()
 	getAttrOut = nil
 	errno = syscall.ENOSYS
 	return

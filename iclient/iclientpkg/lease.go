@@ -65,12 +65,36 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	}
 
 	inodeLease, ok = globals.inodeLeaseTable[inodeLockRequest.inodeNumber]
-	if !ok {
+	if ok {
+		switch inodeLease.state {
+		case inodeLeaseStateNone:
+		case inodeLeaseStateSharedRequested:
+			globals.sharedLeaseLRU.MoveToBack(inodeLease.listElement)
+		case inodeLeaseStateSharedGranted:
+			globals.sharedLeaseLRU.MoveToBack(inodeLease.listElement)
+		case inodeLeaseStateSharedPromoting:
+			globals.exclusiveLeaseLRU.MoveToBack(inodeLease.listElement)
+		case inodeLeaseStateSharedReleasing:
+		case inodeLeaseStateSharedExpired:
+		case inodeLeaseStateExclusiveRequested:
+			globals.exclusiveLeaseLRU.MoveToBack(inodeLease.listElement)
+		case inodeLeaseStateExclusiveGranted:
+			globals.exclusiveLeaseLRU.MoveToBack(inodeLease.listElement)
+		case inodeLeaseStateExclusiveDemoting:
+			globals.sharedLeaseLRU.MoveToBack(inodeLease.listElement)
+		case inodeLeaseStateExclusiveReleasing:
+		case inodeLeaseStateExclusiveExpired:
+		default:
+			logFatalf("switch inodeLease.state unexpected: %v", inodeLease.state)
+		}
+	} else {
 		inodeLease = &inodeLeaseStruct{
 			inodeNumber: inodeLockRequest.inodeNumber,
 			state:       inodeLeaseStateNone,
+			listElement: nil,
 			heldList:    list.New(),
 			requestList: list.New(),
+			inodeHeadV1: nil,
 		}
 
 		globals.inodeLeaseTable[inodeLockRequest.inodeNumber] = inodeLease
@@ -130,10 +154,9 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		case inodeLeaseStateNone:
 			inodeLockRequest.listElement = inodeLease.requestList.PushFront(inodeLockRequest)
 			inodeLease.state = inodeLeaseStateExclusiveRequested
+			inodeLease.listElement = globals.exclusiveLeaseLRU.PushBack(inodeLease)
 
 			globals.Unlock()
-
-		RetryLeaseRequestTypeExclusive:
 
 			leaseRequest = &imgrpkg.LeaseRequestStruct{
 				MountID:          globals.mountID,
@@ -142,13 +165,9 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			}
 			leaseResponse = &imgrpkg.LeaseResponseStruct{}
 
-			err = globals.retryRPCClient.Send("Lease", leaseRequest, leaseResponse)
+			err = rpcLease(leaseRequest, leaseResponse)
 			if nil != err {
-				err = renewRPCHandler()
-				if nil != err {
-					logFatal(err)
-				}
-				goto RetryLeaseRequestTypeExclusive
+				logFatal(err)
 			}
 
 			if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypeExclusive {
@@ -185,10 +204,10 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		case inodeLeaseStateSharedGranted:
 			inodeLockRequest.listElement = inodeLease.requestList.PushFront(inodeLockRequest)
 			inodeLease.state = inodeLeaseStateSharedPromoting
+			_ = globals.sharedLeaseLRU.Remove(inodeLease.listElement)
+			inodeLease.listElement = globals.exclusiveLeaseLRU.PushBack(inodeLease)
 
 			globals.Unlock()
-
-		RetryLeaseRequestTypePromote:
 
 			leaseRequest = &imgrpkg.LeaseRequestStruct{
 				MountID:          globals.mountID,
@@ -197,13 +216,9 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			}
 			leaseResponse = &imgrpkg.LeaseResponseStruct{}
 
-			err = globals.retryRPCClient.Send("Lease", leaseRequest, leaseResponse)
+			err = rpcLease(leaseRequest, leaseResponse)
 			if nil != err {
-				err = renewRPCHandler()
-				if nil != err {
-					logFatal(err)
-				}
-				goto RetryLeaseRequestTypePromote
+				logFatal(err)
 			}
 
 			if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypePromoted {
@@ -287,10 +302,9 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		case inodeLeaseStateNone:
 			inodeLockRequest.listElement = inodeLease.requestList.PushFront(inodeLockRequest)
 			inodeLease.state = inodeLeaseStateSharedRequested
+			inodeLease.listElement = globals.sharedLeaseLRU.PushBack(inodeLease)
 
 			globals.Unlock()
-
-		RetryLeaseRequestTypeShared:
 
 			leaseRequest = &imgrpkg.LeaseRequestStruct{
 				MountID:          globals.mountID,
@@ -299,13 +313,9 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			}
 			leaseResponse = &imgrpkg.LeaseResponseStruct{}
 
-			err = globals.retryRPCClient.Send("Lease", leaseRequest, leaseResponse)
+			err = rpcLease(leaseRequest, leaseResponse)
 			if nil != err {
-				err = renewRPCHandler()
-				if nil != err {
-					logFatal(err)
-				}
-				goto RetryLeaseRequestTypeShared
+				logFatal(err)
 			}
 
 			if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypeShared {
@@ -430,4 +440,24 @@ func (inodeLockRequest *inodeLockRequestStruct) unlockAllWhileLocked() {
 	}
 
 	inodeLockRequest.locksHeld = make(map[uint64]*inodeHeldLockStruct)
+}
+
+func lookupInodeLease(inodeNumber uint64) (inodeLease *inodeLeaseStruct) {
+	globals.Lock()
+	inodeLease = lookupInodeLeaseWhileLocked(inodeNumber)
+	globals.Unlock()
+	return
+}
+
+func lookupInodeLeaseWhileLocked(inodeNumber uint64) (inodeLease *inodeLeaseStruct) {
+	var (
+		ok bool
+	)
+
+	inodeLease, ok = globals.inodeLeaseTable[inodeNumber]
+	if !ok {
+		inodeLease = nil
+	}
+
+	return
 }
