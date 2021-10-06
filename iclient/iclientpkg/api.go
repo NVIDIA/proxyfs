@@ -27,6 +27,12 @@
 //  RetryRPCDeadlineIO:       60s
 //  RetryRPCKeepAlivePeriod:  60s
 //  RetryRPCCACertFilePath:   # Defaults to /dev/null
+//  MaxSharedLeases:          500
+//  MaxExclusiveLeases:       100      # Caps pending FileFlush data at 1GiB (with FileFlushTriggerSize of 10MiB)
+//  ReadCacheLineSize:        1048576  # 1MiB
+//  ReadCacheLineCountMax:    1024     # 1GiB (with ReadCacheLineSize of 1MiB)
+//  FileFlushTriggerSize:     10485760 # [10MiB] Amount of written data before metadata is appended and flush is triggered
+//  FileFlushTriggerDuration: 10s # Amount of time before unwritten data and its metadata flush is triggered
 //  LogFilePath:              iclient.log
 //  LogToConsole:             true
 //  TraceEnabled:             false

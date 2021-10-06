@@ -39,6 +39,12 @@ type configStruct struct {
 	RetryRPCDeadlineIO       time.Duration
 	RetryRPCKeepAlivePeriod  time.Duration
 	RetryRPCCACertFilePath   string // Defaults to /dev/null
+	MaxSharedLeases          uint64
+	MaxExclusiveLeases       uint64
+	ReadCacheLineSize        uint64
+	ReadCacheLineCountMax    uint64
+	FileFlushTriggerSize     uint64
+	FileFlushTriggerDuration time.Duration
 	LogFilePath              string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole             bool
 	TraceEnabled             bool
@@ -290,6 +296,30 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	if nil != err {
 		globals.config.RetryRPCCACertFilePath = ""
 	}
+	globals.config.MaxSharedLeases, err = confMap.FetchOptionValueUint64("ICLIENT", "MaxSharedLeases")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.MaxExclusiveLeases, err = confMap.FetchOptionValueUint64("ICLIENT", "MaxExclusiveLeases")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.ReadCacheLineSize, err = confMap.FetchOptionValueUint64("ICLIENT", "ReadCacheLineSize")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.ReadCacheLineCountMax, err = confMap.FetchOptionValueUint64("ICLIENT", "ReadCacheLineCountMax")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.FileFlushTriggerSize, err = confMap.FetchOptionValueUint64("ICLIENT", "FileFlushTriggerSize")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.FileFlushTriggerDuration, err = confMap.FetchOptionValueDuration("ICLIENT", "FileFlushTriggerDuration")
+	if nil != err {
+		logFatal(err)
+	}
 	globals.config.LogFilePath, err = confMap.FetchOptionValueString("ICLIENT", "LogFilePath")
 	if nil != err {
 		err = confMap.VerifyOptionValueIsEmpty("ICLIENT", "LogFilePath")
@@ -365,6 +395,12 @@ func uninitializeGlobals() (err error) {
 	globals.config.RetryRPCDeadlineIO = time.Duration(0)
 	globals.config.RetryRPCKeepAlivePeriod = time.Duration(0)
 	globals.config.RetryRPCCACertFilePath = ""
+	globals.config.MaxSharedLeases = 0
+	globals.config.MaxExclusiveLeases = 0
+	globals.config.ReadCacheLineSize = 0
+	globals.config.ReadCacheLineCountMax = 0
+	globals.config.FileFlushTriggerSize = 0
+	globals.config.FileFlushTriggerDuration = time.Duration(0)
 	globals.config.LogFilePath = ""
 	globals.config.LogToConsole = false
 	globals.config.TraceEnabled = false
