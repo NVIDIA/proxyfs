@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -111,25 +112,6 @@ func startRPCHandler() (err error) {
 
 	err = nil
 	return
-}
-
-func renewRPCHandler() (err error) {
-	var (
-		renewMountRequest  *imgrpkg.RenewMountRequestStruct
-		renewMountResponse *imgrpkg.RenewMountResponseStruct
-	)
-
-	updateSwithAuthTokenAndSwiftStorageURL()
-
-	renewMountRequest = &imgrpkg.RenewMountRequestStruct{
-		MountID:   globals.mountID,
-		AuthToken: fetchSwiftAuthToken(),
-	}
-	renewMountResponse = &imgrpkg.RenewMountResponseStruct{}
-
-	err = rpcRenewMount(renewMountRequest, renewMountResponse)
-
-	return // err, as set by rpcRenewMount(renewMountRequest, renewMountResponse) is sufficient
 }
 
 func stopRPCHandler() (err error) {
@@ -237,15 +219,29 @@ func updateSwithAuthTokenAndSwiftStorageURL() {
 	globals.Unlock()
 }
 
-func performRenewableRPC(method string, request interface{}, reply interface{}) (err error) {
+func performMountRenewableRPC(method string, request interface{}, reply interface{}) (err error) {
+	var (
+		renewMountRequest  *imgrpkg.RenewMountRequestStruct
+		renewMountResponse *imgrpkg.RenewMountResponseStruct
+	)
+
 Retry:
 
 	err = globals.retryRPCClient.Send(method, request, reply)
-	if nil != err {
-		err = renewRPCHandler()
+	if (nil != err) && (strings.HasPrefix(err.Error(), imgrpkg.EAuthTokenRejected)) {
+		updateSwithAuthTokenAndSwiftStorageURL()
+
+		renewMountRequest = &imgrpkg.RenewMountRequestStruct{
+			MountID:   globals.mountID,
+			AuthToken: fetchSwiftAuthToken(),
+		}
+		renewMountResponse = &imgrpkg.RenewMountResponseStruct{}
+
+		err = rpcRenewMount(renewMountRequest, renewMountResponse)
 		if nil != err {
 			logFatal(err)
 		}
+
 		goto Retry
 	}
 
@@ -261,7 +257,7 @@ func rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *im
 		globals.stats.AdjustInodeTableEntryOpenCountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	err = performRenewableRPC("AdjustInodeTableEntryOpenCount", adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+	err = performMountRenewableRPC("AdjustInodeTableEntryOpenCount", adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
 
 	return
 }
@@ -275,7 +271,7 @@ func rpcDeleteInodeTableEntry(deleteInodeTableEntryRequest *imgrpkg.DeleteInodeT
 		globals.stats.DeleteInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	err = performRenewableRPC("DeleteInodeTableEntry", deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)
+	err = performMountRenewableRPC("DeleteInodeTableEntry", deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)
 
 	return
 }
@@ -289,7 +285,7 @@ func rpcFetchNonceRange(fetchNonceRangeRequest *imgrpkg.FetchNonceRangeRequestSt
 		globals.stats.FetchNonceRangeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	err = performRenewableRPC("FetchNonceRange", fetchNonceRangeRequest, fetchNonceRangeResponse)
+	err = performMountRenewableRPC("FetchNonceRange", fetchNonceRangeRequest, fetchNonceRangeResponse)
 
 	return
 }
@@ -303,7 +299,7 @@ func rpcFlush(flushRequest *imgrpkg.FlushRequestStruct, flushResponse *imgrpkg.F
 		globals.stats.FlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	err = performRenewableRPC("Flush", flushRequest, flushResponse)
+	err = performMountRenewableRPC("Flush", flushRequest, flushResponse)
 
 	return
 }
@@ -317,7 +313,7 @@ func rpcGetInodeTableEntry(getInodeTableEntryRequest *imgrpkg.GetInodeTableEntry
 		globals.stats.GetInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	err = performRenewableRPC("GetInodeTableEntry", getInodeTableEntryRequest, getInodeTableEntryResponse)
+	err = performMountRenewableRPC("GetInodeTableEntry", getInodeTableEntryRequest, getInodeTableEntryResponse)
 
 	return
 }
@@ -331,7 +327,7 @@ func rpcLease(leaseRequest *imgrpkg.LeaseRequestStruct, leaseResponse *imgrpkg.L
 		globals.stats.LeaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	err = performRenewableRPC("Lease", leaseRequest, leaseResponse)
+	err = performMountRenewableRPC("Lease", leaseRequest, leaseResponse)
 
 	return
 }
@@ -359,7 +355,7 @@ func rpcPutInodeTableEntries(putInodeTableEntriesRequest *imgrpkg.PutInodeTableE
 		globals.stats.PutInodeTableEntriesUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	err = performRenewableRPC("PutInodeTableEntries", putInodeTableEntriesRequest, putInodeTableEntriesResponse)
+	err = performMountRenewableRPC("PutInodeTableEntries", putInodeTableEntriesRequest, putInodeTableEntriesResponse)
 
 	return
 }
@@ -387,9 +383,7 @@ func rpcUnmount(unmountRequest *imgrpkg.UnmountRequestStruct, unmountResponse *i
 		globals.stats.UnmountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO: Since the Unmount RPC fails with an ETODO, we would mistakenly try to reauth
-	// err = performRenewableRPC("Unmount", unmountRequest, unmountResponse)
-	err = globals.retryRPCClient.Send("Unmount", unmountRequest, unmountResponse)
+	err = performMountRenewableRPC("Unmount", unmountRequest, unmountResponse)
 
 	return
 }

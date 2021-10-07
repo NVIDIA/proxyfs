@@ -13,6 +13,8 @@ import (
 
 	"github.com/NVIDIA/fission"
 
+	"github.com/NVIDIA/sortedmap"
+
 	"github.com/NVIDIA/proxyfs/bucketstats"
 	"github.com/NVIDIA/proxyfs/conf"
 	"github.com/NVIDIA/proxyfs/ilayout"
@@ -78,13 +80,23 @@ const (
 	inodeLeaseStateExclusiveExpired
 )
 
+type layoutMapEntryStruct struct {
+	objectSize      uint64
+	bytesReferenced uint64
+}
+
 type inodeLeaseStruct struct {
 	inodeNumber uint64                     //
 	state       inodeLeaseStateType        //
-	listElement *list.Element              // Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
-	heldList    *list.List                 // List of granted inodeHeldLockStruct's
-	requestList *list.List                 // List of pending inodeLockRequestStruct's
+	listElement *list.Element              //          Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
+	heldList    *list.List                 //          List of granted inodeHeldLockStruct's
+	requestList *list.List                 //          List of pending inodeLockRequestStruct's
 	inodeHeadV1 *ilayout.InodeHeadV1Struct //
+	payload     sortedmap.BPlusTree        //          For DirInode:  Directory B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
+	//                                                 For FileInode: ExtentMap B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
+	layoutMap       map[uint64]layoutMapEntryStruct // For DirInode & FileInode: Map form of .inodeHeadV1.Layout
+	putObjectNumber uint64                          // For DirInode & FileInode:
+	putObjectBuffer []byte                          //   ObjectNumber and buffer to PUT during next flush
 }
 
 type inodeHeldLockStruct struct {
