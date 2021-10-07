@@ -4,7 +4,6 @@
 package iclientpkg
 
 import (
-	"fmt"
 	"syscall"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 
 const (
 	attrBlockSize = uint32(512)
+	attrRDev      = uint32(0)
 
 	fuseSubtype = "ProxyFS"
 
@@ -44,6 +44,9 @@ func performMountFUSE() (err error) {
 		globals.fissionErrChan,
 	)
 
+	globals.fuseEntryValidDurationSec, globals.fuseEntryValidDurationNSec = nsToUnixTime(uint64(globals.config.FUSEEntryValidDuration))
+	globals.fuseAttrValidDurationSec, globals.fuseAttrValidDurationNSec = nsToUnixTime(uint64(globals.config.FUSEAttrValidDuration))
+
 	err = globals.fissionVolume.DoMount()
 
 	return
@@ -53,6 +56,9 @@ func performUnmountFUSE() (err error) {
 	err = globals.fissionVolume.DoUnmount()
 
 	globals.fissionVolume = nil
+
+	globals.fuseEntryValidDurationSec, globals.fuseEntryValidDurationNSec = 0, 0
+	globals.fuseAttrValidDurationSec, globals.fuseAttrValidDurationNSec = 0, 0
 
 	return
 }
@@ -100,9 +106,14 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 		err                        error
 		getInodeTableEntryRequest  *imgrpkg.GetInodeTableEntryRequestStruct
 		getInodeTableEntryResponse *imgrpkg.GetInodeTableEntryResponseStruct
+		inodeHeadV1Buf             []byte
 		inodeLease                 *inodeLeaseStruct
 		inodeLockRequest           *inodeLockRequestStruct
+		modificationTimeNSec       uint32
+		modificationTimeSec        uint64
 		startTime                  time.Time = time.Now()
+		statusChangeTimeNSec       uint32
+		statusChangeTimeSec        uint64
 	)
 
 	logTracef("==> DoGetAttr(inHeader: %+v, getAttrIn: %+v)", inHeader, getAttrIn)
@@ -142,13 +153,49 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 			return
 		}
 
-		fmt.Printf("TODO: need to fetch .inodeHeadV1 via getInodeTableEntryResponse: %+v\n", getInodeTableEntryResponse)
-		inodeLease.inodeHeadV1 = &ilayout.InodeHeadV1Struct{}
+		inodeHeadV1Buf, err = objectGETTail(getInodeTableEntryResponse.InodeHeadObjectNumber, getInodeTableEntryResponse.InodeHeadLength)
+		if nil != err {
+			logFatalf("objectGETTail(getInodeTableEntryResponse.InodeHeadObjectNumber: %v, getInodeTableEntryResponse.InodeHeadLength: %v) failed: %v", getInodeTableEntryResponse.InodeHeadObjectNumber, getInodeTableEntryResponse.InodeHeadLength, err)
+		}
+
+		inodeLease.inodeHeadV1, err = ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf)
+		if nil != err {
+			logFatalf("ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf) failed: %v", err)
+		}
+	}
+
+	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(inodeLease.inodeHeadV1.ModificationTime.UnixNano()))
+	statusChangeTimeSec, statusChangeTimeNSec = nsToUnixTime(uint64(inodeLease.inodeHeadV1.StatusChangeTime.UnixNano()))
+
+	getAttrOut = &fission.GetAttrOut{
+		AttrValidSec:  globals.fuseAttrValidDurationSec,
+		AttrValidNSec: globals.fuseAttrValidDurationNSec,
+		Dummy:         0,
+		Attr: fission.Attr{
+			Ino:       inodeLease.inodeHeadV1.InodeNumber,
+			Size:      inodeLease.inodeHeadV1.Size, // Possibly overwritten by fixAttrSizes()
+			Blocks:    0,                           // Computed by fixAttrSizes()
+			ATimeSec:  modificationTimeSec,
+			MTimeSec:  modificationTimeSec,
+			CTimeSec:  statusChangeTimeSec,
+			ATimeNSec: modificationTimeNSec,
+			MTimeNSec: modificationTimeNSec,
+			CTimeNSec: statusChangeTimeNSec,
+			Mode:      computeAttrMode(inodeLease.inodeHeadV1.InodeType, inodeLease.inodeHeadV1.Mode),
+			NLink:     uint32(len(inodeLease.inodeHeadV1.LinkTable)),
+			UID:       uint32(inodeLease.inodeHeadV1.UserID),
+			GID:       uint32(inodeLease.inodeHeadV1.GroupID),
+			RDev:      attrRDev,
+			BlkSize:   attrBlockSize, // Possibly overwritten by fixAttrSizes()
+			Padding:   0,
+		},
 	}
 
 	inodeLockRequest.unlockAll()
-	getAttrOut = nil
-	errno = syscall.ENOSYS
+
+	fixAttrSizes(&getAttrOut.Attr)
+
+	errno = 0
 	return
 }
 
@@ -921,15 +968,40 @@ func (dummy *globalsStruct) DoLSeek(inHeader *fission.InHeader, lSeekIn *fission
 	return
 }
 
+func nsToUnixTime(ns uint64) (sec uint64, nsec uint32) {
+	sec = ns / 1e9
+	nsec = uint32(ns - (sec * 1e9))
+	return
+}
+
+func unixTimeToNs(sec uint64, nsec uint32) (ns uint64) {
+	ns = (sec * 1e9) + uint64(nsec)
+	return
+}
+
+func computeAttrMode(iLayoutInodeType uint8, iLayoutMode uint16) (attrMode uint32) {
+	attrMode = uint32(iLayoutMode)
+	switch iLayoutInodeType {
+	case ilayout.InodeTypeDir:
+		attrMode |= syscall.S_IFDIR
+	case ilayout.InodeTypeFile:
+		attrMode |= syscall.S_IFREG
+	case ilayout.InodeTypeSymLink:
+		attrMode |= syscall.S_IFLNK
+	default:
+		logFatalf("iLayoutInodeType (%v) unknown", iLayoutInodeType)
+	}
+	return
+}
+
 func fixAttrSizes(attr *fission.Attr) {
-	// TODO
-	// 	if syscall.S_IFREG == (attr.Mode & syscall.S_IFMT) {
-	// 		attr.Blocks = attr.Size + (uint64(attrBlkSize) - 1)
-	// 		attr.Blocks /= uint64(attrBlkSize)
-	// 		attr.BlkSize = attrBlkSize
-	// 	} else {
-	// 		attr.Size = 0
-	// 		attr.Blocks = 0
-	// 		attr.BlkSize = 0
-	// 	}
+	if syscall.S_IFREG == (attr.Mode & syscall.S_IFMT) {
+		attr.Blocks = attr.Size + (uint64(attrBlockSize) - 1)
+		attr.Blocks /= uint64(attrBlockSize)
+		attr.BlkSize = attrBlockSize
+	} else {
+		attr.Size = 0
+		attr.Blocks = 0
+		attr.BlkSize = 0
+	}
 }

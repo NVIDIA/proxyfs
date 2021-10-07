@@ -21,37 +21,45 @@ import (
 )
 
 type configStruct struct {
-	VolumeName               string
-	MountPointDirPath        string
-	FUSEAllowOther           bool
-	FUSEMaxBackground        uint16
-	FUSECongestionThreshhold uint16
-	FUSEMaxWrite             uint32
-	AuthPlugInPath           string
-	AuthPlugInEnvName        string
-	AuthPlugInEnvValue       string
-	SwiftRetryDelay          time.Duration
-	SwiftRetryExpBackoff     float64
-	SwiftRetryLimit          uint32
-	SwiftTimeout             time.Duration
-	SwiftConnectionPoolSize  uint32
-	RetryRPCPublicIPAddr     string
-	RetryRPCPort             uint16
-	RetryRPCDeadlineIO       time.Duration
-	RetryRPCKeepAlivePeriod  time.Duration
-	RetryRPCCACertFilePath   string // Defaults to /dev/null
-	MaxSharedLeases          uint64
-	MaxExclusiveLeases       uint64
-	ReadCacheLineSize        uint64
-	ReadCacheLineCountMax    uint64
-	FileFlushTriggerSize     uint64
-	FileFlushTriggerDuration time.Duration
-	LogFilePath              string // Unless starting with '/', relative to $CWD; == "" means disabled
-	LogToConsole             bool
-	TraceEnabled             bool
-	FUSELogEnabled           bool
-	HTTPServerIPAddr         string
-	HTTPServerPort           uint16 // To be served on HTTPServerIPAddr via TCP
+	VolumeName                   string
+	MountPointDirPath            string
+	FUSEAllowOther               bool
+	FUSEMaxBackground            uint16
+	FUSECongestionThreshhold     uint16
+	FUSEMaxWrite                 uint32
+	FUSEEntryValidDuration       time.Duration
+	FUSEAttrValidDuration        time.Duration
+	AuthPlugInPath               string
+	AuthPlugInEnvName            string
+	AuthPlugInEnvValue           string
+	SwiftTimeout                 time.Duration
+	SwiftRetryLimit              uint64
+	SwiftRetryDelay              time.Duration
+	SwiftRetryDelayVariance      uint8
+	SwiftRetryExponentialBackoff float64
+	SwiftConnectionPoolSize      uint32
+	RetryRPCPublicIPAddr         string
+	RetryRPCPort                 uint16
+	RetryRPCDeadlineIO           time.Duration
+	RetryRPCKeepAlivePeriod      time.Duration
+	RetryRPCCACertFilePath       string // Defaults to /dev/null
+	MaxSharedLeases              uint64
+	MaxExclusiveLeases           uint64
+	ReadCacheLineSize            uint64
+	ReadCacheLineCountMax        uint64
+	FileFlushTriggerSize         uint64
+	FileFlushTriggerDuration     time.Duration
+	LogFilePath                  string // Unless starting with '/', relative to $CWD; == "" means disabled
+	LogToConsole                 bool
+	TraceEnabled                 bool
+	FUSELogEnabled               bool
+	HTTPServerIPAddr             string
+	HTTPServerPort               uint16 // To be served on HTTPServerIPAddr via TCP
+}
+
+type swiftRetryDelayElementStruct struct {
+	nominal  time.Duration
+	variance time.Duration
 }
 
 type inodeLeaseStateType uint32
@@ -161,28 +169,33 @@ type statsStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex                                        // Serializes access to inodeLeaseTable
-	config               configStruct                 //
-	logFile              *os.File                     // == nil if config.LogFilePath == ""
-	retryRPCCACertPEM    []byte                       // == nil if config.RetryRPCCACertFilePath == ""
-	httpClient           *http.Client                 //
-	swiftAuthInString    string                       //
-	swiftAuthWaitGroup   *sync.WaitGroup              // != nil if updateAuthTokenAndStorageURL() is active
-	swiftAuthToken       string                       //
-	swiftStorageURL      string                       //
-	retryRPCClientConfig *retryrpc.ClientConfig       //
-	retryRPCClient       *retryrpc.Client             //
-	mountID              string                       //
-	fissionErrChan       chan error                   //
-	inodeLeaseTable      map[uint64]*inodeLeaseStruct //
-	inodeLeaseWG         sync.WaitGroup               // Signaled as each (*inodeLeaseStruct).goroutine() exits
-	inodeLockWG          sync.WaitGroup               // Signaled as each active inodeLockRequestStruct has signaled service complete with .locksHeld empty
-	sharedLeaseLRU       *list.List                   // LRU-ordered list of inodeLeaseStruct.listElement's in or transitioning to inodeLeaseStateSharedGranted
-	exclusiveLeaseLRU    *list.List                   // LRU-ordered list of inodeLeaseStruct.listElement's in or transitioning to inodeLeaseStateExclusiveGranted
-	httpServer           *http.Server                 //
-	httpServerWG         sync.WaitGroup               //
-	stats                *statsStruct                 //
-	fissionVolume        fission.Volume               //
+	sync.Mutex                                                // Serializes access to inodeLeaseTable
+	config                     configStruct                   //
+	fuseEntryValidDurationSec  uint64                         //
+	fuseEntryValidDurationNSec uint32                         //
+	fuseAttrValidDurationSec   uint64                         //
+	fuseAttrValidDurationNSec  uint32                         //
+	logFile                    *os.File                       // == nil if config.LogFilePath == ""
+	retryRPCCACertPEM          []byte                         // == nil if config.RetryRPCCACertFilePath == ""
+	httpClient                 *http.Client                   //
+	swiftRetryDelay            []swiftRetryDelayElementStruct //
+	swiftAuthInString          string                         //
+	swiftAuthWaitGroup         *sync.WaitGroup                // != nil if updateAuthTokenAndStorageURL() is active
+	swiftAuthToken             string                         //
+	swiftStorageURL            string                         //
+	retryRPCClientConfig       *retryrpc.ClientConfig         //
+	retryRPCClient             *retryrpc.Client               //
+	mountID                    string                         //
+	fissionErrChan             chan error                     //
+	inodeLeaseTable            map[uint64]*inodeLeaseStruct   //
+	inodeLeaseWG               sync.WaitGroup                 // Signaled as each (*inodeLeaseStruct).goroutine() exits
+	inodeLockWG                sync.WaitGroup                 // Signaled as each active inodeLockRequestStruct has signaled service complete with .locksHeld empty
+	sharedLeaseLRU             *list.List                     // LRU-ordered list of inodeLeaseStruct.listElement's in or transitioning to inodeLeaseStateSharedGranted
+	exclusiveLeaseLRU          *list.List                     // LRU-ordered list of inodeLeaseStruct.listElement's in or transitioning to inodeLeaseStateExclusiveGranted
+	httpServer                 *http.Server                   //
+	httpServerWG               sync.WaitGroup                 //
+	stats                      *statsStruct                   //
+	fissionVolume              fission.Volume                 //
 }
 
 var globals globalsStruct
@@ -224,6 +237,14 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	if nil != err {
 		logFatal(err)
 	}
+	globals.config.FUSEEntryValidDuration, err = confMap.FetchOptionValueDuration("ICLIENT", "FUSEEntryValidDuration")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.FUSEAttrValidDuration, err = confMap.FetchOptionValueDuration("ICLIENT", "FUSEAttrValidDuration")
+	if nil != err {
+		logFatal(err)
+	}
 	globals.config.AuthPlugInPath, err = confMap.FetchOptionValueString("ICLIENT", "AuthPlugInPath")
 	if nil != err {
 		logFatal(err)
@@ -261,19 +282,30 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 			}
 		}
 	}
+	globals.config.SwiftTimeout, err = confMap.FetchOptionValueDuration("ICLIENT", "SwiftTimeout")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.SwiftRetryLimit, err = confMap.FetchOptionValueUint64("ICLIENT", "SwiftRetryLimit")
+	if nil != err {
+		logFatal(err)
+	}
 	globals.config.SwiftRetryDelay, err = confMap.FetchOptionValueDuration("ICLIENT", "SwiftRetryDelay")
 	if nil != err {
 		logFatal(err)
 	}
-	globals.config.SwiftRetryExpBackoff, err = confMap.FetchOptionValueFloat64("ICLIENT", "SwiftRetryExpBackoff")
-	if nil != err {
+	globals.config.SwiftRetryDelayVariance, err = confMap.FetchOptionValueUint8("ICLIENT", "SwiftRetryDelayVariance")
+	if nil == err {
+		if 0 == globals.config.SwiftRetryDelayVariance {
+			logFatalf("[Agent]SwiftRetryDelayVariance must be > 0")
+		}
+		if 100 < globals.config.SwiftRetryDelayVariance {
+			logFatalf("[Agent]SwiftRetryDelayVariance (%v) must be <= 100", globals.config.SwiftRetryDelayVariance)
+		}
+	} else {
 		logFatal(err)
 	}
-	globals.config.SwiftRetryLimit, err = confMap.FetchOptionValueUint32("ICLIENT", "SwiftRetryLimit")
-	if nil != err {
-		logFatal(err)
-	}
-	globals.config.SwiftTimeout, err = confMap.FetchOptionValueDuration("ICLIENT", "SwiftTimeout")
+	globals.config.SwiftRetryExponentialBackoff, err = confMap.FetchOptionValueFloat64("ICLIENT", "SwiftRetryExponentialBackoff")
 	if nil != err {
 		logFatal(err)
 	}
@@ -359,6 +391,9 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 
 	logInfof("globals.config:\n%s", configJSONified)
 
+	globals.fuseEntryValidDurationSec, globals.fuseEntryValidDurationNSec = nsToUnixTime(uint64(globals.config.FUSEEntryValidDuration))
+	globals.fuseAttrValidDurationSec, globals.fuseAttrValidDurationNSec = nsToUnixTime(uint64(globals.config.FUSEAttrValidDuration))
+
 	if "" == globals.config.RetryRPCCACertFilePath {
 		globals.retryRPCCACertPEM = nil
 	} else {
@@ -389,13 +424,16 @@ func uninitializeGlobals() (err error) {
 	globals.config.FUSEMaxBackground = 0
 	globals.config.FUSECongestionThreshhold = 0
 	globals.config.FUSEMaxWrite = 0
+	globals.config.FUSEEntryValidDuration = time.Duration(0)
+	globals.config.FUSEAttrValidDuration = time.Duration(0)
 	globals.config.AuthPlugInPath = ""
 	globals.config.AuthPlugInEnvName = ""
 	globals.config.AuthPlugInEnvValue = ""
-	globals.config.SwiftRetryDelay = time.Duration(0)
-	globals.config.SwiftRetryExpBackoff = 0.0
-	globals.config.SwiftRetryLimit = 0
 	globals.config.SwiftTimeout = time.Duration(0)
+	globals.config.SwiftRetryLimit = 0
+	globals.config.SwiftRetryDelay = time.Duration(0)
+	globals.config.SwiftRetryDelayVariance = 0
+	globals.config.SwiftRetryExponentialBackoff = 0.0
 	globals.config.SwiftConnectionPoolSize = 0
 	globals.config.RetryRPCPublicIPAddr = ""
 	globals.config.RetryRPCPort = 0
@@ -414,6 +452,11 @@ func uninitializeGlobals() (err error) {
 	globals.config.FUSELogEnabled = false
 	globals.config.HTTPServerIPAddr = ""
 	globals.config.HTTPServerPort = 0
+
+	globals.fuseEntryValidDurationSec = 0
+	globals.fuseEntryValidDurationNSec = 0
+	globals.fuseAttrValidDurationSec = 0
+	globals.fuseAttrValidDurationNSec = 0
 
 	globals.retryRPCCACertPEM = nil
 

@@ -5,23 +5,33 @@ package iclientpkg
 
 import (
 	"fmt"
+	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/NVIDIA/proxyfs/iauth"
+	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
 	"github.com/NVIDIA/proxyfs/retryrpc"
 )
 
+const (
+	HTTPUserAgent = "iclient"
+)
+
 func startRPCHandler() (err error) {
 	var (
-		customTransport  *http.Transport
-		defaultTransport *http.Transport
-		mountRequest     *imgrpkg.MountRequestStruct
-		mountResponse    *imgrpkg.MountResponseStruct
-		ok               bool
+		customTransport            *http.Transport
+		defaultTransport           *http.Transport
+		mountRequest               *imgrpkg.MountRequestStruct
+		mountResponse              *imgrpkg.MountResponseStruct
+		nextSwiftRetryDelayNominal time.Duration
+		ok                         bool
+		swiftRetryDelayIndex       uint64
 	)
 
 	defaultTransport, ok = http.DefaultTransport.(*http.Transport)
@@ -53,6 +63,15 @@ func startRPCHandler() (err error) {
 	globals.httpClient = &http.Client{
 		Transport: customTransport,
 		Timeout:   globals.config.SwiftTimeout,
+	}
+
+	globals.swiftRetryDelay = make([]swiftRetryDelayElementStruct, globals.config.SwiftRetryLimit)
+
+	nextSwiftRetryDelayNominal = globals.config.SwiftRetryDelay
+
+	for swiftRetryDelayIndex = 0; swiftRetryDelayIndex < globals.config.SwiftRetryLimit; swiftRetryDelayIndex++ {
+		globals.swiftRetryDelay[swiftRetryDelayIndex].nominal = nextSwiftRetryDelayNominal
+		globals.swiftRetryDelay[swiftRetryDelayIndex].variance = nextSwiftRetryDelayNominal * time.Duration(globals.config.SwiftRetryDelayVariance) / time.Duration(100)
 	}
 
 	if globals.config.AuthPlugInEnvName == "" {
@@ -132,6 +151,8 @@ func stopRPCHandler() (err error) {
 	globals.retryRPCClient.Close()
 
 	globals.httpClient = nil
+
+	globals.swiftRetryDelay = nil
 
 	globals.retryRPCClientConfig = nil
 	globals.retryRPCClient = nil
@@ -371,14 +392,78 @@ func rpcUnmount(unmountRequest *imgrpkg.UnmountRequestStruct, unmountResponse *i
 	return
 }
 
-func performObjectGETRange(objectNumber uint64, offset uint64, length uint64) (buf []byte, err error) {
-	return nil, nil // TODO
+func objectGETRange(objectNumber uint64, offset uint64, length uint64) (buf []byte, err error) {
+	var (
+		rangeHeader string
+	)
+
+	rangeHeader = "bytes=" + strconv.FormatUint(offset, 10) + "-" + strconv.FormatUint((offset+length-1), 10)
+
+	buf, err = objectGETWithRangeHeader(objectNumber, rangeHeader)
+
+	return
 }
 
-func performObjectTAIL(objectNumber uint64, length uint64) (buf []byte, err error) {
-	return nil, nil // TODO
+func objectGETTail(objectNumber uint64, length uint64) (buf []byte, err error) {
+	var (
+		rangeHeader string
+	)
+
+	rangeHeader = "bytes=-" + strconv.FormatUint(length, 10)
+
+	buf, err = objectGETWithRangeHeader(objectNumber, rangeHeader)
+
+	return
 }
 
-func performObjectGETWithRangeHeader(objectNumber uint64, rangeHeader string) (buf []byte, err error) {
-	return nil, nil // TODO
+func objectGETWithRangeHeader(objectNumber uint64, rangeHeader string) (buf []byte, err error) {
+	var (
+		httpRequest  *http.Request
+		httpResponse *http.Response
+		retryDelay   time.Duration
+		retryIndex   uint64
+	)
+
+	retryIndex = 0
+
+	for {
+		httpRequest, err = http.NewRequest("GET", fetchSwiftStorageURL()+"/"+ilayout.GetObjectNameAsString(objectNumber), nil)
+		if nil != err {
+			return
+		}
+
+		httpRequest.Header["User-Agent"] = []string{HTTPUserAgent}
+		httpRequest.Header["X-Auth-Token"] = []string{fetchSwiftAuthToken()}
+		httpRequest.Header["Range"] = []string{rangeHeader}
+
+		httpResponse, err = globals.httpClient.Do(httpRequest)
+		if nil != err {
+			logFatalf("globals.httpClient.Do(httpRequest) failed: %v", err)
+		}
+
+		buf, err = ioutil.ReadAll(httpResponse.Body)
+		_ = httpResponse.Body.Close()
+		if nil != err {
+			logFatalf("ioutil.ReadAll(httpResponse.Body) failed: %v", err)
+		}
+
+		if (200 <= httpResponse.StatusCode) && (299 >= httpResponse.StatusCode) {
+			err = nil
+			return
+		}
+
+		if retryIndex >= globals.config.SwiftRetryLimit {
+			err = fmt.Errorf("objectGETWithRangeHeader(objectNumber: %v, rangeHeader: \"%s\") reached SwiftRetryLimit", objectNumber, rangeHeader)
+			logWarn(err)
+			return
+		}
+
+		if http.StatusUnauthorized == httpResponse.StatusCode {
+			updateSwithAuthTokenAndSwiftStorageURL()
+		}
+
+		retryDelay = globals.swiftRetryDelay[retryIndex].nominal - time.Duration(rand.Int63n(int64(globals.swiftRetryDelay[retryIndex].variance)))
+		time.Sleep(retryDelay)
+		retryIndex++
+	}
 }
