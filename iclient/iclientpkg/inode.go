@@ -114,61 +114,99 @@ func (inode *inodeStruct) GetNode(objectNumber uint64, objectOffset uint64, obje
 func (inode *inodeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
+		err = fmt.Errorf("TODO")
 	case ilayout.InodeTypeFile:
+		err = fmt.Errorf("TODO")
 	default:
 		err = fmt.Errorf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
-	return // TODO
+
+	return
 }
 
 func (inode *inodeStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
+		err = fmt.Errorf("TODO")
 	case ilayout.InodeTypeFile:
+		err = fmt.Errorf("TODO")
 	default:
 		err = fmt.Errorf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
-	return // TODO
+
+	return
 }
 
 func (inode *inodeStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
+		err = fmt.Errorf("TODO")
 	case ilayout.InodeTypeFile:
+		err = fmt.Errorf("TODO")
 	default:
 		err = fmt.Errorf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
-	return // TODO
+
+	return
 }
 
 func (inode *inodeStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
+	var (
+		nextPos int
+	)
+
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
+		key, nextPos, err = ilayout.GetLEStringFromBuf(payloadData, 0)
+		if nil == err {
+			bytesConsumed = uint64(nextPos)
+		}
 	case ilayout.InodeTypeFile:
+		key, nextPos, err = ilayout.GetLEUint64FromBuf(payloadData, 0)
+		if nil == err {
+			bytesConsumed = uint64(nextPos)
+		}
 	default:
 		err = fmt.Errorf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
-	return // TODO
+
+	return
 }
 
 func (inode *inodeStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
+		err = fmt.Errorf("TODO")
 	case ilayout.InodeTypeFile:
+		err = fmt.Errorf("TODO")
 	default:
 		err = fmt.Errorf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
-	return // TODO
+
+	return
 }
 
 func (inode *inodeStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
+	var (
+		bytesConsumedAsInt int
+	)
+
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
+		value, bytesConsumedAsInt, err = ilayout.UnmarshalDirectoryEntryValueV1(payloadData)
+		if nil == err {
+			bytesConsumed = uint64(bytesConsumedAsInt)
+		}
 	case ilayout.InodeTypeFile:
+		value, bytesConsumedAsInt, err = ilayout.UnmarshalExtentMapEntryValueV1(payloadData)
+		if nil == err {
+			bytesConsumed = uint64(bytesConsumedAsInt)
+		}
 	default:
 		err = fmt.Errorf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
-	return // TODO
+
+	return
 }
 
 func (inode *inodeStruct) newPayload() (err error) {
@@ -247,7 +285,6 @@ func (inode *inodeStruct) convertLayoutMapToInodeHeadV1Layout() {
 		objectNumber                  uint64
 	)
 
-	// TODO
 	inode.inodeHeadV1.Layout = make([]ilayout.InodeHeadLayoutEntryV1Struct, len(inode.layoutMap))
 
 	for objectNumber, layoutMapEntry = range inode.layoutMap {
