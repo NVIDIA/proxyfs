@@ -226,7 +226,7 @@ func serveHTTPGetOfLeases(responseWriter http.ResponseWriter, request *http.Requ
 	inodeLeaseTableIndex = 0
 	for inodeNumber, inodeLease = range globals.inodeLeaseTable {
 		inodeLeaseTable[inodeLeaseTableIndex].InodeNumber = inodeNumber
-		switch inodeLease.state {
+		switch inodeLease.leaseState {
 		case inodeLeaseStateNone:
 			inodeLeaseTable[inodeLeaseTableIndex].State = "None"
 		case inodeLeaseStateSharedRequested:
@@ -250,7 +250,7 @@ func serveHTTPGetOfLeases(responseWriter http.ResponseWriter, request *http.Requ
 		case inodeLeaseStateExclusiveExpired:
 			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveExpired"
 		default:
-			logFatalf("globals.inodeLeaseTable[inudeNumber:0x%016X].state (%v) unrecognized", inodeNumber, inodeLease.state)
+			logFatalf("globals.inodeLeaseTable[inudeNumber:0x%016X].leaseState (%v) unrecognized", inodeNumber, inodeLease.leaseState)
 		}
 		inodeLeaseTableIndex++
 	}

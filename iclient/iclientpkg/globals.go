@@ -91,7 +91,7 @@ type layoutMapEntryStruct struct {
 
 type inodeLeaseStruct struct {
 	inodeNumber uint64                     //
-	state       inodeLeaseStateType        //
+	leaseState  inodeLeaseStateType        //
 	listElement *list.Element              //                                   Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
 	heldList    *list.List                 //                                   List of granted inodeHeldLockStruct's
 	requestList *list.List                 //                                   List of pending inodeLockRequestStruct's

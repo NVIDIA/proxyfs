@@ -66,7 +66,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 	inodeLease, ok = globals.inodeLeaseTable[inodeLockRequest.inodeNumber]
 	if ok {
-		switch inodeLease.state {
+		switch inodeLease.leaseState {
 		case inodeLeaseStateNone:
 		case inodeLeaseStateSharedRequested:
 			globals.sharedLeaseLRU.MoveToBack(inodeLease.listElement)
@@ -85,12 +85,12 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		case inodeLeaseStateExclusiveReleasing:
 		case inodeLeaseStateExclusiveExpired:
 		default:
-			logFatalf("switch inodeLease.state unexpected: %v", inodeLease.state)
+			logFatalf("switch inodeLease.leaseState unexpected: %v", inodeLease.leaseState)
 		}
 	} else {
 		inodeLease = &inodeLeaseStruct{
 			inodeNumber:                              inodeLockRequest.inodeNumber,
-			state:                                    inodeLeaseStateNone,
+			leaseState:                               inodeLeaseStateNone,
 			listElement:                              nil,
 			heldList:                                 list.New(),
 			requestList:                              list.New(),
@@ -158,10 +158,10 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	}
 
 	if inodeLockRequest.exclusive {
-		switch inodeLease.state {
+		switch inodeLease.leaseState {
 		case inodeLeaseStateNone:
 			inodeLockRequest.listElement = inodeLease.requestList.PushFront(inodeLockRequest)
-			inodeLease.state = inodeLeaseStateExclusiveRequested
+			inodeLease.leaseState = inodeLeaseStateExclusiveRequested
 			inodeLease.listElement = globals.exclusiveLeaseLRU.PushBack(inodeLease)
 
 			globals.Unlock()
@@ -184,7 +184,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 			globals.Lock()
 
-			inodeLease.state = inodeLeaseStateExclusiveGranted
+			inodeLease.leaseState = inodeLeaseStateExclusiveGranted
 
 			if inodeLease.requestList.Front() != inodeLockRequest.listElement {
 				logFatalf("inodeLease.requestList.Front() != inodeLockRequest.listElement")
@@ -211,7 +211,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			inodeLockRequest.Wait()
 		case inodeLeaseStateSharedGranted:
 			inodeLockRequest.listElement = inodeLease.requestList.PushFront(inodeLockRequest)
-			inodeLease.state = inodeLeaseStateSharedPromoting
+			inodeLease.leaseState = inodeLeaseStateSharedPromoting
 			_ = globals.sharedLeaseLRU.Remove(inodeLease.listElement)
 			inodeLease.listElement = globals.exclusiveLeaseLRU.PushBack(inodeLease)
 
@@ -235,7 +235,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 			globals.Lock()
 
-			inodeLease.state = inodeLeaseStateExclusiveGranted
+			inodeLease.leaseState = inodeLeaseStateExclusiveGranted
 
 			if inodeLease.requestList.Front() != inodeLockRequest.listElement {
 				logFatalf("inodeLease.requestList.Front() != inodeLockRequest.listElement")
@@ -303,13 +303,13 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			inodeLockRequest.unlockAllWhileLocked()
 			globals.Unlock()
 		default:
-			logFatalf("switch inodeLease.state unexpected: %v", inodeLease.state)
+			logFatalf("switch inodeLease.leaseState unexpected: %v", inodeLease.leaseState)
 		}
 	} else {
-		switch inodeLease.state {
+		switch inodeLease.leaseState {
 		case inodeLeaseStateNone:
 			inodeLockRequest.listElement = inodeLease.requestList.PushFront(inodeLockRequest)
-			inodeLease.state = inodeLeaseStateSharedRequested
+			inodeLease.leaseState = inodeLeaseStateSharedRequested
 			inodeLease.listElement = globals.sharedLeaseLRU.PushBack(inodeLease)
 
 			globals.Unlock()
@@ -332,7 +332,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 			globals.Lock()
 
-			inodeLease.state = inodeLeaseStateSharedGranted
+			inodeLease.leaseState = inodeLeaseStateSharedGranted
 
 			if inodeLease.requestList.Front() != inodeLockRequest.listElement {
 				logFatalf("inodeLease.requestList.Front() != inodeLockRequest.listElement")
@@ -420,7 +420,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			inodeLockRequest.unlockAllWhileLocked()
 			globals.Unlock()
 		default:
-			logFatalf("switch inodeLease.state unexpected: %v", inodeLease.state)
+			logFatalf("switch inodeLease.leaseState unexpected: %v", inodeLease.leaseState)
 		}
 	}
 }
