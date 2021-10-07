@@ -8,40 +8,44 @@
 // argument, a package conf ConfMap. Here is a sample .conf file:
 //
 //  [ICLIENT]
-//  VolumeName:                   testvol
-//  MountPointDirPath:            /mnt
-//  FUSEAllowOther:               true
-//  FUSEMaxBackground:            1000
-//  FUSECongestionThreshhold:     0
-//  FUSEMaxWrite:                 131076
-//  FUSEEntryValidDuration:       0s
-//  FUSEAttrValidDuration:        0s
-//  AuthPlugInPath:               iauth-swift.so
-//  AuthPlugInEnvName:            # Only used if not defining AuthPlugInEnvValue here
-//  AuthPlugInEnvValue:           {"AuthURL":"http://swift:8080/auth/v1.0"\u002C"AuthUser":"test:tester"\u002C"AuthKey":"testing"\u002C"Account":"AUTH_test"\u002C"Container":"con"}
-//  SwiftTimeout:                 10m
-//  SwiftRetryLimit:              4
-//  SwiftRetryDelay:              100ms
-//  SwiftRetryDelayVariance:      25 # Percentage (1-100) of SwitRetryDelay
-//  SwiftRetryExponentialBackoff: 1.4
-//  SwiftConnectionPoolSize:      128
-//  RetryRPCPublicIPAddr:         imgr
-//  RetryRPCPort:                 32356
-//  RetryRPCDeadlineIO:           60s
-//  RetryRPCKeepAlivePeriod:      60s
-//  RetryRPCCACertFilePath:       # Defaults to /dev/null
-//  MaxSharedLeases:              500
-//  MaxExclusiveLeases:           100      # Caps pending FileFlush data at 1GiB (with FileFlushTriggerSize of 10MiB)
-//  ReadCacheLineSize:            1048576  # 1MiB
-//  ReadCacheLineCountMax:        1024     # 1GiB (with ReadCacheLineSize of 1MiB)
-//  FileFlushTriggerSize:         10485760 # [10MiB] Amount of written data before metadata is appended and flush is triggered
-//  FileFlushTriggerDuration:     10s # Amount of time before unwritten data and its metadata flush is triggered
-//  LogFilePath:                  iclient.log
-//  LogToConsole:                 true
-//  TraceEnabled:                 false
-//  FUSELogEnabled:               false
-//  HTTPServerIPAddr:             # Defaults to 0.0.0.0 (i.e. all interfaces)
-//  HTTPServerPort:               # Defaults to disabling the embedded HTTP Server
+//  VolumeName:                       testvol
+//  MountPointDirPath:                /mnt
+//  FUSEAllowOther:                   true
+//  FUSEMaxBackground:                1000
+//  FUSECongestionThreshhold:         0
+//  FUSEMaxWrite:                     131076
+//  FUSEEntryValidDuration:           0s
+//  FUSEAttrValidDuration:            0s
+//  AuthPlugInPath:                   iauth-swift.so
+//  AuthPlugInEnvName:                # Only used if not defining AuthPlugInEnvValue here
+//  AuthPlugInEnvValue:               {"AuthURL":"http://swift:8080/auth/v1.0"\u002C"AuthUser":"test:tester"\u002C"AuthKey":"testing"\u002C"Account":"AUTH_test"\u002C"Container":"con"}
+//  SwiftTimeout:                     10m
+//  SwiftRetryLimit:                  4
+//  SwiftRetryDelay:                  100ms
+//  SwiftRetryDelayVariance:          25 # Percentage (1-100) of SwitRetryDelay
+//  SwiftRetryExponentialBackoff:     1.4
+//  SwiftConnectionPoolSize:          128
+//  RetryRPCPublicIPAddr:             imgr
+//  RetryRPCPort:                     32356
+//  RetryRPCDeadlineIO:               60s
+//  RetryRPCKeepAlivePeriod:          60s
+//  RetryRPCCACertFilePath:           # Defaults to /dev/null
+//  MaxSharedLeases:                  500
+//  MaxExclusiveLeases:               100      # Caps pending FileFlush data at 1GiB (with FileFlushTriggerSize of 10MiB)
+//  InodePayloadEvictLowLimit:        100000
+//  InodePayloadEvictHighLimit:       100010
+//  DirInodeMaxKeysPerBPlusTreePage:  1024
+//  FileInodeMaxKeysPerBPlusTreePage: 2048
+//  ReadCacheLineSize:                1048576  # 1MiB
+//  ReadCacheLineCountMax:            1024     # 1GiB (with ReadCacheLineSize of 1MiB)
+//  FileFlushTriggerSize:             10485760 # [10MiB] Amount of written data before metadata is appended and flush is triggered
+//  FileFlushTriggerDuration:         10s # Amount of time before unwritten data and its metadata flush is triggered
+//  LogFilePath:                      iclient.log
+//  LogToConsole:                     true
+//  TraceEnabled:                     false
+//  FUSELogEnabled:                   false
+//  HTTPServerIPAddr:                 # Defaults to 0.0.0.0 (i.e. all interfaces)
+//  HTTPServerPort:                   # Defaults to disabling the embedded HTTP Server
 //
 // Most of the config keys are required and must have values. One set of exceptions
 // are the HTTPServer{IPAddr|Port} keys that, if not present (or HTTPServerPort is

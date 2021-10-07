@@ -170,3 +170,89 @@ func (inodeLease *inodeLeaseStruct) UnpackValue(payloadData []byte) (value sorte
 	}
 	return // TODO
 }
+
+func (inodeLease *inodeLeaseStruct) newPayload() (err error) {
+	switch inodeLease.inodeHeadV1.InodeType {
+	case ilayout.InodeTypeDir:
+		inodeLease.payload = sortedmap.NewBPlusTree(
+			globals.config.DirInodeMaxKeysPerBPlusTreePage,
+			sortedmap.CompareString,
+			inodeLease,
+			globals.inodeLeasePayloadCache)
+		err = nil
+	case ilayout.InodeTypeFile:
+		inodeLease.payload = sortedmap.NewBPlusTree(
+			globals.config.FileInodeMaxKeysPerBPlusTreePage,
+			sortedmap.CompareUint64,
+			inodeLease,
+			globals.inodeLeasePayloadCache)
+		err = nil
+	default:
+		err = fmt.Errorf("inodeLease.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inodeLease.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
+	}
+
+	return
+}
+
+func (inodeLease *inodeLeaseStruct) oldPayload() (err error) {
+	switch inodeLease.inodeHeadV1.InodeType {
+	case ilayout.InodeTypeDir:
+		inodeLease.payload, err = sortedmap.OldBPlusTree(
+			inodeLease.inodeHeadV1.PayloadObjectNumber,
+			inodeLease.inodeHeadV1.PayloadObjectOffset,
+			inodeLease.inodeHeadV1.PayloadObjectLength,
+			sortedmap.CompareString,
+			inodeLease,
+			globals.inodeLeasePayloadCache)
+		if nil != err {
+			inodeLease.payload = nil
+		}
+	case ilayout.InodeTypeFile:
+		inodeLease.payload, err = sortedmap.OldBPlusTree(
+			inodeLease.inodeHeadV1.PayloadObjectNumber,
+			inodeLease.inodeHeadV1.PayloadObjectOffset,
+			inodeLease.inodeHeadV1.PayloadObjectLength,
+			sortedmap.CompareUint64,
+			inodeLease,
+			globals.inodeLeasePayloadCache)
+		if nil != err {
+			inodeLease.payload = nil
+		}
+	default:
+		err = fmt.Errorf("inodeLease.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inodeLease.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
+	}
+
+	return
+}
+
+func (inodeLease *inodeLeaseStruct) convertInodeHeadV1LayoutToLayoutMap() {
+	var (
+		ilayoutInodeHeadLayoutEntryV1 ilayout.InodeHeadLayoutEntryV1Struct
+	)
+
+	inodeLease.layoutMap = make(map[uint64]layoutMapEntryStruct)
+
+	for _, ilayoutInodeHeadLayoutEntryV1 = range inodeLease.inodeHeadV1.Layout {
+		inodeLease.layoutMap[ilayoutInodeHeadLayoutEntryV1.ObjectNumber] = layoutMapEntryStruct{
+			objectSize:      ilayoutInodeHeadLayoutEntryV1.ObjectSize,
+			bytesReferenced: ilayoutInodeHeadLayoutEntryV1.BytesReferenced,
+		}
+	}
+}
+
+func (inodeLease *inodeLeaseStruct) convertLayoutMapToInodeHeadV1Layout() {
+	var (
+		ilayoutInodeHeadV1LayoutIndex uint64 = 0
+		layoutMapEntry                layoutMapEntryStruct
+		objectNumber                  uint64
+	)
+
+	// TODO
+	inodeLease.inodeHeadV1.Layout = make([]ilayout.InodeHeadLayoutEntryV1Struct, len(inodeLease.layoutMap))
+
+	for objectNumber, layoutMapEntry = range inodeLease.layoutMap {
+		inodeLease.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectNumber = objectNumber
+		inodeLease.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectSize = layoutMapEntry.objectSize
+		inodeLease.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].BytesReferenced = layoutMapEntry.bytesReferenced
+	}
+}

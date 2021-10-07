@@ -89,16 +89,20 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		}
 	} else {
 		inodeLease = &inodeLeaseStruct{
-			inodeNumber:     inodeLockRequest.inodeNumber,
-			state:           inodeLeaseStateNone,
-			listElement:     nil,
-			heldList:        list.New(),
-			requestList:     list.New(),
-			inodeHeadV1:     nil,
-			payload:         nil,
-			layoutMap:       nil,
-			putObjectNumber: 0,
-			putObjectBuffer: nil,
+			inodeNumber:                              inodeLockRequest.inodeNumber,
+			state:                                    inodeLeaseStateNone,
+			listElement:                              nil,
+			heldList:                                 list.New(),
+			requestList:                              list.New(),
+			inodeHeadV1:                              nil,
+			payload:                                  nil,
+			layoutMap:                                nil,
+			superBlockInodeObjectCountAdjustment:     0,
+			superBlockInodeObjectSizeAdjustment:      0,
+			superBlockInodeBytesReferencedAdjustment: 0,
+			dereferencedObjectNumberArray:            make([]uint64, 0),
+			putObjectNumber:                          0,
+			putObjectBuffer:                          nil,
 		}
 
 		globals.inodeLeaseTable[inodeLockRequest.inodeNumber] = inodeLease

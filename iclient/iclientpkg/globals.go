@@ -23,40 +23,44 @@ import (
 )
 
 type configStruct struct {
-	VolumeName                   string
-	MountPointDirPath            string
-	FUSEAllowOther               bool
-	FUSEMaxBackground            uint16
-	FUSECongestionThreshhold     uint16
-	FUSEMaxWrite                 uint32
-	FUSEEntryValidDuration       time.Duration
-	FUSEAttrValidDuration        time.Duration
-	AuthPlugInPath               string
-	AuthPlugInEnvName            string
-	AuthPlugInEnvValue           string
-	SwiftTimeout                 time.Duration
-	SwiftRetryLimit              uint64
-	SwiftRetryDelay              time.Duration
-	SwiftRetryDelayVariance      uint8
-	SwiftRetryExponentialBackoff float64
-	SwiftConnectionPoolSize      uint32
-	RetryRPCPublicIPAddr         string
-	RetryRPCPort                 uint16
-	RetryRPCDeadlineIO           time.Duration
-	RetryRPCKeepAlivePeriod      time.Duration
-	RetryRPCCACertFilePath       string // Defaults to /dev/null
-	MaxSharedLeases              uint64
-	MaxExclusiveLeases           uint64
-	ReadCacheLineSize            uint64
-	ReadCacheLineCountMax        uint64
-	FileFlushTriggerSize         uint64
-	FileFlushTriggerDuration     time.Duration
-	LogFilePath                  string // Unless starting with '/', relative to $CWD; == "" means disabled
-	LogToConsole                 bool
-	TraceEnabled                 bool
-	FUSELogEnabled               bool
-	HTTPServerIPAddr             string
-	HTTPServerPort               uint16 // To be served on HTTPServerIPAddr via TCP
+	VolumeName                       string
+	MountPointDirPath                string
+	FUSEAllowOther                   bool
+	FUSEMaxBackground                uint16
+	FUSECongestionThreshhold         uint16
+	FUSEMaxWrite                     uint32
+	FUSEEntryValidDuration           time.Duration
+	FUSEAttrValidDuration            time.Duration
+	AuthPlugInPath                   string
+	AuthPlugInEnvName                string
+	AuthPlugInEnvValue               string
+	SwiftTimeout                     time.Duration
+	SwiftRetryLimit                  uint64
+	SwiftRetryDelay                  time.Duration
+	SwiftRetryDelayVariance          uint8
+	SwiftRetryExponentialBackoff     float64
+	SwiftConnectionPoolSize          uint32
+	RetryRPCPublicIPAddr             string
+	RetryRPCPort                     uint16
+	RetryRPCDeadlineIO               time.Duration
+	RetryRPCKeepAlivePeriod          time.Duration
+	RetryRPCCACertFilePath           string // Defaults to /dev/null
+	MaxSharedLeases                  uint64
+	MaxExclusiveLeases               uint64
+	InodePayloadEvictLowLimit        uint64
+	InodePayloadEvictHighLimit       uint64
+	DirInodeMaxKeysPerBPlusTreePage  uint64
+	FileInodeMaxKeysPerBPlusTreePage uint64
+	ReadCacheLineSize                uint64
+	ReadCacheLineCountMax            uint64
+	FileFlushTriggerSize             uint64
+	FileFlushTriggerDuration         time.Duration
+	LogFilePath                      string // Unless starting with '/', relative to $CWD; == "" means disabled
+	LogToConsole                     bool
+	TraceEnabled                     bool
+	FUSELogEnabled                   bool
+	HTTPServerIPAddr                 string
+	HTTPServerPort                   uint16 // To be served on HTTPServerIPAddr via TCP
 }
 
 type swiftRetryDelayElementStruct struct {
@@ -88,15 +92,19 @@ type layoutMapEntryStruct struct {
 type inodeLeaseStruct struct {
 	inodeNumber uint64                     //
 	state       inodeLeaseStateType        //
-	listElement *list.Element              //          Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
-	heldList    *list.List                 //          List of granted inodeHeldLockStruct's
-	requestList *list.List                 //          List of pending inodeLockRequestStruct's
+	listElement *list.Element              //                                   Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
+	heldList    *list.List                 //                                   List of granted inodeHeldLockStruct's
+	requestList *list.List                 //                                   List of pending inodeLockRequestStruct's
 	inodeHeadV1 *ilayout.InodeHeadV1Struct //
-	payload     sortedmap.BPlusTree        //          For DirInode:  Directory B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
-	//                                                 For FileInode: ExtentMap B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
-	layoutMap       map[uint64]layoutMapEntryStruct // For DirInode & FileInode: Map form of .inodeHeadV1.Layout
-	putObjectNumber uint64                          // For DirInode & FileInode:
-	putObjectBuffer []byte                          //   ObjectNumber and buffer to PUT during next flush
+	payload     sortedmap.BPlusTree        //                                   For DirInode:  Directory B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
+	//                                                                          For FileInode: ExtentMap B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
+	layoutMap                                map[uint64]layoutMapEntryStruct // For DirInode & FileInode: Map form of .inodeHeadV1.Layout
+	superBlockInodeObjectCountAdjustment     int64                           //
+	superBlockInodeObjectSizeAdjustment      int64                           //
+	superBlockInodeBytesReferencedAdjustment int64                           //
+	dereferencedObjectNumberArray            []uint64                        //
+	putObjectNumber                          uint64                          // For DirInode & FileInode:
+	putObjectBuffer                          []byte                          //   ObjectNumber and buffer to PUT during next flush
 }
 
 type inodeHeldLockStruct struct {
@@ -181,7 +189,7 @@ type statsStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex                                                // Serializes access to inodeLeaseTable
+	sync.Mutex                                                //
 	config                     configStruct                   //
 	fuseEntryValidDurationSec  uint64                         //
 	fuseEntryValidDurationNSec uint32                         //
@@ -200,8 +208,7 @@ type globalsStruct struct {
 	mountID                    string                         //
 	fissionErrChan             chan error                     //
 	inodeLeaseTable            map[uint64]*inodeLeaseStruct   //
-	inodeLeaseWG               sync.WaitGroup                 // Signaled as each (*inodeLeaseStruct).goroutine() exits
-	inodeLockWG                sync.WaitGroup                 // Signaled as each active inodeLockRequestStruct has signaled service complete with .locksHeld empty
+	inodeLeasePayloadCache     sortedmap.BPlusTreeCache       //
 	sharedLeaseLRU             *list.List                     // LRU-ordered list of inodeLeaseStruct.listElement's in or transitioning to inodeLeaseStateSharedGranted
 	exclusiveLeaseLRU          *list.List                     // LRU-ordered list of inodeLeaseStruct.listElement's in or transitioning to inodeLeaseStateExclusiveGranted
 	httpServer                 *http.Server                   //
@@ -353,6 +360,22 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	if nil != err {
 		logFatal(err)
 	}
+	globals.config.InodePayloadEvictLowLimit, err = confMap.FetchOptionValueUint64("ICLIENT", "InodePayloadEvictLowLimit")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.InodePayloadEvictHighLimit, err = confMap.FetchOptionValueUint64("ICLIENT", "InodePayloadEvictHighLimit")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.DirInodeMaxKeysPerBPlusTreePage, err = confMap.FetchOptionValueUint64("ICLIENT", "DirInodeMaxKeysPerBPlusTreePage")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.FileInodeMaxKeysPerBPlusTreePage, err = confMap.FetchOptionValueUint64("ICLIENT", "FileInodeMaxKeysPerBPlusTreePage")
+	if nil != err {
+		logFatal(err)
+	}
 	globals.config.ReadCacheLineSize, err = confMap.FetchOptionValueUint64("ICLIENT", "ReadCacheLineSize")
 	if nil != err {
 		logFatal(err)
@@ -418,6 +441,7 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	globals.fissionErrChan = fissionErrChan
 
 	globals.inodeLeaseTable = make(map[uint64]*inodeLeaseStruct)
+	globals.inodeLeasePayloadCache = sortedmap.NewBPlusTreeCache(globals.config.InodePayloadEvictLowLimit, globals.config.InodePayloadEvictHighLimit)
 	globals.sharedLeaseLRU = list.New()
 	globals.exclusiveLeaseLRU = list.New()
 
@@ -454,6 +478,10 @@ func uninitializeGlobals() (err error) {
 	globals.config.RetryRPCCACertFilePath = ""
 	globals.config.MaxSharedLeases = 0
 	globals.config.MaxExclusiveLeases = 0
+	globals.config.InodePayloadEvictLowLimit = 0
+	globals.config.InodePayloadEvictHighLimit = 0
+	globals.config.DirInodeMaxKeysPerBPlusTreePage = 0
+	globals.config.FileInodeMaxKeysPerBPlusTreePage = 0
 	globals.config.ReadCacheLineSize = 0
 	globals.config.ReadCacheLineCountMax = 0
 	globals.config.FileFlushTriggerSize = 0
@@ -473,6 +501,7 @@ func uninitializeGlobals() (err error) {
 	globals.retryRPCCACertPEM = nil
 
 	globals.inodeLeaseTable = nil
+	globals.inodeLeasePayloadCache = nil
 	globals.sharedLeaseLRU = nil
 	globals.exclusiveLeaseLRU = nil
 
