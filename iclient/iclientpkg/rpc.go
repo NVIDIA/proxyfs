@@ -387,7 +387,9 @@ func rpcUnmount(unmountRequest *imgrpkg.UnmountRequestStruct, unmountResponse *i
 		globals.stats.UnmountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	err = performRenewableRPC("Unmount", unmountRequest, unmountResponse)
+	// TODO: Since the Unmount RPC fails with an ETODO, we would mistakenly try to reauth
+	// err = performRenewableRPC("Unmount", unmountRequest, unmountResponse)
+	err = globals.retryRPCClient.Send("Unmount", unmountRequest, unmountResponse)
 
 	return
 }
