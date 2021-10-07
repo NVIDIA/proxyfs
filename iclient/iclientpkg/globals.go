@@ -71,7 +71,7 @@ type swiftRetryDelayElementStruct struct {
 type inodeLeaseStateType uint32
 
 const (
-	inodeLeaseStateNone inodeLeaseStateType = iota // Only used if (*inodeLeaseStruct).requestList is non-empty
+	inodeLeaseStateNone inodeLeaseStateType = iota // Only used if (*inodeStruct).requestList is non-empty
 	inodeLeaseStateSharedRequested
 	inodeLeaseStateSharedGranted
 	inodeLeaseStateSharedPromoting
@@ -89,7 +89,7 @@ type layoutMapEntryStruct struct {
 	bytesReferenced uint64
 }
 
-type inodeLeaseStruct struct {
+type inodeStruct struct {
 	inodeNumber uint64                     //
 	leaseState  inodeLeaseStateType        //
 	listElement *list.Element              //                                   Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
@@ -108,17 +108,17 @@ type inodeLeaseStruct struct {
 }
 
 type inodeHeldLockStruct struct {
-	inodeLease       *inodeLeaseStruct
+	inode            *inodeStruct
 	inodeLockRequest *inodeLockRequestStruct
 	exclusive        bool
-	listElement      *list.Element //Maintains position in .inodeNumber's indicated inodeLeaseStruct.heldList
+	listElement      *list.Element //Maintains position in .inodeNumber's indicated inodeStruct.heldList
 }
 
 type inodeLockRequestStruct struct {
 	sync.WaitGroup                                 // Signaled when the state of the lock request has been served
 	inodeNumber    uint64                          // The inodeNumber for which the latest lock request is being made
 	exclusive      bool                            // Indicates if the latest lock request is exclusive
-	listElement    *list.Element                   // Maintains position in .inodeNumber's indicated inodeLeaseStruct.requestList
+	listElement    *list.Element                   // Maintains position in .inodeNumber's indicated inodeStruct.requestList
 	locksHeld      map[uint64]*inodeHeldLockStruct // At entry, contains the list of inodeLock's already held (shared or exclusively)
 	//                                                At exit,  either contains the earlier list appended with the granted inodeLock
 	//                                                          or     is empty indicating the caller should restart lock request sequence
@@ -207,10 +207,10 @@ type globalsStruct struct {
 	retryRPCClient             *retryrpc.Client               //
 	mountID                    string                         //
 	fissionErrChan             chan error                     //
-	inodeLeaseTable            map[uint64]*inodeLeaseStruct   //
-	inodeLeasePayloadCache     sortedmap.BPlusTreeCache       //
-	sharedLeaseLRU             *list.List                     // LRU-ordered list of inodeLeaseStruct.listElement's in or transitioning to inodeLeaseStateSharedGranted
-	exclusiveLeaseLRU          *list.List                     // LRU-ordered list of inodeLeaseStruct.listElement's in or transitioning to inodeLeaseStateExclusiveGranted
+	inodeTable                 map[uint64]*inodeStruct        //
+	inodePayloadCache          sortedmap.BPlusTreeCache       //
+	sharedLeaseLRU             *list.List                     // LRU-ordered list of inodeStruct.listElement's in or transitioning to inodeLeaseStateSharedGranted
+	exclusiveLeaseLRU          *list.List                     // LRU-ordered list of inodeStruct.listElement's in or transitioning to inodeLeaseStateExclusiveGranted
 	httpServer                 *http.Server                   //
 	httpServerWG               sync.WaitGroup                 //
 	stats                      *statsStruct                   //
@@ -440,8 +440,8 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 
 	globals.fissionErrChan = fissionErrChan
 
-	globals.inodeLeaseTable = make(map[uint64]*inodeLeaseStruct)
-	globals.inodeLeasePayloadCache = sortedmap.NewBPlusTreeCache(globals.config.InodePayloadEvictLowLimit, globals.config.InodePayloadEvictHighLimit)
+	globals.inodeTable = make(map[uint64]*inodeStruct)
+	globals.inodePayloadCache = sortedmap.NewBPlusTreeCache(globals.config.InodePayloadEvictLowLimit, globals.config.InodePayloadEvictHighLimit)
 	globals.sharedLeaseLRU = list.New()
 	globals.exclusiveLeaseLRU = list.New()
 
@@ -500,8 +500,8 @@ func uninitializeGlobals() (err error) {
 
 	globals.retryRPCCACertPEM = nil
 
-	globals.inodeLeaseTable = nil
-	globals.inodeLeasePayloadCache = nil
+	globals.inodeTable = nil
+	globals.inodePayloadCache = nil
 	globals.sharedLeaseLRU = nil
 	globals.exclusiveLeaseLRU = nil
 

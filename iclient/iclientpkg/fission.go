@@ -106,8 +106,8 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 		err                        error
 		getInodeTableEntryRequest  *imgrpkg.GetInodeTableEntryRequestStruct
 		getInodeTableEntryResponse *imgrpkg.GetInodeTableEntryResponseStruct
+		inode                      *inodeStruct
 		inodeHeadV1Buf             []byte
-		inodeLease                 *inodeLeaseStruct
 		inodeLockRequest           *inodeLockRequestStruct
 		modificationTimeNSec       uint32
 		modificationTimeSec        uint64
@@ -130,15 +130,15 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 	inodeLockRequest.exclusive = false
 	inodeLockRequest.addThisLock()
 
-	inodeLease = lookupInodeLease(uint64(inHeader.NodeID))
-	if nil == inodeLease {
+	inode = lookupInode(uint64(inHeader.NodeID))
+	if nil == inode {
 		inodeLockRequest.unlockAll()
 		getAttrOut = nil
 		errno = syscall.ENOENT
 		return
 	}
 
-	if nil == inodeLease.inodeHeadV1 {
+	if nil == inode.inodeHeadV1 {
 		getInodeTableEntryRequest = &imgrpkg.GetInodeTableEntryRequestStruct{
 			MountID:     globals.mountID,
 			InodeNumber: uint64(inHeader.NodeID),
@@ -158,33 +158,33 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 			logFatalf("objectGETTail(getInodeTableEntryResponse.InodeHeadObjectNumber: %v, getInodeTableEntryResponse.InodeHeadLength: %v) failed: %v", getInodeTableEntryResponse.InodeHeadObjectNumber, getInodeTableEntryResponse.InodeHeadLength, err)
 		}
 
-		inodeLease.inodeHeadV1, err = ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf)
+		inode.inodeHeadV1, err = ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf)
 		if nil != err {
 			logFatalf("ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf) failed: %v", err)
 		}
 	}
 
-	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(inodeLease.inodeHeadV1.ModificationTime.UnixNano()))
-	statusChangeTimeSec, statusChangeTimeNSec = nsToUnixTime(uint64(inodeLease.inodeHeadV1.StatusChangeTime.UnixNano()))
+	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.ModificationTime.UnixNano()))
+	statusChangeTimeSec, statusChangeTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.StatusChangeTime.UnixNano()))
 
 	getAttrOut = &fission.GetAttrOut{
 		AttrValidSec:  globals.fuseAttrValidDurationSec,
 		AttrValidNSec: globals.fuseAttrValidDurationNSec,
 		Dummy:         0,
 		Attr: fission.Attr{
-			Ino:       inodeLease.inodeHeadV1.InodeNumber,
-			Size:      inodeLease.inodeHeadV1.Size, // Possibly overwritten by fixAttrSizes()
-			Blocks:    0,                           // Computed by fixAttrSizes()
+			Ino:       inode.inodeHeadV1.InodeNumber,
+			Size:      inode.inodeHeadV1.Size, // Possibly overwritten by fixAttrSizes()
+			Blocks:    0,                      // Computed by fixAttrSizes()
 			ATimeSec:  modificationTimeSec,
 			MTimeSec:  modificationTimeSec,
 			CTimeSec:  statusChangeTimeSec,
 			ATimeNSec: modificationTimeNSec,
 			MTimeNSec: modificationTimeNSec,
 			CTimeNSec: statusChangeTimeNSec,
-			Mode:      computeAttrMode(inodeLease.inodeHeadV1.InodeType, inodeLease.inodeHeadV1.Mode),
-			NLink:     uint32(len(inodeLease.inodeHeadV1.LinkTable)),
-			UID:       uint32(inodeLease.inodeHeadV1.UserID),
-			GID:       uint32(inodeLease.inodeHeadV1.GroupID),
+			Mode:      computeAttrMode(inode.inodeHeadV1.InodeType, inode.inodeHeadV1.Mode),
+			NLink:     uint32(len(inode.inodeHeadV1.LinkTable)),
+			UID:       uint32(inode.inodeHeadV1.UserID),
+			GID:       uint32(inode.inodeHeadV1.GroupID),
 			RDev:      attrRDev,
 			BlkSize:   attrBlockSize, // Possibly overwritten by fixAttrSizes()
 			Padding:   0,

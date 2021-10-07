@@ -185,35 +185,35 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Requ
 	}
 }
 
-type inodeLeaseTableByInodeNumberElement struct {
+type inodeTableByInodeNumberElement struct {
 	InodeNumber uint64
 	State       string
 }
 
-type inodeLeaseTableByInodeNumberSlice []inodeLeaseTableByInodeNumberElement
+type inodeTableByInodeNumberSlice []inodeTableByInodeNumberElement
 
-func (s inodeLeaseTableByInodeNumberSlice) Len() int {
+func (s inodeTableByInodeNumberSlice) Len() int {
 	return len(s)
 }
 
-func (s inodeLeaseTableByInodeNumberSlice) Swap(i, j int) {
+func (s inodeTableByInodeNumberSlice) Swap(i, j int) {
 	s[i].InodeNumber, s[j].InodeNumber = s[j].InodeNumber, s[i].InodeNumber
 	s[i].State, s[j].State = s[j].State, s[i].State
 }
 
-func (s inodeLeaseTableByInodeNumberSlice) Less(i, j int) bool {
+func (s inodeTableByInodeNumberSlice) Less(i, j int) bool {
 	return s[i].InodeNumber < s[j].InodeNumber
 }
 
 func serveHTTPGetOfLeases(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		err                  error
-		inodeLease           *inodeLeaseStruct
-		inodeLeaseTable      inodeLeaseTableByInodeNumberSlice
-		inodeLeaseTableJSON  []byte
-		inodeLeaseTableIndex int
-		inodeNumber          uint64
-		startTime            time.Time = time.Now()
+		err             error
+		inode           *inodeStruct
+		inodeTable      inodeTableByInodeNumberSlice
+		inodeTableJSON  []byte
+		inodeTableIndex int
+		inodeNumber     uint64
+		startTime       time.Time = time.Now()
 	)
 
 	defer func() {
@@ -222,64 +222,64 @@ func serveHTTPGetOfLeases(responseWriter http.ResponseWriter, request *http.Requ
 
 	globals.Lock()
 
-	inodeLeaseTable = make(inodeLeaseTableByInodeNumberSlice, len(globals.inodeLeaseTable))
-	inodeLeaseTableIndex = 0
-	for inodeNumber, inodeLease = range globals.inodeLeaseTable {
-		inodeLeaseTable[inodeLeaseTableIndex].InodeNumber = inodeNumber
-		switch inodeLease.leaseState {
+	inodeTable = make(inodeTableByInodeNumberSlice, len(globals.inodeTable))
+	inodeTableIndex = 0
+	for inodeNumber, inode = range globals.inodeTable {
+		inodeTable[inodeTableIndex].InodeNumber = inodeNumber
+		switch inode.leaseState {
 		case inodeLeaseStateNone:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "None"
+			inodeTable[inodeTableIndex].State = "None"
 		case inodeLeaseStateSharedRequested:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "SharedRequested"
+			inodeTable[inodeTableIndex].State = "SharedRequested"
 		case inodeLeaseStateSharedGranted:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "SharedGranted"
+			inodeTable[inodeTableIndex].State = "SharedGranted"
 		case inodeLeaseStateSharedPromoting:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "SharedPromoting"
+			inodeTable[inodeTableIndex].State = "SharedPromoting"
 		case inodeLeaseStateSharedReleasing:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "SharedReleasing"
+			inodeTable[inodeTableIndex].State = "SharedReleasing"
 		case inodeLeaseStateSharedExpired:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "SharedExpired"
+			inodeTable[inodeTableIndex].State = "SharedExpired"
 		case inodeLeaseStateExclusiveRequested:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveRequested"
+			inodeTable[inodeTableIndex].State = "ExclusiveRequested"
 		case inodeLeaseStateExclusiveGranted:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveGranted"
+			inodeTable[inodeTableIndex].State = "ExclusiveGranted"
 		case inodeLeaseStateExclusiveDemoting:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveDemoting"
+			inodeTable[inodeTableIndex].State = "ExclusiveDemoting"
 		case inodeLeaseStateExclusiveReleasing:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveReleasing"
+			inodeTable[inodeTableIndex].State = "ExclusiveReleasing"
 		case inodeLeaseStateExclusiveExpired:
-			inodeLeaseTable[inodeLeaseTableIndex].State = "ExclusiveExpired"
+			inodeTable[inodeTableIndex].State = "ExclusiveExpired"
 		default:
-			logFatalf("globals.inodeLeaseTable[inudeNumber:0x%016X].leaseState (%v) unrecognized", inodeNumber, inodeLease.leaseState)
+			logFatalf("globals.inodeTable[inudeNumber:0x%016X].leaseState (%v) unrecognized", inodeNumber, inode.leaseState)
 		}
-		inodeLeaseTableIndex++
+		inodeTableIndex++
 	}
 
 	globals.Unlock()
 
-	sort.Sort(inodeLeaseTable)
+	sort.Sort(inodeTable)
 
-	inodeLeaseTableJSON, err = json.Marshal(inodeLeaseTable)
+	inodeTableJSON, err = json.Marshal(inodeTable)
 	if nil != err {
-		logFatalf("json.Marshal(inodeLeaseTable) failed: %v", err)
+		logFatalf("json.Marshal(inodeTable) failed: %v", err)
 	}
 
 	if strings.Contains(request.Header.Get("Accept"), "text/html") {
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, err = responseWriter.Write([]byte(fmt.Sprintf(leasesTemplate, version.ProxyFSVersion, string(inodeLeaseTableJSON[:]))))
+		_, err = responseWriter.Write([]byte(fmt.Sprintf(leasesTemplate, version.ProxyFSVersion, string(inodeTableJSON[:]))))
 		if nil != err {
-			logWarnf("responseWriter.Write([]byte(fmt.Sprintf(leasesTemplate, version.ProxyFSVersion, string(inodeLeaseTableJSON[:])))) failed: %v", err)
+			logWarnf("responseWriter.Write([]byte(fmt.Sprintf(leasesTemplate, version.ProxyFSVersion, string(inodeTableJSON[:])))) failed: %v", err)
 		}
 	} else {
-		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(inodeLeaseTableJSON)))
+		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(inodeTableJSON)))
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, err = responseWriter.Write(inodeLeaseTableJSON)
+		_, err = responseWriter.Write(inodeTableJSON)
 		if nil != err {
-			logWarnf("responseWriter.Write(inodeLeaseTableJSON) failed: %v", err)
+			logWarnf("responseWriter.Write(inodeTableJSON) failed: %v", err)
 		}
 	}
 }
