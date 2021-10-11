@@ -68,7 +68,7 @@
 #     --env DISPLAY: tells Docker to set ENV DISPLAY for X apps (e.g. wireshark)
 
 FROM alpine:3.14.0 as base
-ARG GolangVersion=1.17
+ARG GolangVersion=1.17.2
 ARG MakeTarget
 RUN apk add --no-cache libc6-compat
 
