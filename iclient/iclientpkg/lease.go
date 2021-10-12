@@ -54,6 +54,8 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		ok            bool
 	)
 
+Retry:
+
 	globals.Lock()
 
 	if inodeLockRequest.inodeNumber == 0 {
@@ -66,6 +68,12 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 	inode, ok = globals.inodeTable[inodeLockRequest.inodeNumber]
 	if ok {
+		if inode.markedForDelete {
+			globals.Unlock()
+			inode.Wait()
+			goto Retry
+		}
+
 		switch inode.leaseState {
 		case inodeLeaseStateNone:
 		case inodeLeaseStateSharedRequested:
@@ -90,6 +98,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	} else {
 		inode = &inodeStruct{
 			inodeNumber:                              inodeLockRequest.inodeNumber,
+			markedForDelete:                          false,
 			leaseState:                               inodeLeaseStateNone,
 			listElement:                              nil,
 			heldList:                                 list.New(),
@@ -268,8 +277,8 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			inodeLockRequest.Wait()
 		case inodeLeaseStateSharedExpired:
 			// Our mount point has expired... so let owner of inodeLockRequestStruct clean-up
-			inodeLockRequest.unlockAllWhileLocked()
 			globals.Unlock()
+			inodeLockRequest.unlockAll()
 		case inodeLeaseStateExclusiveRequested:
 			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
 			inodeLockRequest.Add(1)
@@ -300,8 +309,8 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			inodeLockRequest.Wait()
 		case inodeLeaseStateExclusiveExpired:
 			// Our mount point has expired... so let owner of inodeLockRequestStruct clean-up
-			inodeLockRequest.unlockAllWhileLocked()
 			globals.Unlock()
+			inodeLockRequest.unlockAll()
 		default:
 			logFatalf("switch inode.leaseState unexpected: %v", inode.leaseState)
 		}
@@ -385,8 +394,8 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			inodeLockRequest.Wait()
 		case inodeLeaseStateSharedExpired:
 			// Our mount point has expired... so let owner of inodeLockRequestStruct clean-up
-			inodeLockRequest.unlockAllWhileLocked()
 			globals.Unlock()
+			inodeLockRequest.unlockAll()
 		case inodeLeaseStateExclusiveRequested:
 			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
 			inodeLockRequest.Add(1)
@@ -417,8 +426,8 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			inodeLockRequest.Wait()
 		case inodeLeaseStateExclusiveExpired:
 			// Our mount point has expired... so let owner of inodeLockRequestStruct clean-up
-			inodeLockRequest.unlockAllWhileLocked()
 			globals.Unlock()
+			inodeLockRequest.unlockAll()
 		default:
 			logFatalf("switch inode.leaseState unexpected: %v", inode.leaseState)
 		}
@@ -428,44 +437,61 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 // unlockAll is called to explicitly release all locks listed in the locksHeld map.
 //
 func (inodeLockRequest *inodeLockRequestStruct) unlockAll() {
-	globals.Lock()
-	inodeLockRequest.unlockAllWhileLocked()
-	globals.Unlock()
-}
-
-// unlockAllWhileLocked is what unlockAll calls after obtaining globals.Lock().
-//
-func (inodeLockRequest *inodeLockRequestStruct) unlockAllWhileLocked() {
 	var (
+		err           error
+		inode         *inodeStruct
 		inodeHeldLock *inodeHeldLockStruct
+		leaseRequest  *imgrpkg.LeaseRequestStruct
+		leaseResponse *imgrpkg.LeaseResponseStruct
+		releaseList   []*inodeStruct = make([]*inodeStruct, 0)
 	)
+
+	globals.Lock()
 
 	for _, inodeHeldLock = range inodeLockRequest.locksHeld {
 		_ = inodeHeldLock.inode.heldList.Remove(inodeHeldLock.listElement)
-		if inodeHeldLock.inode.requestList.Len() != 0 {
+		if inodeHeldLock.inode.requestList.Len() == 0 {
+			if inodeHeldLock.inode.heldList.Len() == 0 {
+				if inodeHeldLock.inode.markedForDelete {
+					releaseList = append(releaseList, inodeHeldLock.inode)
+					delete(globals.inodeTable, inodeHeldLock.inode.inodeNumber)
+				}
+			}
+		} else {
 			logFatalf("TODO: for now, we don't handle blocked inodeLockRequestStruct's")
 		}
 	}
 
-	inodeLockRequest.locksHeld = make(map[uint64]*inodeHeldLockStruct)
-}
-
-func lookupInode(inodeNumber uint64) (inode *inodeStruct) {
-	globals.Lock()
-	inode = lookupInodeWhileLocked(inodeNumber)
 	globals.Unlock()
-	return
-}
 
-func lookupInodeWhileLocked(inodeNumber uint64) (inode *inodeStruct) {
-	var (
-		ok bool
-	)
+	for _, inode = range releaseList {
+		switch inode.leaseState {
+		case inodeLeaseStateSharedGranted:
+			inode.leaseState = inodeLeaseStateSharedReleasing
+		case inodeLeaseStateExclusiveGranted:
+			inode.leaseState = inodeLeaseStateExclusiveReleasing
+		default:
+			logFatalf("switch inode.leaseState unexpected: %v", inode.leaseState)
+		}
 
-	inode, ok = globals.inodeTable[inodeNumber]
-	if !ok {
-		inode = nil
+		leaseRequest = &imgrpkg.LeaseRequestStruct{
+			MountID:          globals.mountID,
+			InodeNumber:      inodeLockRequest.inodeNumber,
+			LeaseRequestType: imgrpkg.LeaseRequestTypeRelease,
+		}
+		leaseResponse = &imgrpkg.LeaseResponseStruct{}
+
+		err = rpcLease(leaseRequest, leaseResponse)
+		if nil != err {
+			logFatal(err)
+		}
+
+		if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypeReleased {
+			logFatalf("received unexpected leaseResponse.LeaseResponseType: %v", leaseResponse.LeaseResponseType)
+		}
+
+		inode.Done()
 	}
 
-	return
+	inodeLockRequest.locksHeld = make(map[uint64]*inodeHeldLockStruct)
 }

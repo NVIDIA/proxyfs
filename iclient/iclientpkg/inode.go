@@ -6,10 +6,12 @@ package iclientpkg
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/NVIDIA/sortedmap"
 
 	"github.com/NVIDIA/proxyfs/ilayout"
+	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
 )
 
 func (inode *inodeStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
@@ -207,6 +209,112 @@ func (inode *inodeStruct) UnpackValue(payloadData []byte) (value sortedmap.Value
 	}
 
 	return
+}
+
+func lookupInode(inodeNumber uint64) (inode *inodeStruct) {
+	var (
+		ok bool
+	)
+
+	globals.Lock()
+
+	inode, ok = globals.inodeTable[inodeNumber]
+	if !ok {
+		inode = nil
+	}
+
+	globals.Unlock()
+
+	return
+}
+
+func lookupOpenHandleByInodeNumber(inodeNumber uint64) (openHandle *openHandleStruct) {
+	var (
+		ok bool
+	)
+
+	globals.Lock()
+
+	openHandle, ok = globals.openHandleMapByInodeNumber[inodeNumber]
+	if !ok {
+		openHandle = nil
+	}
+
+	globals.Unlock()
+
+	return
+}
+
+func lookupOpenHandleByFissionFH(fissionFH uint64) (openHandle *openHandleStruct) {
+	var (
+		ok bool
+	)
+
+	globals.Lock()
+
+	openHandle, ok = globals.openHandleMapByFissionFH[fissionFH]
+	if !ok {
+		openHandle = nil
+	}
+
+	globals.Unlock()
+
+	return
+}
+
+func fetchNonce() (nonceToReturn uint64) {
+	var (
+		err                     error
+		fetchNonceRangeRequest  *imgrpkg.FetchNonceRangeRequestStruct
+		fetchNonceRangeResponse *imgrpkg.FetchNonceRangeResponseStruct
+		nonceWaitGroup          *sync.WaitGroup
+	)
+
+Retry:
+
+	globals.Lock()
+
+	if globals.noncesRemaining > 0 {
+		nonceToReturn = globals.nextNonce
+		globals.nextNonce++
+		globals.noncesRemaining--
+		globals.Unlock()
+		return
+	}
+
+	nonceWaitGroup = globals.nonceWaitGroup
+	if nil != nonceWaitGroup {
+		globals.Unlock()
+		nonceWaitGroup.Wait()
+		goto Retry
+	}
+
+	globals.nonceWaitGroup = &sync.WaitGroup{}
+	globals.nonceWaitGroup.Add(1)
+
+	globals.Unlock()
+
+	fetchNonceRangeRequest = &imgrpkg.FetchNonceRangeRequestStruct{
+		MountID: globals.mountID,
+	}
+	fetchNonceRangeResponse = &imgrpkg.FetchNonceRangeResponseStruct{}
+
+	err = rpcFetchNonceRange(fetchNonceRangeRequest, fetchNonceRangeResponse)
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.Lock()
+
+	globals.nextNonce = fetchNonceRangeResponse.NextNonce
+	globals.noncesRemaining = fetchNonceRangeResponse.NumNoncesFetched
+
+	globals.nonceWaitGroup.Done()
+	globals.nonceWaitGroup = nil
+
+	globals.Unlock()
+
+	goto Retry
 }
 
 func (inode *inodeStruct) newPayload() (err error) {

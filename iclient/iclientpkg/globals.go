@@ -89,14 +89,24 @@ type layoutMapEntryStruct struct {
 	bytesReferenced uint64
 }
 
+type openHandleStruct struct {
+	inodeNumber        uint64
+	fissionFH          uint64 // As returned in fission.{CreateOut|OpenOut|OpenDirOut}.FH
+	fissionFlagsAppend bool   // As supplied in fission.{CreateIn|OpenIn}.Flags           [true if (.Flags & syscall.O_APPEND) == syscall.O_APPEND]
+	fissionFlagsRead   bool   // As supplied in fission.{CreateIn|OpenIn|OpenDirIn}.Flags [true if (.Flags & (syscall.O_RDONLY|syscall.O_RDWR|syscall.O_WRONLY) is one of syscall.{O_RDONLY|O_RDWR}]
+	fissionFlagsWrite  bool   // As supplied in fission.{CreateIn|OpenIn|OpenDirIn}.Flags [true if (.Flags & (syscall.O_RDONLY|syscall.O_RDWR|syscall.O_WRONLY) is one of syscall.{O_RDWR|O_WRONLY}]
+}
+
 type inodeStruct struct {
-	inodeNumber uint64                     //
-	leaseState  inodeLeaseStateType        //
-	listElement *list.Element              //                                   Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
-	heldList    *list.List                 //                                   List of granted inodeHeldLockStruct's
-	requestList *list.List                 //                                   List of pending inodeLockRequestStruct's
-	inodeHeadV1 *ilayout.InodeHeadV1Struct //
-	payload     sortedmap.BPlusTree        //                                   For DirInode:  Directory B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
+	sync.WaitGroup                             //                               Signaled to indicate .markedForDelete == true triggered removal has completed
+	inodeNumber     uint64                     //
+	markedForDelete bool                       //                               If true, remove from globalsStruct.inodeTable upon last dereference
+	leaseState      inodeLeaseStateType        //
+	listElement     *list.Element              //                               Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
+	heldList        *list.List                 //                               List of granted inodeHeldLockStruct's
+	requestList     *list.List                 //                               List of pending inodeLockRequestStruct's
+	inodeHeadV1     *ilayout.InodeHeadV1Struct //
+	payload         sortedmap.BPlusTree        //                               For DirInode:  Directory B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
 	//                                                                          For FileInode: ExtentMap B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
 	layoutMap                                map[uint64]layoutMapEntryStruct // For DirInode & FileInode: Map form of .inodeHeadV1.Layout
 	superBlockInodeObjectCountAdjustment     int64                           //
@@ -122,6 +132,18 @@ type inodeLockRequestStruct struct {
 	locksHeld      map[uint64]*inodeHeldLockStruct // At entry, contains the list of inodeLock's already held (shared or exclusively)
 	//                                                At exit,  either contains the earlier list appended with the granted inodeLock
 	//                                                          or     is empty indicating the caller should restart lock request sequence
+}
+
+type readCacheKeyStruct struct {
+	objectNumber uint64
+	lineNumber   uint64
+}
+
+type readCacheLineStruct struct {
+	sync.WaitGroup                    // Used by those needing to block while a prior accessor reads in .buf
+	key            readCacheKeyStruct //
+	listElement    *list.Element      // Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
+	buf            []byte             // == nil if being read in
 }
 
 type statsStruct struct {
@@ -188,18 +210,6 @@ type statsStruct struct {
 	DoLSeekUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoLSeek()
 }
 
-type readCacheKeyStruct struct {
-	objectNumber uint64
-	lineNumber   uint64
-}
-
-type readCacheLineStruct struct {
-	sync.WaitGroup                    // Used by those needing to block while a prior accessor reads in .buf
-	key            readCacheKeyStruct //
-	listElement    *list.Element      // Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
-	buf            []byte             // == nil if being read in
-}
-
 type globalsStruct struct {
 	sync.Mutex                                                            //
 	config                     configStruct                               //
@@ -219,10 +229,15 @@ type globalsStruct struct {
 	retryRPCClient             *retryrpc.Client                           //
 	mountID                    string                                     //
 	fissionErrChan             chan error                                 //
+	nonceWaitGroup             *sync.WaitGroup                            // != nil if rpcFetchNonceRange() already underway
+	nextNonce                  uint64                                     //
+	noncesRemaining            uint64                                     //
 	readCacheMap               map[readCacheKeyStruct]readCacheLineStruct //
 	readCacheLRU               *list.List                                 // LRU-ordered list of readCacheLineStruct.listElement's
 	inodeTable                 map[uint64]*inodeStruct                    //
 	inodePayloadCache          sortedmap.BPlusTreeCache                   //
+	openHandleMapByInodeNumber map[uint64]*openHandleStruct               // Key == openHandleStruct.inodeNumber
+	openHandleMapByFissionFH   map[uint64]*openHandleStruct               // Key == openHandleStruct.fissionFH
 	sharedLeaseLRU             *list.List                                 // LRU-ordered list of inodeStruct.listElement's in or transitioning to inodeLeaseStateSharedGranted
 	exclusiveLeaseLRU          *list.List                                 // LRU-ordered list of inodeStruct.listElement's in or transitioning to inodeLeaseStateExclusiveGranted
 	httpServer                 *http.Server                               //
@@ -454,11 +469,17 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 
 	globals.fissionErrChan = fissionErrChan
 
+	globals.nonceWaitGroup = nil
+	globals.nextNonce = 0
+	globals.noncesRemaining = 0
+
 	globals.readCacheMap = make(map[readCacheKeyStruct]readCacheLineStruct)
 	globals.readCacheLRU = list.New()
 
 	globals.inodeTable = make(map[uint64]*inodeStruct)
 	globals.inodePayloadCache = sortedmap.NewBPlusTreeCache(globals.config.InodePayloadEvictLowLimit, globals.config.InodePayloadEvictHighLimit)
+	globals.openHandleMapByInodeNumber = make(map[uint64]*openHandleStruct)
+	globals.openHandleMapByFissionFH = make(map[uint64]*openHandleStruct)
 	globals.sharedLeaseLRU = list.New()
 	globals.exclusiveLeaseLRU = list.New()
 
@@ -522,10 +543,16 @@ func uninitializeGlobals() (err error) {
 
 	globals.inodeTable = nil
 	globals.inodePayloadCache = nil
+	globals.openHandleMapByInodeNumber = nil
+	globals.openHandleMapByFissionFH = nil
 	globals.sharedLeaseLRU = nil
 	globals.exclusiveLeaseLRU = nil
 
 	globals.fissionErrChan = nil
+
+	globals.nonceWaitGroup = nil
+	globals.nextNonce = 0
+	globals.noncesRemaining = 0
 
 	bucketstats.UnRegister("ICLIENT", "")
 

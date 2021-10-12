@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/NVIDIA/fission"
+	"github.com/NVIDIA/sortedmap"
 
 	"github.com/NVIDIA/proxyfs/ilayout"
 	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
@@ -125,10 +126,14 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 		globals.stats.DoGetAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = uint64(inHeader.NodeID)
 	inodeLockRequest.exclusive = false
 	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
 
 	inode = lookupInode(uint64(inHeader.NodeID))
 	if nil == inode {
@@ -397,7 +402,23 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 
 func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.ReadIn) (readOut *fission.ReadOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		curOffset                    uint64
+		err                          error
+		extentMapEntryIndexV1        int
+		extentMapEntryIndexV1Max     int // Entry entry at or just after  where readIn.Offset+readIn.Size may reside
+		extentMapEntryIndexV1Min     int // First entry at or just before where readIn.Offset may reside
+		extentMapEntryKeyV1          uint64
+		extentMapEntryKeyV1AsKey     sortedmap.Key
+		extentMapEntryValueV1        *ilayout.ExtentMapEntryValueV1Struct
+		extentMapEntryValueV1AsValue sortedmap.Value
+		inode                        *inodeStruct
+		inodeLockRequest             *inodeLockRequestStruct
+		ok                           bool
+		openHandle                   *openHandleStruct
+		readPlan                     []*ilayout.ExtentMapEntryValueV1Struct
+		readPlanEntry                *ilayout.ExtentMapEntryValueV1Struct // If .ObjectNumber == 0, .ObjectOffset is ignored... .Length is the number of zero fill bytes
+		remainingSize                uint64
+		startTime                    time.Time = time.Now()
 	)
 
 	logTracef("==> DoRead(inHeader: %+v, readIn: %+v)", inHeader, readIn)
@@ -413,15 +434,199 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		globals.stats.DoReadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	readOut = nil
-	errno = syscall.ENOSYS
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = uint64(inHeader.NodeID)
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	openHandle = lookupOpenHandleByInodeNumber(readIn.FH)
+	if nil == openHandle {
+		inodeLockRequest.unlockAll()
+		readOut = nil
+		errno = syscall.EBADF
+		return
+	}
+	if openHandle.inodeNumber != uint64(inHeader.NodeID) {
+		inodeLockRequest.unlockAll()
+		readOut = nil
+		errno = syscall.EBADF
+		return
+	}
+	if !openHandle.fissionFlagsRead {
+		inodeLockRequest.unlockAll()
+		readOut = nil
+		errno = syscall.EBADF
+		return
+	}
+
+	inode = lookupInode(openHandle.inodeNumber)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		readOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	switch inode.inodeHeadV1.InodeType {
+	case ilayout.InodeTypeDir:
+		inodeLockRequest.unlockAll()
+		readOut = nil
+		errno = syscall.EISDIR
+		return
+	case ilayout.InodeTypeFile:
+		// Fall through
+	case ilayout.InodeTypeSymLink:
+		inodeLockRequest.unlockAll()
+		readOut = nil
+		errno = syscall.EBADF
+		return
+	default:
+		logFatalf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
+	}
+
+	curOffset = readIn.Offset
+	if curOffset >= inode.inodeHeadV1.Size {
+		inodeLockRequest.unlockAll()
+		readOut = &fission.ReadOut{
+			Data: make([]byte, 0, 0),
+		}
+		errno = 0
+		return
+	}
+
+	remainingSize = uint64(readIn.Size)
+	if (curOffset + remainingSize) > inode.inodeHeadV1.Size {
+		remainingSize = inode.inodeHeadV1.Size - curOffset
+	}
+
+	readOut = &fission.ReadOut{
+		Data: make([]byte, 0, remainingSize),
+	}
+
+	if nil == inode.payload {
+		err = inode.oldPayload()
+		if nil != err {
+			logFatal(err)
+		}
+	}
+
+	extentMapEntryIndexV1Min, _, err = inode.payload.BisectLeft(curOffset)
+	if nil != err {
+		logFatal(err)
+	}
+
+	if extentMapEntryIndexV1Min < 0 {
+		extentMapEntryIndexV1Min = 0
+	}
+
+	extentMapEntryIndexV1Max, _, err = inode.payload.BisectLeft(readIn.Offset + remainingSize)
+	if nil != err {
+		logFatal(err)
+	}
+
+	readPlan = make([]*ilayout.ExtentMapEntryValueV1Struct, 0, 2*(extentMapEntryIndexV1Max-extentMapEntryIndexV1Min))
+
+	for extentMapEntryIndexV1 = extentMapEntryIndexV1Min; extentMapEntryIndexV1 < extentMapEntryIndexV1Max; extentMapEntryIndexV1++ {
+		extentMapEntryKeyV1AsKey, extentMapEntryValueV1AsValue, _, err = inode.payload.GetByIndex(extentMapEntryIndexV1)
+		if nil != err {
+			logFatal(err)
+		}
+
+		extentMapEntryKeyV1, ok = extentMapEntryKeyV1AsKey.(uint64)
+		if !ok {
+			logFatalf("extentMapEntryKeyV1AsKey.(uint64) returned !ok")
+		}
+
+		if curOffset < extentMapEntryKeyV1 {
+			if remainingSize < (extentMapEntryKeyV1 - curOffset) {
+				readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
+					Length:       remainingSize,
+					ObjectNumber: 0,
+					ObjectOffset: 0,
+				})
+
+				curOffset += remainingSize
+				remainingSize = 0
+
+				break
+			} else {
+				readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
+					Length:       extentMapEntryKeyV1 - curOffset,
+					ObjectNumber: 0,
+					ObjectOffset: 0,
+				})
+
+				remainingSize -= extentMapEntryKeyV1 - curOffset
+				curOffset = extentMapEntryKeyV1
+			}
+		}
+
+		extentMapEntryValueV1, ok = extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1Struct)
+		if !ok {
+			logFatalf("extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1) returned !ok")
+		}
+
+		if remainingSize <= extentMapEntryValueV1.Length {
+			readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
+				Length:       remainingSize,
+				ObjectNumber: extentMapEntryValueV1.ObjectNumber,
+				ObjectOffset: extentMapEntryValueV1.ObjectOffset,
+			})
+
+			curOffset += remainingSize
+			remainingSize = 0
+
+			break
+		}
+
+		readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
+			Length:       extentMapEntryValueV1.Length,
+			ObjectNumber: extentMapEntryValueV1.ObjectNumber,
+			ObjectOffset: extentMapEntryValueV1.ObjectOffset,
+		})
+
+		curOffset += extentMapEntryValueV1.Length
+		remainingSize -= extentMapEntryValueV1.Length
+	}
+
+	if remainingSize > 0 {
+		readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
+			Length:       remainingSize,
+			ObjectNumber: 0,
+			ObjectOffset: 0,
+		})
+	}
+
+	for _, readPlanEntry = range readPlan {
+		switch readPlanEntry.ObjectNumber {
+		case 0:
+			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length, readPlanEntry.Length)...)
+		case inode.putObjectNumber:
+			readOut.Data = append(readOut.Data, inode.putObjectBuffer[readPlanEntry.ObjectOffset:(readPlanEntry.ObjectOffset+readPlanEntry.Length)]...)
+		default:
+			// TODO - need to actually read from the cache (in a coherent/cooperative way)
+			// TODO - need to handle case where extent crosses cache line boundary
+			// UNDO - but for now, we will simply append zeroes
+			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length, readPlanEntry.Length)...) // UNDO
+		}
+	}
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
 func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission.WriteIn) (writeOut *fission.WriteOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		inode            *inodeStruct
+		inodeLockRequest *inodeLockRequestStruct
+		openHandle       *openHandleStruct
+		startTime        time.Time = time.Now()
 	)
 
 	logTracef("==> DoWrite(inHeader: %+v, writeIn: &{FH:%v Offset:%v Size:%v: WriteFlags:%v LockOwner:%v Flags:%v Padding:%v len(Data):%v})", inHeader, writeIn.FH, writeIn.Offset, writeIn.Size, writeIn.WriteFlags, writeIn.LockOwner, writeIn.Flags, writeIn.Padding, len(writeIn.Data))
@@ -433,8 +638,69 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		globals.stats.DoWriteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	writeOut = nil
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = uint64(inHeader.NodeID)
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	openHandle = lookupOpenHandleByInodeNumber(writeIn.FH)
+	if nil == openHandle {
+		inodeLockRequest.unlockAll()
+		writeOut = nil
+		errno = syscall.EBADF
+		return
+	}
+	if openHandle.inodeNumber != uint64(inHeader.NodeID) {
+		inodeLockRequest.unlockAll()
+		writeOut = nil
+		errno = syscall.EBADF
+		return
+	}
+	if !openHandle.fissionFlagsWrite {
+		inodeLockRequest.unlockAll()
+		writeOut = nil
+		errno = syscall.EBADF
+		return
+	}
+
+	inode = lookupInode(openHandle.inodeNumber)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		writeOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	switch inode.inodeHeadV1.InodeType {
+	case ilayout.InodeTypeDir:
+		inodeLockRequest.unlockAll()
+		writeOut = nil
+		errno = syscall.EISDIR
+		return
+	case ilayout.InodeTypeFile:
+		// Fall through
+	case ilayout.InodeTypeSymLink:
+		inodeLockRequest.unlockAll()
+		writeOut = nil
+		errno = syscall.EBADF
+		return
+	default:
+		logFatalf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
+	}
+
+	// TODO - need to patch ExtentMap
+	// TODO - need to append to inode.putObjectBuffer
+	// TODO - need to detect combinable ExtentMap entries
+	// TODO - need to trigger a flush if len(payload.putObjectBuffer) >= globals.config.FileFlushTriggerSize
+	// TODO - need to (possibly) trigger new timer after globals.config.FileFlushTriggerDuration
+
+	inodeLockRequest.unlockAll()
+
+	writeOut = nil // UNDO
 	errno = syscall.ENOSYS
 	return
 }
