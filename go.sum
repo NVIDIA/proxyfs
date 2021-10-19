@@ -43,8 +43,8 @@ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym
 github.com/Julusian/godocdown v0.0.0-20170816220326-6d19f8ff2df8/go.mod h1:INZr5t32rG59/5xeltqoCJoNY7e5x/3xoY9WSWVWg74=
 github.com/NVIDIA/cstruct v0.0.0-20210817223100-441a06a021c8 h1:hMAAyAeYB1T1DnxqdDZzjWeTDz/hL0ZGFhz3uQyH1nQ=
 github.com/NVIDIA/cstruct v0.0.0-20210817223100-441a06a021c8/go.mod h1:GPbuJvLD4QWiHPS6vivLzh+XMAx6va0Aucm6ipa5S0I=
-github.com/NVIDIA/fission v0.0.0-20211011170442-08d21745ac97 h1:hKmuJ4MizJlef3SWX/cFEuu9wj09Ml9II0YCk5YEyJg=
-github.com/NVIDIA/fission v0.0.0-20211011170442-08d21745ac97/go.mod h1:Cf+nuyjoIDp/RE+QDwIDWKpOzl3S81S5N3ajaewMe+U=
+github.com/NVIDIA/fission v0.0.0-20211019224312-9bcd4fabb066 h1:K/8Os/A5UFB6mJiQaeGJtXjvb4sOLm6xj7ulQxqUACw=
+github.com/NVIDIA/fission v0.0.0-20211019224312-9bcd4fabb066/go.mod h1:Cf+nuyjoIDp/RE+QDwIDWKpOzl3S81S5N3ajaewMe+U=
 github.com/NVIDIA/sortedmap v0.0.0-20210902154213-c8c741ed94c5 h1:mDx/maO8psu+pHQqEDoL15WTj/BAAnu/sKSeOVR8wZI=
 github.com/NVIDIA/sortedmap v0.0.0-20210902154213-c8c741ed94c5/go.mod h1:YtiQTabdmrFxECTKRqpuY/sXCKXOvaEc8plI2zYFb+k=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
@@ -616,12 +616,10 @@ golang.org/x/sys v0.0.0-20210510120138-977fb7262007/go.mod h1:oPkhp1MJrh7nUepCBc
 golang.org/x/sys v0.0.0-20210603081109-ebe580a85c40/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.0.0-20210823070655-63515b42dcdf h1:2ucpDCmfkl8Bd/FsLtiD653Wf96cW37s+iGx93zsu4k=
-golang.org/x/sys v0.0.0-20210823070655-63515b42dcdf/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.0.0-20211007075335-d3039528d8ac h1:oN6lz7iLW/YC7un8pq+9bOLyXrprv2+DKfkJY+2LJJw=
-golang.org/x/sys v0.0.0-20211007075335-d3039528d8ac/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.0.0-20211015200801-69063c4bb744 h1:KzbpndAYEM+4oHRp9JmB2ewj0NHHxO3Z0g7Gus2O1kk=
 golang.org/x/sys v0.0.0-20211015200801-69063c4bb744/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+golang.org/x/sys v0.0.0-20211019181941-9d821ace8654 h1:id054HUawV2/6IGm2IV8KZQjqtwAOo2CYlOToYqa0d0=
+golang.org/x/sys v0.0.0-20211019181941-9d821ace8654/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
 golang.org/x/text v0.0.0-20170915032832-14c0d48ead0c/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=

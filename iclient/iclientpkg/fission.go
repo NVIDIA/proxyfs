@@ -17,6 +17,8 @@ const (
 	attrBlockSize = uint32(512)
 	attrRDev      = uint32(0)
 
+	fuseDefaultPermissions = true // Make VFS/FUSE do access checks rather than this driver
+
 	fuseSubtype = "ProxyFS"
 
 	initOutFlags = uint32(0) |
@@ -38,6 +40,7 @@ func performMountFUSE() (err error) {
 		globals.config.MountPointDirPath,
 		fuseSubtype,
 		globals.config.FUSEMaxWrite,
+		fuseDefaultPermissions,
 		globals.config.FUSEAllowOther,
 		&globals,
 		newLogger(),
@@ -1043,7 +1046,8 @@ func (dummy *globalsStruct) DoAccess(inHeader *fission.InHeader, accessIn *fissi
 		globals.stats.DoAccessUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
+	// Note that with setting defaultPermissions to true, this call should never be made
+
 	errno = syscall.ENOSYS
 	return
 }

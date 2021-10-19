@@ -11,7 +11,7 @@ replace google.golang.org/grpc => google.golang.org/grpc v1.26.0
 require (
 	bazil.org/fuse v0.0.0-20200524192727-fb710f7dfd05
 	github.com/NVIDIA/cstruct v0.0.0-20210817223100-441a06a021c8
-	github.com/NVIDIA/fission v0.0.0-20211011170442-08d21745ac97
+	github.com/NVIDIA/fission v0.0.0-20211019224312-9bcd4fabb066
 	github.com/NVIDIA/sortedmap v0.0.0-20210902154213-c8c741ed94c5
 	github.com/ansel1/merry v1.6.1
 	github.com/creachadair/cityhash v0.1.0
@@ -20,7 +20,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	go.etcd.io/etcd v3.3.25+incompatible
 	golang.org/x/net v0.0.0-20210813160813-60bc85c4be6d
-	golang.org/x/sys v0.0.0-20211015200801-69063c4bb744
+	golang.org/x/sys v0.0.0-20211019181941-9d821ace8654
 )
 
 require (
