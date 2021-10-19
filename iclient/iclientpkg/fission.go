@@ -11,7 +11,6 @@ import (
 	"github.com/NVIDIA/sortedmap"
 
 	"github.com/NVIDIA/proxyfs/ilayout"
-	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
 )
 
 const (
@@ -104,17 +103,14 @@ func (dummy *globalsStruct) DoForget(inHeader *fission.InHeader, forgetIn *fissi
 
 func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fission.GetAttrIn) (getAttrOut *fission.GetAttrOut, errno syscall.Errno) {
 	var (
-		err                        error
-		getInodeTableEntryRequest  *imgrpkg.GetInodeTableEntryRequestStruct
-		getInodeTableEntryResponse *imgrpkg.GetInodeTableEntryResponseStruct
-		inode                      *inodeStruct
-		inodeHeadV1Buf             []byte
-		inodeLockRequest           *inodeLockRequestStruct
-		modificationTimeNSec       uint32
-		modificationTimeSec        uint64
-		startTime                  time.Time = time.Now()
-		statusChangeTimeNSec       uint32
-		statusChangeTimeSec        uint64
+		inode                *inodeStruct
+		inodeLockRequest     *inodeLockRequestStruct
+		modificationTimeNSec uint32
+		modificationTimeSec  uint64
+		obtainExclusiveLock  bool
+		startTime            time.Time = time.Now()
+		statusChangeTimeNSec uint32
+		statusChangeTimeSec  uint64
 	)
 
 	logTracef("==> DoGetAttr(inHeader: %+v, getAttrIn: %+v)", inHeader, getAttrIn)
@@ -126,10 +122,12 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 		globals.stats.DoGetAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	obtainExclusiveLock = false
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = uint64(inHeader.NodeID)
-	inodeLockRequest.exclusive = false
+	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
 		goto Retry
@@ -143,30 +141,16 @@ Retry:
 		return
 	}
 
-	if nil == inode.inodeHeadV1 {
-		getInodeTableEntryRequest = &imgrpkg.GetInodeTableEntryRequestStruct{
-			MountID:     globals.mountID,
-			InodeNumber: uint64(inHeader.NodeID),
-		}
-		getInodeTableEntryResponse = &imgrpkg.GetInodeTableEntryResponseStruct{}
-
-		err = rpcGetInodeTableEntry(getInodeTableEntryRequest, getInodeTableEntryResponse)
-		if nil != err {
+	obtainExclusiveLock, errno = inode.ensureInodeHeadV1NonNil(obtainExclusiveLock)
+	if errno == 0 {
+		if obtainExclusiveLock {
 			inodeLockRequest.unlockAll()
-			getAttrOut = nil
-			errno = syscall.ENOENT
-			return
+			goto Retry
 		}
-
-		inodeHeadV1Buf, err = objectGETTail(getInodeTableEntryResponse.InodeHeadObjectNumber, getInodeTableEntryResponse.InodeHeadLength)
-		if nil != err {
-			logFatalf("objectGETTail(getInodeTableEntryResponse.InodeHeadObjectNumber: %v, getInodeTableEntryResponse.InodeHeadLength: %v) failed: %v", getInodeTableEntryResponse.InodeHeadObjectNumber, getInodeTableEntryResponse.InodeHeadLength, err)
-		}
-
-		inode.inodeHeadV1, err = ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf)
-		if nil != err {
-			logFatalf("ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf) failed: %v", err)
-		}
+	} else {
+		inodeLockRequest.unlockAll()
+		getAttrOut = nil
+		return
 	}
 
 	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.ModificationTime.UnixNano()))
@@ -413,6 +397,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		extentMapEntryValueV1AsValue sortedmap.Value
 		inode                        *inodeStruct
 		inodeLockRequest             *inodeLockRequestStruct
+		obtainExclusiveLock          bool
 		ok                           bool
 		openHandle                   *openHandleStruct
 		readPlan                     []*ilayout.ExtentMapEntryValueV1Struct
@@ -434,10 +419,12 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		globals.stats.DoReadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	obtainExclusiveLock = false
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = uint64(inHeader.NodeID)
-	inodeLockRequest.exclusive = true
+	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
 		goto Retry
@@ -468,6 +455,18 @@ Retry:
 		inodeLockRequest.unlockAll()
 		readOut = nil
 		errno = syscall.ENOENT
+		return
+	}
+
+	obtainExclusiveLock, errno = inode.ensureInodeHeadV1NonNil(obtainExclusiveLock)
+	if errno == 0 {
+		if obtainExclusiveLock {
+			inodeLockRequest.unlockAll()
+			goto Retry
+		}
+	} else {
+		inodeLockRequest.unlockAll()
+		readOut = nil
 		return
 	}
 
@@ -672,6 +671,13 @@ Retry:
 		inodeLockRequest.unlockAll()
 		writeOut = nil
 		errno = syscall.ENOENT
+		return
+	}
+
+	_, errno = inode.ensureInodeHeadV1NonNil(true)
+	if errno != 0 {
+		inodeLockRequest.unlockAll()
+		writeOut = nil
 		return
 	}
 
