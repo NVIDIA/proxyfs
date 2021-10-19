@@ -229,6 +229,45 @@ func lookupInode(inodeNumber uint64) (inode *inodeStruct) {
 	return
 }
 
+func createOpenHandle(inodeNumber uint64) (openHandle *openHandleStruct) {
+	openHandle = &openHandleStruct{
+		inodeNumber: inodeNumber,
+		fissionFH:   fetchNonce(),
+	}
+
+	globals.Lock()
+
+	globals.openHandleMapByInodeNumber[openHandle.inodeNumber] = openHandle
+	globals.openHandleMapByFissionFH[openHandle.fissionFH] = openHandle
+
+	globals.Unlock()
+
+	return
+}
+
+func (openHandle *openHandleStruct) destroy() {
+	var (
+		ok bool
+	)
+
+	globals.Lock()
+
+	_, ok = globals.openHandleMapByInodeNumber[openHandle.inodeNumber]
+	if !ok {
+		logFatalf("globals.openHandleMapByInodeNumber[openHandle.inodeNumber] returned !ok")
+	}
+
+	_, ok = globals.openHandleMapByFissionFH[openHandle.fissionFH]
+	if !ok {
+		logFatalf("globals.openHandleMapByFissionFH[openHandle.fissionFH] returned !ok")
+	}
+
+	delete(globals.openHandleMapByInodeNumber, openHandle.inodeNumber)
+	delete(globals.openHandleMapByFissionFH, openHandle.fissionFH)
+
+	globals.Unlock()
+}
+
 func lookupOpenHandleByInodeNumber(inodeNumber uint64) (openHandle *openHandleStruct) {
 	var (
 		ok bool
