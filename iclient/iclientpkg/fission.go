@@ -144,7 +144,7 @@ Retry:
 		return
 	}
 
-	obtainExclusiveLock, errno = inode.ensureInodeHeadV1NonNil(obtainExclusiveLock)
+	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
 	if errno == 0 {
 		if obtainExclusiveLock {
 			inodeLockRequest.unlockAll()
@@ -461,7 +461,7 @@ Retry:
 		return
 	}
 
-	obtainExclusiveLock, errno = inode.ensureInodeHeadV1NonNil(obtainExclusiveLock)
+	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
 	if errno == 0 {
 		if obtainExclusiveLock {
 			inodeLockRequest.unlockAll()
@@ -677,7 +677,7 @@ Retry:
 		return
 	}
 
-	_, errno = inode.ensureInodeHeadV1NonNil(true)
+	_, errno = inode.ensureInodeHeadV1IsNonNil(true)
 	if errno != 0 {
 		inodeLockRequest.unlockAll()
 		writeOut = nil

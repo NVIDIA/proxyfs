@@ -231,8 +231,11 @@ func lookupInode(inodeNumber uint64) (inode *inodeStruct) {
 
 func createOpenHandle(inodeNumber uint64) (openHandle *openHandleStruct) {
 	openHandle = &openHandleStruct{
-		inodeNumber: inodeNumber,
-		fissionFH:   fetchNonce(),
+		inodeNumber:        inodeNumber,
+		fissionFH:          fetchNonce(),
+		fissionFlagsAppend: false, // To be filled in by caller
+		fissionFlagsRead:   false, // To be filled in by caller
+		fissionFlagsWrite:  false, // To be filled in by caller
 	}
 
 	globals.Lock()
@@ -442,14 +445,15 @@ func (inode *inodeStruct) convertLayoutMapToInodeHeadV1Layout() {
 	}
 }
 
-// ensureInodeHeadV1NonNil will ensure inode.inodeHeadV1 is non-nil. As such, if it is
-// currently nil at entry, ensureInodeHeadV1NonNil() will need exclusive access to the
-// inode. In this case, if the exclusive lock is not held, ensureInodeHeadV1NonNil()
-// will return without error but indicate an exclusive lock is needed. Note that if
-// inode.inodeHeadV1 was non-nil or an exclusive lock was already held, ensureInodeHeadV1NonNil()
+// ensureInodeHeadV1IsNonNil will ensure inode.inodeHeadV1 is non-nil. As
+// such, if it is currently nil at entry, ensureInodeHeadV1IsNonNil() will
+// need exclusive access to the inode. In this case, if the exclusive lock
+// is not held, ensureInodeHeadV1IsNonNil() will return without error but
+// indicate an exclusive lock is needed. Note that if inode.inodeHeadV1 was
+// non-nil or an exclusive lock was already held, ensureInodeHeadV1IsNonNil()
 // will return that it (no longer) needs an exclusive lock and without error.
 //
-func (inode *inodeStruct) ensureInodeHeadV1NonNil(exclusivelyLocked bool) (needExclusiveLock bool, errno syscall.Errno) {
+func (inode *inodeStruct) ensureInodeHeadV1IsNonNil(exclusivelyLocked bool) (needExclusiveLock bool, errno syscall.Errno) {
 	var (
 		err                        error
 		getInodeTableEntryRequest  *imgrpkg.GetInodeTableEntryRequestStruct
