@@ -9,7 +9,7 @@ jobs:
           fetch-depth: 0
           submodules: false
       - name: Build, run unit tests, and get coverage
-        run: docker run -e "COVERALLS_TOKEN=${{ secrets.COVERALLS_TOKEN }}" -e "GIT_BRANCH=${{ github.ref }}" --cap-add SYS_ADMIN --device /dev/fuse -i -v `pwd`:/gopathroot/src/github.com/NVIDIA/proxyfs golang:1.17.2 /bin/bash -c "cd /gopathroot/src/github.com/NVIDIA/proxyfs ; ls"
+        run: docker run -e "COVERALLS_TOKEN=${{ secrets.COVERALLS_TOKEN }}" -e "GIT_BRANCH=${{ github.ref }}" --cap-add SYS_ADMIN --device /dev/fuse -i -v `pwd`:/gopathroot/src/github.com/NVIDIA/proxyfs golang:1.17.2 /bin/bash -c "cd /gopathroot/src/github.com/NVIDIA/proxyfs ; make ci"
       - name: Slack Notification
         uses: rtCamp/action-slack-notify@v2
         env:
