@@ -208,10 +208,14 @@ func updateSwithAuthTokenAndSwiftStorageURL() {
 
 	globals.Unlock()
 
+	logTracef("==> iauth.PerformAuth(authPlugInPath: %s, authInString: %s", globals.config.AuthPlugInPath, globals.swiftAuthInString)
+
 	globals.swiftAuthToken, globals.swiftStorageURL, err = iauth.PerformAuth(globals.config.AuthPlugInPath, globals.swiftAuthInString)
 	if nil != err {
 		logFatalf("iauth.PerformAuth() failed: %v", err)
 	}
+
+	logTracef("<== iauth.PerformAuth(authToken: %s, storageURL: %s)", globals.swiftAuthToken, globals.swiftStorageURL)
 
 	globals.Lock()
 	globals.swiftAuthWaitGroup.Done()
@@ -253,6 +257,11 @@ func rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *im
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest: %+v)", adjustInodeTableEntryOpenCountRequest)
+	defer func() {
+		logTracef("<== rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountResponse: %+v, err: %v)", adjustInodeTableEntryOpenCountResponse, err)
+	}()
+
 	defer func() {
 		globals.stats.AdjustInodeTableEntryOpenCountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -266,6 +275,11 @@ func rpcDeleteInodeTableEntry(deleteInodeTableEntryRequest *imgrpkg.DeleteInodeT
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> rpcDeleteInodeTableEntry(deleteInodeTableEntryRequest: %+v)", deleteInodeTableEntryRequest)
+	defer func() {
+		logTracef("<== rpcDeleteInodeTableEntry(deleteInodeTableEntryResponse: %+v, err: %v)", deleteInodeTableEntryResponse, err)
+	}()
 
 	defer func() {
 		globals.stats.DeleteInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -281,6 +295,11 @@ func rpcFetchNonceRange(fetchNonceRangeRequest *imgrpkg.FetchNonceRangeRequestSt
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> rpcFetchNonceRange(fetchNonceRangeRequest: %+v)", fetchNonceRangeRequest)
+	defer func() {
+		logTracef("<== rpcFetchNonceRange(fetchNonceRangeResponse: %+v, err: %v)", fetchNonceRangeResponse, err)
+	}()
+
 	defer func() {
 		globals.stats.FetchNonceRangeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -294,6 +313,11 @@ func rpcFlush(flushRequest *imgrpkg.FlushRequestStruct, flushResponse *imgrpkg.F
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> rpcFlush(flushRequest: %+v)", flushRequest)
+	defer func() {
+		logTracef("<== rpcFlush(flushResponse: %+v, err: %v)", flushResponse, err)
+	}()
 
 	defer func() {
 		globals.stats.FlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -309,6 +333,11 @@ func rpcGetInodeTableEntry(getInodeTableEntryRequest *imgrpkg.GetInodeTableEntry
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> rpcGetInodeTableEntry(getInodeTableEntryRequest: %+v)", getInodeTableEntryRequest)
+	defer func() {
+		logTracef("<== rpcGetInodeTableEntry(getInodeTableEntryResponse: %+v, err: %v)", getInodeTableEntryResponse, err)
+	}()
+
 	defer func() {
 		globals.stats.GetInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -322,6 +351,11 @@ func rpcLease(leaseRequest *imgrpkg.LeaseRequestStruct, leaseResponse *imgrpkg.L
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> rpcLease(leaseRequest: %+v)", leaseRequest)
+	defer func() {
+		logTracef("<== rpcLease(leaseResponse: %+v, err: %v)", leaseResponse, err)
+	}()
 
 	defer func() {
 		globals.stats.LeaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -337,6 +371,11 @@ func rpcMount(mountRequest *imgrpkg.MountRequestStruct, mountResponse *imgrpkg.M
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> rpcMount(mountRequest: %+v)", mountRequest)
+	defer func() {
+		logTracef("<== rpcMount(mountResponse: %+v, err: %v)", mountResponse, err)
+	}()
+
 	defer func() {
 		globals.stats.MountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -350,6 +389,11 @@ func rpcPutInodeTableEntries(putInodeTableEntriesRequest *imgrpkg.PutInodeTableE
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> rpcPutInodeTableEntries(rpcPutInodeTableEntries: %+v)", rpcPutInodeTableEntries)
+	defer func() {
+		logTracef("<== rpcPutInodeTableEntries(putInodeTableEntriesResponse: %+v, err: %v)", putInodeTableEntriesResponse, err)
+	}()
 
 	defer func() {
 		globals.stats.PutInodeTableEntriesUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -365,6 +409,11 @@ func rpcRenewMount(renewMountRequest *imgrpkg.RenewMountRequestStruct, renewMoun
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> rpcRenewMount(renewMountRequest: %+v)", renewMountRequest)
+	defer func() {
+		logTracef("<== rpcRenewMount(renewMountResponse: %+v, err: %v)", renewMountResponse, err)
+	}()
+
 	defer func() {
 		globals.stats.DoGetAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -378,6 +427,11 @@ func rpcUnmount(unmountRequest *imgrpkg.UnmountRequestStruct, unmountResponse *i
 	var (
 		startTime time.Time = time.Now()
 	)
+
+	logTracef("==> rpcUnmount(unmountRequest: %+v)", unmountRequest)
+	defer func() {
+		logTracef("<== rpcUnmount(unmountResponse: %+v, err: %v)", unmountResponse, err)
+	}()
 
 	defer func() {
 		globals.stats.UnmountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))

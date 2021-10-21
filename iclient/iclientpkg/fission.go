@@ -11,6 +11,7 @@ import (
 	"github.com/NVIDIA/sortedmap"
 
 	"github.com/NVIDIA/proxyfs/ilayout"
+	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
 )
 
 const (
@@ -100,7 +101,6 @@ func (dummy *globalsStruct) DoForget(inHeader *fission.InHeader, forgetIn *fissi
 		globals.stats.DoForgetUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
 	return
 }
 
@@ -129,14 +129,14 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 
 Retry:
 	inodeLockRequest = newLockRequest()
-	inodeLockRequest.inodeNumber = uint64(inHeader.NodeID)
+	inodeLockRequest.inodeNumber = inHeader.NodeID
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
 		goto Retry
 	}
 
-	inode = lookupInode(uint64(inHeader.NodeID))
+	inode = lookupInode(inHeader.NodeID)
 	if nil == inode {
 		inodeLockRequest.unlockAll()
 		getAttrOut = nil
@@ -183,9 +183,9 @@ Retry:
 		},
 	}
 
-	inodeLockRequest.unlockAll()
-
 	fixAttrSizes(&getAttrOut.Attr)
+
+	inodeLockRequest.unlockAll()
 
 	errno = 0
 	return
@@ -369,7 +369,14 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 
 func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.OpenIn) (openOut *fission.OpenOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		adjustInodeTableEntryOpenCountRequest  *imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct
+		adjustInodeTableEntryOpenCountResponse *imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct
+		err                                    error
+		inode                                  *inodeStruct
+		inodeLockRequest                       *inodeLockRequestStruct
+		obtainExclusiveLock                    bool
+		openHandle                             *openHandleStruct
+		startTime                              time.Time = time.Now()
 	)
 
 	logTracef("==> DoOpen(inHeader: %+v, openIn: %+v)", inHeader, openIn)
@@ -381,9 +388,70 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 		globals.stats.DoOpenUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	openOut = nil
-	errno = syscall.ENOSYS
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		openOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
+	if errno == 0 {
+		if obtainExclusiveLock {
+			inodeLockRequest.unlockAll()
+			goto Retry
+		}
+	} else {
+		inodeLockRequest.unlockAll()
+		openOut = nil
+		return
+	}
+
+	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeFile {
+		inodeLockRequest.unlockAll()
+		openOut = nil
+		errno = syscall.ENXIO
+	}
+
+	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
+		MountID:     globals.mountID,
+		InodeNumber: inode.inodeNumber,
+		Adjustment:  1,
+	}
+	adjustInodeTableEntryOpenCountResponse = &imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct{}
+
+	err = rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+	if nil != err {
+		logWarnf("rpcAdjustInodeTableEntryOpenCount() returned err: %v", err)
+	}
+
+	openHandle = createOpenHandle(inode.inodeNumber)
+
+	openHandle.fissionFlagsAppend = (openIn.Flags & syscall.O_APPEND) == syscall.O_APPEND
+	openHandle.fissionFlagsRead = ((openIn.Flags & syscall.O_ACCMODE) == syscall.O_RDONLY) || ((openIn.Flags & syscall.O_ACCMODE) == syscall.O_RDWR)
+	openHandle.fissionFlagsWrite = ((openIn.Flags & syscall.O_ACCMODE) == syscall.O_RDWR) || ((openIn.Flags & syscall.O_ACCMODE) == syscall.O_WRONLY)
+
+	openOut = &fission.OpenOut{
+		FH:        openHandle.fissionFH,
+		OpenFlags: 0,
+		Padding:   0,
+	}
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
@@ -426,7 +494,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 
 Retry:
 	inodeLockRequest = newLockRequest()
-	inodeLockRequest.inodeNumber = uint64(inHeader.NodeID)
+	inodeLockRequest.inodeNumber = inHeader.NodeID
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
@@ -440,7 +508,7 @@ Retry:
 		errno = syscall.EBADF
 		return
 	}
-	if openHandle.inodeNumber != uint64(inHeader.NodeID) {
+	if openHandle.inodeNumber != inHeader.NodeID {
 		inodeLockRequest.unlockAll()
 		readOut = nil
 		errno = syscall.EBADF
@@ -642,7 +710,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 Retry:
 	inodeLockRequest = newLockRequest()
-	inodeLockRequest.inodeNumber = uint64(inHeader.NodeID)
+	inodeLockRequest.inodeNumber = inHeader.NodeID
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
@@ -656,7 +724,7 @@ Retry:
 		errno = syscall.EBADF
 		return
 	}
-	if openHandle.inodeNumber != uint64(inHeader.NodeID) {
+	if openHandle.inodeNumber != inHeader.NodeID {
 		inodeLockRequest.unlockAll()
 		writeOut = nil
 		errno = syscall.EBADF
@@ -736,7 +804,14 @@ func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fis
 
 func (dummy *globalsStruct) DoRelease(inHeader *fission.InHeader, releaseIn *fission.ReleaseIn) (errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		adjustInodeTableEntryOpenCountRequest  *imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct
+		adjustInodeTableEntryOpenCountResponse *imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct
+		err                                    error
+		inode                                  *inodeStruct
+		inodeLockRequest                       *inodeLockRequestStruct
+		obtainExclusiveLock                    bool
+		openHandle                             *openHandleStruct
+		startTime                              time.Time = time.Now()
 	)
 
 	logTracef("==> DoRelease(inHeader: %+v, releaseIn: %+v)", inHeader, releaseIn)
@@ -748,8 +823,67 @@ func (dummy *globalsStruct) DoRelease(inHeader *fission.InHeader, releaseIn *fis
 		globals.stats.DoReleaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	errno = syscall.ENOSYS
+	openHandle = lookupOpenHandleByFissionFH(releaseIn.FH)
+	if nil == openHandle {
+		errno = syscall.EBADF
+		return
+	}
+	if openHandle.inodeNumber != inHeader.NodeID {
+		errno = syscall.EBADF
+		return
+	}
+
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		errno = syscall.EBADF
+		return
+	}
+
+	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
+	if errno == 0 {
+		if obtainExclusiveLock {
+			inodeLockRequest.unlockAll()
+			goto Retry
+		}
+	} else {
+		inodeLockRequest.unlockAll()
+		return
+	}
+
+	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeFile {
+		inodeLockRequest.unlockAll()
+		errno = syscall.EBADF
+	}
+
+	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
+		MountID:     globals.mountID,
+		InodeNumber: inode.inodeNumber,
+		Adjustment:  -1,
+	}
+	adjustInodeTableEntryOpenCountResponse = &imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct{}
+
+	err = rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+	if nil != err {
+		logWarnf("rpcAdjustInodeTableEntryOpenCount() returned err: %v", err)
+	}
+
+	openHandle.destroy()
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
@@ -883,8 +1017,6 @@ func (dummy *globalsStruct) DoInit(inHeader *fission.InHeader, initIn *fission.I
 		globals.stats.DoInitUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-
 	initOut = &fission.InitOut{
 		Major:                initIn.Major,
 		Minor:                initIn.Minor,
@@ -901,7 +1033,14 @@ func (dummy *globalsStruct) DoInit(inHeader *fission.InHeader, initIn *fission.I
 
 func (dummy *globalsStruct) DoOpenDir(inHeader *fission.InHeader, openDirIn *fission.OpenDirIn) (openDirOut *fission.OpenDirOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		adjustInodeTableEntryOpenCountRequest  *imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct
+		adjustInodeTableEntryOpenCountResponse *imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct
+		err                                    error
+		inode                                  *inodeStruct
+		inodeLockRequest                       *inodeLockRequestStruct
+		obtainExclusiveLock                    bool
+		openHandle                             *openHandleStruct
+		startTime                              time.Time = time.Now()
 	)
 
 	logTracef("==> DoOpenDir(inHeader: %+v, openDirIn: %+v)", inHeader, openDirIn)
@@ -913,9 +1052,76 @@ func (dummy *globalsStruct) DoOpenDir(inHeader *fission.InHeader, openDirIn *fis
 		globals.stats.DoOpenDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	openDirOut = nil
-	errno = syscall.ENOSYS
+	if ((openDirIn.Flags & syscall.O_APPEND) == syscall.O_APPEND) || ((openDirIn.Flags & syscall.O_ACCMODE) != syscall.O_RDONLY) {
+		openDirOut = nil
+		errno = syscall.EACCES
+		return
+	}
+
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		openDirOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
+	if errno == 0 {
+		if obtainExclusiveLock {
+			inodeLockRequest.unlockAll()
+			goto Retry
+		}
+	} else {
+		inodeLockRequest.unlockAll()
+		openDirOut = nil
+		return
+	}
+
+	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		openDirOut = nil
+		errno = syscall.ENOTDIR
+	}
+
+	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
+		MountID:     globals.mountID,
+		InodeNumber: inode.inodeNumber,
+		Adjustment:  1,
+	}
+	adjustInodeTableEntryOpenCountResponse = &imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct{}
+
+	err = rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+	if nil != err {
+		logWarnf("rpcAdjustInodeTableEntryOpenCount() returned err: %v", err)
+	}
+
+	openHandle = createOpenHandle(inode.inodeNumber)
+
+	openHandle.fissionFlagsAppend = false
+	openHandle.fissionFlagsRead = true
+	openHandle.fissionFlagsWrite = false
+
+	openDirOut = &fission.OpenDirOut{
+		FH:        openHandle.fissionFH,
+		OpenFlags: 0,
+		Padding:   0,
+	}
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
@@ -941,7 +1147,14 @@ func (dummy *globalsStruct) DoReadDir(inHeader *fission.InHeader, readDirIn *fis
 
 func (dummy *globalsStruct) DoReleaseDir(inHeader *fission.InHeader, releaseDirIn *fission.ReleaseDirIn) (errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		adjustInodeTableEntryOpenCountRequest  *imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct
+		adjustInodeTableEntryOpenCountResponse *imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct
+		err                                    error
+		inode                                  *inodeStruct
+		inodeLockRequest                       *inodeLockRequestStruct
+		obtainExclusiveLock                    bool
+		openHandle                             *openHandleStruct
+		startTime                              time.Time = time.Now()
 	)
 
 	logTracef("==> DoReleaseDir(inHeader: %+v, releaseDirIn: %+v)", inHeader, releaseDirIn)
@@ -953,8 +1166,67 @@ func (dummy *globalsStruct) DoReleaseDir(inHeader *fission.InHeader, releaseDirI
 		globals.stats.DoReleaseDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	errno = syscall.ENOSYS
+	openHandle = lookupOpenHandleByFissionFH(releaseDirIn.FH)
+	if nil == openHandle {
+		errno = syscall.EBADF
+		return
+	}
+	if openHandle.inodeNumber != inHeader.NodeID {
+		errno = syscall.EBADF
+		return
+	}
+
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		errno = syscall.EBADF
+		return
+	}
+
+	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
+	if errno == 0 {
+		if obtainExclusiveLock {
+			inodeLockRequest.unlockAll()
+			goto Retry
+		}
+	} else {
+		inodeLockRequest.unlockAll()
+		return
+	}
+
+	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		errno = syscall.EBADF
+	}
+
+	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
+		MountID:     globals.mountID,
+		InodeNumber: inode.inodeNumber,
+		Adjustment:  -1,
+	}
+	adjustInodeTableEntryOpenCountResponse = &imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct{}
+
+	err = rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+	if nil != err {
+		logWarnf("rpcAdjustInodeTableEntryOpenCount() returned err: %v", err)
+	}
+
+	openHandle.destroy()
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
@@ -1085,9 +1357,6 @@ func (dummy *globalsStruct) DoInterrupt(inHeader *fission.InHeader, interruptIn 
 	defer func() {
 		globals.stats.DoInterruptUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
-
-	// TODO
-	return
 }
 
 func (dummy *globalsStruct) DoBMap(inHeader *fission.InHeader, bMapIn *fission.BMapIn) (bMapOut *fission.BMapOut, errno syscall.Errno) {
@@ -1142,7 +1411,6 @@ func (dummy *globalsStruct) DoPoll(inHeader *fission.InHeader, pollIn *fission.P
 		globals.stats.DoPollUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
 	pollOut = nil
 	errno = syscall.ENOSYS
 	return
@@ -1162,7 +1430,6 @@ func (dummy *globalsStruct) DoBatchForget(inHeader *fission.InHeader, batchForge
 		globals.stats.DoBatchForgetUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
 	return
 }
 
@@ -1180,7 +1447,6 @@ func (dummy *globalsStruct) DoFAllocate(inHeader *fission.InHeader, fAllocateIn 
 		globals.stats.DoFAllocateUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
 	errno = syscall.ENOSYS
 	return
 }
@@ -1238,7 +1504,6 @@ func (dummy *globalsStruct) DoLSeek(inHeader *fission.InHeader, lSeekIn *fission
 		globals.stats.DoLSeekUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
 	lSeekOut = nil
 	errno = syscall.ENOSYS
 	return

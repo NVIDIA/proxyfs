@@ -229,6 +229,10 @@ func lookupInode(inodeNumber uint64) (inode *inodeStruct) {
 	return
 }
 
+// createOpenHandle allocates an openHandleStruct and inserts it into the globals openHandle
+// maps by both inodeNumber and fissionFH. Note that the fissionFlags* fields all default to
+// false. Callers are expected to modify as necessary.
+//
 func createOpenHandle(inodeNumber uint64) (openHandle *openHandleStruct) {
 	openHandle = &openHandleStruct{
 		inodeNumber:        inodeNumber,

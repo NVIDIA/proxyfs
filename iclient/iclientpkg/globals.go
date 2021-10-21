@@ -93,8 +93,8 @@ type openHandleStruct struct {
 	inodeNumber        uint64
 	fissionFH          uint64 // As returned in fission.{CreateOut|OpenOut|OpenDirOut}.FH
 	fissionFlagsAppend bool   // As supplied in fission.{CreateIn|OpenIn}.Flags           [true if (.Flags & syscall.O_APPEND) == syscall.O_APPEND]
-	fissionFlagsRead   bool   // As supplied in fission.{CreateIn|OpenIn|OpenDirIn}.Flags [true if (.Flags & (syscall.O_RDONLY|syscall.O_RDWR|syscall.O_WRONLY) is one of syscall.{O_RDONLY|O_RDWR}]
-	fissionFlagsWrite  bool   // As supplied in fission.{CreateIn|OpenIn|OpenDirIn}.Flags [true if (.Flags & (syscall.O_RDONLY|syscall.O_RDWR|syscall.O_WRONLY) is one of syscall.{O_RDWR|O_WRONLY}]
+	fissionFlagsRead   bool   // As supplied in fission.{CreateIn|OpenIn|OpenDirIn}.Flags [true if (.Flags & (syscall.O_ACCMODE) is one of syscall.{O_RDONLY|O_RDWR}]
+	fissionFlagsWrite  bool   // As supplied in fission.{CreateIn|OpenIn|OpenDirIn}.Flags [true if (.Flags & (syscall.O_ACCMODE) is one of syscall.{O_RDWR|O_WRONLY}]
 }
 
 type inodeStruct struct {
