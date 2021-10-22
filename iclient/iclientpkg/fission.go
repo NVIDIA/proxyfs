@@ -1155,12 +1155,24 @@ Retry:
 
 func (dummy *globalsStruct) DoReadDir(inHeader *fission.InHeader, readDirIn *fission.ReadDirIn) (readDirOut *fission.ReadDirOut, errno syscall.Errno) {
 	var (
-		err                 error
-		inode               *inodeStruct
-		inodeLockRequest    *inodeLockRequestStruct
-		obtainExclusiveLock bool
-		openHandle          *openHandleStruct
-		startTime           time.Time = time.Now()
+		dirEntCountMax               uint64
+		dirEntMinSize                uint64
+		dirEntSize                   uint64
+		dirEntSliceSize              uint64
+		dirEntType                   uint32
+		directoryEntryIndex          int
+		directoryEntryKeyV1          string
+		directoryEntryKeyV1AsKey     sortedmap.Key
+		directoryEntryValueV1        *ilayout.DirectoryEntryValueV1Struct
+		directoryEntryValueV1AsValue sortedmap.Value
+		directoryLen                 int
+		err                          error
+		inode                        *inodeStruct
+		inodeLockRequest             *inodeLockRequestStruct
+		obtainExclusiveLock          bool
+		ok                           bool
+		openHandle                   *openHandleStruct
+		startTime                    time.Time = time.Now()
 	)
 
 	logTracef("==> DoReadDir(inHeader: %+v, readDirIn: %+v)", inHeader, readDirIn)
@@ -1242,9 +1254,88 @@ Retry:
 		}
 	}
 
-	inodeLockRequest.unlockAll() // TODO
-	readDirOut = nil
-	errno = syscall.ENOSYS
+	dirEntMinSize = fission.DirEntFixedPortionSize + 1 + fission.DirEntAlignment - 1
+	dirEntMinSize /= fission.DirEntAlignment
+	dirEntMinSize *= fission.DirEntAlignment
+	dirEntCountMax = uint64(readDirIn.Size) / dirEntMinSize
+
+	readDirOut = &fission.ReadDirOut{
+		DirEnt: make([]fission.DirEnt, 0, dirEntCountMax),
+	}
+
+	if dirEntCountMax == 0 {
+		inodeLockRequest.unlockAll()
+		errno = 0
+		return
+	}
+
+	directoryLen, err = inode.payload.Len()
+	if nil != err {
+		logFatalf("inode.payload.Len() failed: %v", err)
+	}
+
+	if readDirIn.Offset >= uint64(directoryLen) {
+		inodeLockRequest.unlockAll()
+		errno = 0
+		return
+	}
+
+	directoryEntryIndex = int(readDirIn.Offset)
+	dirEntSliceSize = 0
+
+	for directoryEntryIndex < directoryLen {
+		directoryEntryKeyV1AsKey, directoryEntryValueV1AsValue, ok, err = inode.payload.GetByIndex(directoryEntryIndex)
+		if nil != err {
+			logFatalf("inode.payload.GetByIndex(directoryEntryIndex) failed: %v", err)
+		}
+		if !ok {
+			logFatalf("inode.payload.GetByIndex(directoryEntryIndex) returned !ok")
+		}
+
+		directoryEntryKeyV1, ok = directoryEntryKeyV1AsKey.(string)
+		if !ok {
+			logFatalf("directoryEntryKeyV1AsKey.(string) returned !ok")
+		}
+
+		directoryEntryValueV1, ok = directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct)
+		if !ok {
+			logFatalf("directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
+		}
+
+		dirEntSize = fission.DirEntFixedPortionSize + uint64(len(directoryEntryKeyV1)) + fission.DirEntAlignment - 1
+		dirEntSize /= fission.DirEntAlignment
+		dirEntSize *= fission.DirEntAlignment
+
+		dirEntSliceSize += dirEntSize
+		if dirEntSliceSize > uint64(readDirIn.Size) {
+			break
+		}
+
+		directoryEntryIndex++
+
+		switch directoryEntryValueV1.InodeType {
+		case ilayout.InodeTypeDir:
+			dirEntType = syscall.S_IFDIR
+		case ilayout.InodeTypeFile:
+			dirEntType = syscall.S_IFREG
+		case ilayout.InodeTypeSymLink:
+			dirEntType = syscall.S_IFLNK
+		default:
+			logFatalf("directoryEntryValueV1.InodeType (%v) unknown", directoryEntryValueV1.InodeType)
+		}
+
+		readDirOut.DirEnt = append(readDirOut.DirEnt, fission.DirEnt{
+			Ino:     directoryEntryValueV1.InodeNumber,
+			Off:     uint64(directoryEntryIndex),
+			NameLen: uint32(len(directoryEntryKeyV1)),
+			Type:    dirEntType,
+			Name:    []byte(directoryEntryKeyV1),
+		})
+	}
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
@@ -1560,6 +1651,8 @@ func (dummy *globalsStruct) DoFAllocate(inHeader *fission.InHeader, fAllocateIn 
 
 func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlusIn *fission.ReadDirPlusIn) (readDirPlusOut *fission.ReadDirPlusOut, errno syscall.Errno) {
 	var (
+		dirEntAlignSize     uint64
+		dirEntCountMax      uint64
 		err                 error
 		inode               *inodeStruct
 		inodeLockRequest    *inodeLockRequestStruct
@@ -1647,9 +1740,23 @@ Retry:
 		}
 	}
 
+	dirEntAlignSize = fission.DirEntPlusFixedPortionSize + fission.DirEntAlignment - 1
+	dirEntAlignSize /= fission.DirEntAlignment
+	dirEntAlignSize *= fission.DirEntAlignment
+	dirEntCountMax = uint64(readDirPlusIn.Size) / dirEntAlignSize
+
+	readDirPlusOut = &fission.ReadDirPlusOut{
+		DirEntPlus: make([]fission.DirEntPlus, 0, dirEntCountMax),
+	}
+
+	if dirEntCountMax == 0 {
+		inodeLockRequest.unlockAll()
+		errno = 0
+		return
+	}
+
 	inodeLockRequest.unlockAll() // TODO
-	readDirPlusOut = nil
-	errno = syscall.ENOSYS
+	errno = 0
 	return
 }
 
