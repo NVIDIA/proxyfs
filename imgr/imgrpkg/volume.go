@@ -630,6 +630,7 @@ func putVolume(name string, storageURL string, authToken string) (err error) {
 		checkPointControlChan:         nil,
 		checkPointPutObjectNumber:     0,
 		checkPointPutObjectBuffer:     nil,
+		inodeOpenMap:                  make(map[uint64]uint64),
 		inodeLeaseMap:                 make(map[uint64]*inodeLeaseStruct),
 	}
 

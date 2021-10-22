@@ -547,7 +547,7 @@ Retry:
 
 	err = rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
 	if nil != err {
-		logWarnf("rpcAdjustInodeTableEntryOpenCount() returned err: %v", err)
+		logFatal(err)
 	}
 
 	openHandle = createOpenHandle(inode.inodeNumber)
@@ -1002,7 +1002,7 @@ Retry:
 
 	err = rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
 	if nil != err {
-		logWarnf("rpcAdjustInodeTableEntryOpenCount() returned err: %v", err)
+		logFatal(err)
 	}
 
 	openHandle.destroy()
@@ -1235,7 +1235,7 @@ Retry:
 
 	err = rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
 	if nil != err {
-		logWarnf("rpcAdjustInodeTableEntryOpenCount() returned err: %v", err)
+		logFatal(err)
 	}
 
 	openHandle = createOpenHandle(inode.inodeNumber)
@@ -1508,7 +1508,7 @@ Retry:
 
 	err = rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
 	if nil != err {
-		logWarnf("rpcAdjustInodeTableEntryOpenCount() returned err: %v", err)
+		logFatal(err)
 	}
 
 	openHandle.destroy()

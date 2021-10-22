@@ -217,6 +217,7 @@ type mountStruct struct {
 	authToken              string                         //
 	lastAuthTime           time.Time                      // used to periodically check TTL of authToken
 	listElement            *list.Element                  // LRU element on either volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList
+	inodeOpenMap           map[uint64]uint64              // key == inodeNumber; value == open count for this mountStruct for this inodeNumber
 }
 
 type inodeTableLayoutElementStruct struct {
@@ -245,6 +246,7 @@ type volumeStruct struct {
 	checkPointControlWG           sync.WaitGroup                            // checkPointDeamon() indicates it is done by calling .Done() on this WG
 	checkPointPutObjectNumber     uint64                                    //
 	checkPointPutObjectBuffer     *bytes.Buffer                             // if nil, no CheckPoint data to PUT has yet accumulated
+	inodeOpenMap                  map[uint64]uint64                         // key == inodeNumber; value == open count for all mountStruct's for this inodeNumber
 	inodeLeaseMap                 map[uint64]*inodeLeaseStruct              // key == inodeLeaseStruct.inodeNumber
 	leaseHandlerWG                sync.WaitGroup                            // .Add(1) each inodeLease insertion into inodeLeaseMap
 	//                                                                         .Done() each inodeLease after it is removed from inodeLeaseMap

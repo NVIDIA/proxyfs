@@ -182,13 +182,14 @@ func LogInfof(format string, args ...interface{}) {
 // E* specifies the prefix of an error string returned by any RetryRPC API
 //
 const (
-	EAuthTokenRejected  = "EAuthTokenRejected:"
-	ELeaseRequestDenied = "ELeaseRequestDenied:"
-	EMissingLease       = "EMissingLease:"
-	EVolumeBeingDeleted = "EVolumeBeingDeleted:"
-	EUnknownInodeNumber = "EUnknownInodeNumber:"
-	EUnknownMountID     = "EUnknownMountID:"
-	EUnknownVolumeName  = "EUnknownVolumeName:"
+	EAuthTokenRejected      = "EAuthTokenRejected:"
+	EBadOpenCountAdjustment = "EBadOpenCountAdjustment:"
+	ELeaseRequestDenied     = "ELeaseRequestDenied:"
+	EMissingLease           = "EMissingLease:"
+	EVolumeBeingDeleted     = "EVolumeBeingDeleted:"
+	EUnknownInodeNumber     = "EUnknownInodeNumber:"
+	EUnknownMountID         = "EUnknownMountID:"
+	EUnknownVolumeName      = "EUnknownVolumeName:"
 
 	ETODO = "ETODO:"
 )
@@ -232,6 +233,8 @@ type RenewMountResponseStruct struct{}
 
 // RenewMount updates the AuthToken for the specified MountID.
 //
+// Possible errors: EAuthTokenRejected EUnknownMountID
+//
 func (dummy *RetryRPCServerStruct) RenewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *RenewMountResponseStruct) (err error) {
 	return renewMount(renewMountRequest, renewMountResponse)
 }
@@ -248,6 +251,8 @@ type UnmountResponseStruct struct{}
 
 // Unmount requests that the given MountID be released (and implicitly releases
 // any Leases held by the MountID).
+//
+// Possible errors: EAuthTokenRejected EUnknownMountID
 //
 func (dummy *RetryRPCServerStruct) Unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountResponseStruct) (err error) {
 	return unmount(unmountRequest, unmountResponse)
@@ -271,6 +276,8 @@ type FetchNonceRangeResponseStruct struct {
 // FetchNonceRange requests a range of uint64 nonce values (i.e. values that will
 // never be reused).
 //
+// Possible errors: EAuthTokenRejected EUnknownMountID
+//
 func (dummy *RetryRPCServerStruct) FetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeResponse *FetchNonceRangeResponseStruct) (err error) {
 	return fetchNonceRange(fetchNonceRangeRequest, fetchNonceRangeResponse)
 }
@@ -291,6 +298,8 @@ type GetInodeTableEntryResponseStruct struct {
 
 // GetInodeTableEntry requests the Inode information for the specified Inode
 // (which must have an active Shared or Exclusive Lease granted to the MountID).
+//
+// Possible errors: EAuthTokenRejected EMissingLease EUnknownInodeNumber EUnknownMountID
 //
 func (dummy *RetryRPCServerStruct) GetInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStruct, getInodeTableEntryResponse *GetInodeTableEntryResponseStruct) (err error) {
 	return getInodeTableEntry(getInodeTableEntryRequest, getInodeTableEntryResponse)
@@ -332,6 +341,8 @@ type PutInodeTableEntriesResponseStruct struct{}
 // PutInodeTableEntries requests an atomic update of the listed Inodes (which must
 // each have an active Exclusive Lease granted to the MountID).
 //
+// Possible errors: EAuthTokenRejected EMissingLease EUnknownMountID
+//
 func (dummy *RetryRPCServerStruct) PutInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesRequestStruct, putInodeTableEntriesResponse *PutInodeTableEntriesResponseStruct) (err error) {
 	return putInodeTableEntries(putInodeTableEntriesRequest, putInodeTableEntriesResponse)
 }
@@ -351,6 +362,8 @@ type DeleteInodeTableEntryResponseStruct struct{}
 // An active Exclusive Lease must be granted to the MountID. Note that
 // unless/until the OpenCount for the Inode drops to zero, the Inode will
 // still exist.
+//
+// Possible errors: ETODO
 //
 func (dummy *RetryRPCServerStruct) DeleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *DeleteInodeTableEntryResponseStruct) (err error) {
 	return deleteInodeTableEntry(deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)
@@ -372,10 +385,12 @@ type AdjustInodeTableEntryOpenCountResponseStruct struct {
 }
 
 // AdjustInodeTableEntryOpenCount requests the specified Inode's OpenCount be
-// adjusted. A (Shared or Exclusive) Lease must be granted to the MountID. If
-// the adjustment results in an OpenCount of zero and the Inode has been marked
-// for deletion by a prior call to DeleteInodeTableEntry, the Inode will be
-// deleted.
+// adjusted. If the referenced InodeNumber is non-zero, a (Shared or Exclusive)
+// Lease must be granted to the MountID. If the adjustment results in an OpenCount
+// of zero and the Inode has been marked for deletion by a prior call to
+// DeleteInodeTableEntry, the Inode will be deleted.
+//
+// Possible errors: EAuthTokenRejected EBadOpenCountAdjustment EMissingLease EUnknownMountID
 //
 func (dummy *RetryRPCServerStruct) AdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct) (err error) {
 	return adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
@@ -393,7 +408,7 @@ type FlushResponseStruct struct{}
 
 // Flush that the results of prior PutInodeTableEntries requests be persisted.
 //
-// Possible errors: EUnknownMountID
+// Possible errors: EAuthTokenRejected EUnknownMountID
 //
 func (dummy *RetryRPCServerStruct) Flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct) (err error) {
 	return flush(flushRequest, flushResponse)
@@ -441,6 +456,8 @@ type LeaseResponseStruct struct {
 }
 
 // Lease is a blocking Lease Request.
+//
+// Possible errors: EAuthTokenRejected EUnknownMountID
 //
 func (dummy *RetryRPCServerStruct) Lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct) (err error) {
 	return lease(leaseRequest, leaseResponse)
