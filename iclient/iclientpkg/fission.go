@@ -28,8 +28,8 @@ const (
 		fission.InitFlagsAtomicOTrunc |
 		fission.InitFlagsBigWrites |
 		fission.InitFlagsAutoInvalData |
-		fission.InitFlagsDoReadDirPlus |
-		fission.InitFlagsReaddirplusAuto |
+		// fission.InitFlagsDoReadDirPlus | // UNDO once DoReadDir() is completed
+		// fission.InitFlagsReaddirplusAuto | // UNDO so that I can then test DoReadDirPlus()
 		fission.InitFlagsParallelDirops |
 		fission.InitFlagsMaxPages |
 		fission.InitFlagsExplicitInvalData
@@ -106,6 +106,7 @@ func (dummy *globalsStruct) DoForget(inHeader *fission.InHeader, forgetIn *fissi
 
 func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fission.GetAttrIn) (getAttrOut *fission.GetAttrOut, errno syscall.Errno) {
 	var (
+		err                  error
 		inode                *inodeStruct
 		inodeLockRequest     *inodeLockRequestStruct
 		modificationTimeNSec uint32
@@ -144,16 +145,20 @@ Retry:
 		return
 	}
 
-	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
-	if errno == 0 {
+	if nil == inode.inodeHeadV1 {
 		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				getAttrOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
 			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
 			goto Retry
 		}
-	} else {
-		inodeLockRequest.unlockAll()
-		getAttrOut = nil
-		return
 	}
 
 	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.ModificationTime.UnixNano()))
@@ -407,22 +412,27 @@ Retry:
 		return
 	}
 
-	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
-	if errno == 0 {
+	if nil == inode.inodeHeadV1 {
 		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				openOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
 			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
 			goto Retry
 		}
-	} else {
-		inodeLockRequest.unlockAll()
-		openOut = nil
-		return
 	}
 
 	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeFile {
 		inodeLockRequest.unlockAll()
 		openOut = nil
 		errno = syscall.ENXIO
+		return
 	}
 
 	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
@@ -529,16 +539,20 @@ Retry:
 		return
 	}
 
-	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
-	if errno == 0 {
+	if nil == inode.inodeHeadV1 {
 		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				readOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
 			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
 			goto Retry
 		}
-	} else {
-		inodeLockRequest.unlockAll()
-		readOut = nil
-		return
 	}
 
 	switch inode.inodeHeadV1.InodeType {
@@ -693,6 +707,7 @@ Retry:
 
 func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission.WriteIn) (writeOut *fission.WriteOut, errno syscall.Errno) {
 	var (
+		err              error
 		inode            *inodeStruct
 		inodeLockRequest *inodeLockRequestStruct
 		openHandle       *openHandleStruct
@@ -745,11 +760,14 @@ Retry:
 		return
 	}
 
-	_, errno = inode.ensureInodeHeadV1IsNonNil(true)
-	if errno != 0 {
-		inodeLockRequest.unlockAll()
-		writeOut = nil
-		return
+	if nil == inode.inodeHeadV1 {
+		err = inode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			writeOut = nil
+			errno = syscall.ENOENT
+			return
+		}
 	}
 
 	switch inode.inodeHeadV1.InodeType {
@@ -851,20 +869,25 @@ Retry:
 		return
 	}
 
-	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
-	if errno == 0 {
+	if nil == inode.inodeHeadV1 {
 		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
 			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
 			goto Retry
 		}
-	} else {
-		inodeLockRequest.unlockAll()
-		return
 	}
 
 	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeFile {
 		inodeLockRequest.unlockAll()
 		errno = syscall.EBADF
+		return
 	}
 
 	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
@@ -1077,22 +1100,27 @@ Retry:
 		return
 	}
 
-	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
-	if errno == 0 {
+	if nil == inode.inodeHeadV1 {
 		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				openDirOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
 			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
 			goto Retry
 		}
-	} else {
-		inodeLockRequest.unlockAll()
-		openDirOut = nil
-		return
 	}
 
 	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
 		inodeLockRequest.unlockAll()
 		openDirOut = nil
 		errno = syscall.ENOTDIR
+		return
 	}
 
 	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
@@ -1127,7 +1155,12 @@ Retry:
 
 func (dummy *globalsStruct) DoReadDir(inHeader *fission.InHeader, readDirIn *fission.ReadDirIn) (readDirOut *fission.ReadDirOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		err                 error
+		inode               *inodeStruct
+		inodeLockRequest    *inodeLockRequestStruct
+		obtainExclusiveLock bool
+		openHandle          *openHandleStruct
+		startTime           time.Time = time.Now()
 	)
 
 	logTracef("==> DoReadDir(inHeader: %+v, readDirIn: %+v)", inHeader, readDirIn)
@@ -1139,7 +1172,77 @@ func (dummy *globalsStruct) DoReadDir(inHeader *fission.InHeader, readDirIn *fis
 		globals.stats.DoReadDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
+	openHandle = lookupOpenHandleByFissionFH(readDirIn.FH)
+	if nil == openHandle {
+		readDirOut = nil
+		errno = syscall.EBADF
+		return
+	}
+	if openHandle.inodeNumber != inHeader.NodeID {
+		readDirOut = nil
+		errno = syscall.EBADF
+		return
+	}
+
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		readDirOut = nil
+		errno = syscall.EBADF
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				readDirOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
+			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
+			goto Retry
+		}
+	}
+
+	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		readDirOut = nil
+		errno = syscall.EBADF
+		return
+	}
+
+	if nil == inode.payload {
+		if obtainExclusiveLock {
+			err = inode.oldPayload()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				readDirOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
+			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
+			goto Retry
+		}
+	}
+
+	inodeLockRequest.unlockAll() // TODO
 	readDirOut = nil
 	errno = syscall.ENOSYS
 	return
@@ -1194,20 +1297,24 @@ Retry:
 		return
 	}
 
-	obtainExclusiveLock, errno = inode.ensureInodeHeadV1IsNonNil(obtainExclusiveLock)
-	if errno == 0 {
+	if nil == inode.inodeHeadV1 {
 		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
 			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
 			goto Retry
 		}
-	} else {
-		inodeLockRequest.unlockAll()
-		return
 	}
 
 	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
 		inodeLockRequest.unlockAll()
-		errno = syscall.EBADF
+		return
 	}
 
 	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
@@ -1453,7 +1560,12 @@ func (dummy *globalsStruct) DoFAllocate(inHeader *fission.InHeader, fAllocateIn 
 
 func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlusIn *fission.ReadDirPlusIn) (readDirPlusOut *fission.ReadDirPlusOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		err                 error
+		inode               *inodeStruct
+		inodeLockRequest    *inodeLockRequestStruct
+		obtainExclusiveLock bool
+		openHandle          *openHandleStruct
+		startTime           time.Time = time.Now()
 	)
 
 	logTracef("==> DoReadDirPlus(inHeader: %+v, readDirPlusIn: %+v)", inHeader, readDirPlusIn)
@@ -1465,7 +1577,77 @@ func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlu
 		globals.stats.DoReadDirPlusUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
+	openHandle = lookupOpenHandleByFissionFH(readDirPlusIn.FH)
+	if nil == openHandle {
+		readDirPlusOut = nil
+		errno = syscall.EBADF
+		return
+	}
+	if openHandle.inodeNumber != inHeader.NodeID {
+		readDirPlusOut = nil
+		errno = syscall.EBADF
+		return
+	}
+
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		readDirPlusOut = nil
+		errno = syscall.EBADF
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				readDirPlusOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
+			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
+			goto Retry
+		}
+	}
+
+	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		readDirPlusOut = nil
+		errno = syscall.EBADF
+		return
+	}
+
+	if nil == inode.payload {
+		if obtainExclusiveLock {
+			err = inode.oldPayload()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				readDirPlusOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
+			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
+			goto Retry
+		}
+	}
+
+	inodeLockRequest.unlockAll() // TODO
 	readDirPlusOut = nil
 	errno = syscall.ENOSYS
 	return

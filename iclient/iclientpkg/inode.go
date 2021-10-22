@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"syscall"
 
 	"github.com/NVIDIA/sortedmap"
 
@@ -364,6 +363,37 @@ Retry:
 	goto Retry
 }
 
+func (inode *inodeStruct) populateInodeHeadV1() (err error) {
+	var (
+		getInodeTableEntryRequest  *imgrpkg.GetInodeTableEntryRequestStruct
+		getInodeTableEntryResponse *imgrpkg.GetInodeTableEntryResponseStruct
+		inodeHeadV1Buf             []byte
+	)
+
+	getInodeTableEntryRequest = &imgrpkg.GetInodeTableEntryRequestStruct{
+		MountID:     globals.mountID,
+		InodeNumber: inode.inodeNumber,
+	}
+	getInodeTableEntryResponse = &imgrpkg.GetInodeTableEntryResponseStruct{}
+
+	err = rpcGetInodeTableEntry(getInodeTableEntryRequest, getInodeTableEntryResponse)
+	if nil != err {
+		return
+	}
+
+	inodeHeadV1Buf, err = objectGETTail(getInodeTableEntryResponse.InodeHeadObjectNumber, getInodeTableEntryResponse.InodeHeadLength)
+	if nil != err {
+		logFatalf("objectGETTail(getInodeTableEntryResponse.InodeHeadObjectNumber: %v, getInodeTableEntryResponse.InodeHeadLength: %v) failed: %v", getInodeTableEntryResponse.InodeHeadObjectNumber, getInodeTableEntryResponse.InodeHeadLength, err)
+	}
+
+	inode.inodeHeadV1, err = ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf)
+	if nil != err {
+		logFatalf("ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf) failed: %v", err)
+	}
+
+	return
+}
+
 func (inode *inodeStruct) newPayload() (err error) {
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
@@ -447,56 +477,4 @@ func (inode *inodeStruct) convertLayoutMapToInodeHeadV1Layout() {
 		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectSize = layoutMapEntry.objectSize
 		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].BytesReferenced = layoutMapEntry.bytesReferenced
 	}
-}
-
-// ensureInodeHeadV1IsNonNil will ensure inode.inodeHeadV1 is non-nil. As
-// such, if it is currently nil at entry, ensureInodeHeadV1IsNonNil() will
-// need exclusive access to the inode. In this case, if the exclusive lock
-// is not held, ensureInodeHeadV1IsNonNil() will return without error but
-// indicate an exclusive lock is needed. Note that if inode.inodeHeadV1 was
-// non-nil or an exclusive lock was already held, ensureInodeHeadV1IsNonNil()
-// will return that it (no longer) needs an exclusive lock and without error.
-//
-func (inode *inodeStruct) ensureInodeHeadV1IsNonNil(exclusivelyLocked bool) (needExclusiveLock bool, errno syscall.Errno) {
-	var (
-		err                        error
-		getInodeTableEntryRequest  *imgrpkg.GetInodeTableEntryRequestStruct
-		getInodeTableEntryResponse *imgrpkg.GetInodeTableEntryResponseStruct
-		inodeHeadV1Buf             []byte
-	)
-
-	if nil == inode.inodeHeadV1 {
-		if exclusivelyLocked {
-			needExclusiveLock = false
-
-			getInodeTableEntryRequest = &imgrpkg.GetInodeTableEntryRequestStruct{
-				MountID:     globals.mountID,
-				InodeNumber: inode.inodeNumber,
-			}
-			getInodeTableEntryResponse = &imgrpkg.GetInodeTableEntryResponseStruct{}
-
-			err = rpcGetInodeTableEntry(getInodeTableEntryRequest, getInodeTableEntryResponse)
-			if nil != err {
-				errno = syscall.ENOENT
-				return
-			}
-
-			inodeHeadV1Buf, err = objectGETTail(getInodeTableEntryResponse.InodeHeadObjectNumber, getInodeTableEntryResponse.InodeHeadLength)
-			if nil != err {
-				logFatalf("objectGETTail(getInodeTableEntryResponse.InodeHeadObjectNumber: %v, getInodeTableEntryResponse.InodeHeadLength: %v) failed: %v", getInodeTableEntryResponse.InodeHeadObjectNumber, getInodeTableEntryResponse.InodeHeadLength, err)
-			}
-
-			inode.inodeHeadV1, err = ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf)
-			if nil != err {
-				logFatalf("ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf) failed: %v", err)
-			}
-		} else {
-			needExclusiveLock = true
-		}
-	} else {
-		needExclusiveLock = false
-	}
-
-	errno = 0
-	return
 }
