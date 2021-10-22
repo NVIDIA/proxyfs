@@ -4,7 +4,7 @@
 package iclientpkg
 
 import (
-	"runtime"
+	"fmt"
 	"sync"
 	"syscall"
 	"time"
@@ -71,7 +71,14 @@ func performUnmountFUSE() (err error) {
 
 func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fission.LookupIn) (lookupOut *fission.LookupOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		directoryEntryValueV1        *ilayout.DirectoryEntryValueV1Struct
+		directoryEntryValueV1AsValue sortedmap.Value
+		err                          error
+		inode                        *inodeStruct
+		inodeLockRequest             *inodeLockRequestStruct
+		obtainExclusiveLock          bool
+		ok                           bool
+		startTime                    time.Time = time.Now()
 	)
 
 	logTracef("==> DoLookup(inHeader: %+v, lookupIn: %+v)", inHeader, lookupIn)
@@ -83,9 +90,103 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 		globals.stats.DoLookupUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	lookupOut = nil
-	errno = syscall.ENOSYS
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		lookupOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				lookupOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
+			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
+			goto Retry
+		}
+	}
+
+	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		lookupOut = nil
+		errno = syscall.ENOTDIR
+		return
+	}
+
+	if nil == inode.payload {
+		if obtainExclusiveLock {
+			err = inode.oldPayload()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				lookupOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
+			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
+			goto Retry
+		}
+	}
+
+	directoryEntryValueV1AsValue, ok, err = inode.payload.GetByKey(string(lookupIn.Name[:]))
+	if nil != err {
+		logFatalf("inode.payload.GetByKey(string(lookupIn.Name[:])) failed: %v", err)
+	}
+	if !ok {
+		inodeLockRequest.unlockAll()
+		lookupOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	directoryEntryValueV1, ok = directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct)
+	if !ok {
+		logFatalf("directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
+	}
+
+	inodeLockRequest.unlockAll()
+
+	lookupOut = &fission.LookupOut{
+		EntryOut: fission.EntryOut{
+			NodeID:         directoryEntryValueV1.InodeNumber,
+			Generation:     0,
+			EntryValidSec:  globals.fuseEntryValidDurationSec,
+			EntryValidNSec: globals.fuseEntryValidDurationNSec,
+			AttrValidSec:   globals.fuseAttrValidDurationSec,
+			AttrValidNSec:  globals.fuseAttrValidDurationNSec,
+			// Attr to be filled in below
+		},
+	}
+
+	err = doAttrFetch(directoryEntryValueV1.InodeNumber, &lookupOut.EntryOut.Attr)
+
+	if nil == err {
+		errno = 0
+	} else {
+		lookupOut = nil
+		errno = syscall.EIO
+	}
+
 	return
 }
 
@@ -1653,8 +1754,8 @@ func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlu
 		directoryEntryValueV1AsValue sortedmap.Value
 		directoryLen                 int
 		err                          error
-		helperErrorCount             uint64
-		helperWG                     sync.WaitGroup
+		gorAttrFetchErrorCount       uint64
+		gorAttrFetchWG               sync.WaitGroup
 		inode                        *inodeStruct
 		inodeLockRequest             *inodeLockRequestStruct
 		obtainExclusiveLock          bool
@@ -1823,16 +1924,16 @@ Retry:
 
 	inodeLockRequest.unlockAll()
 
-	helperErrorCount = 0
+	gorAttrFetchErrorCount = 0
 
 	for dirEntPlusIndex = range readDirPlusOut.DirEntPlus {
-		helperWG.Add(1)
-		go doReadDirPlusHelper(readDirPlusOut.DirEntPlus[dirEntPlusIndex].EntryOut.NodeID, &readDirPlusOut.DirEntPlus[dirEntPlusIndex].EntryOut.Attr, &helperWG, &helperErrorCount)
+		gorAttrFetchWG.Add(1)
+		go gorAttrFetch(readDirPlusOut.DirEntPlus[dirEntPlusIndex].EntryOut.NodeID, &readDirPlusOut.DirEntPlus[dirEntPlusIndex].EntryOut.Attr, &gorAttrFetchWG, &gorAttrFetchErrorCount)
 	}
 
-	helperWG.Wait()
+	gorAttrFetchWG.Wait()
 
-	if helperErrorCount == 0 {
+	if gorAttrFetchErrorCount == 0 {
 		errno = 0
 	} else {
 		readDirPlusOut = &fission.ReadDirPlusOut{
@@ -1842,84 +1943,6 @@ Retry:
 	}
 
 	return
-}
-
-func doReadDirPlusHelper(inodeNumber uint64, fissionAttr *fission.Attr, helperWG *sync.WaitGroup, helperErrorCount *uint64) {
-	var (
-		err                  error
-		inode                *inodeStruct
-		inodeLockRequest     *inodeLockRequestStruct
-		modificationTimeNSec uint32
-		modificationTimeSec  uint64
-		obtainExclusiveLock  bool
-		statusChangeTimeNSec uint32
-		statusChangeTimeSec  uint64
-	)
-
-	obtainExclusiveLock = false
-
-Retry:
-	inodeLockRequest = newLockRequest()
-	inodeLockRequest.inodeNumber = inodeNumber
-	inodeLockRequest.exclusive = obtainExclusiveLock
-	inodeLockRequest.addThisLock()
-	if len(inodeLockRequest.locksHeld) == 0 {
-		goto Retry
-	}
-
-	inode = lookupInode(inodeNumber)
-	if nil == inode {
-		inodeLockRequest.unlockAll()
-		globals.Lock()
-		*helperErrorCount++
-		globals.Unlock()
-		helperWG.Done()
-		runtime.Goexit()
-	}
-
-	if nil == inode.inodeHeadV1 {
-		if obtainExclusiveLock {
-			err = inode.populateInodeHeadV1()
-			if nil != err {
-				inodeLockRequest.unlockAll()
-				globals.Lock()
-				*helperErrorCount++
-				globals.Unlock()
-				helperWG.Done()
-				runtime.Goexit()
-			}
-		} else {
-			inodeLockRequest.unlockAll()
-			obtainExclusiveLock = true
-			goto Retry
-		}
-	}
-
-	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.ModificationTime.UnixNano()))
-	statusChangeTimeSec, statusChangeTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.StatusChangeTime.UnixNano()))
-
-	fissionAttr.Ino = inode.inodeHeadV1.InodeNumber
-	fissionAttr.Size = inode.inodeHeadV1.Size // Possibly overwritten by fixAttrSizes()
-	fissionAttr.Blocks = 0                    // Computed by fixAttrSizes()
-	fissionAttr.ATimeSec = modificationTimeSec
-	fissionAttr.MTimeSec = modificationTimeSec
-	fissionAttr.CTimeSec = statusChangeTimeSec
-	fissionAttr.ATimeNSec = modificationTimeNSec
-	fissionAttr.MTimeNSec = modificationTimeNSec
-	fissionAttr.CTimeNSec = statusChangeTimeNSec
-	fissionAttr.Mode = computeAttrMode(inode.inodeHeadV1.InodeType, inode.inodeHeadV1.Mode)
-	fissionAttr.NLink = uint32(len(inode.inodeHeadV1.LinkTable))
-	fissionAttr.UID = uint32(inode.inodeHeadV1.UserID)
-	fissionAttr.GID = uint32(inode.inodeHeadV1.GroupID)
-	fissionAttr.RDev = attrRDev
-	fissionAttr.BlkSize = attrBlockSize // Possibly overwritten by fixAttrSizes()
-	fissionAttr.Padding = 0
-
-	fixAttrSizes(fissionAttr)
-
-	inodeLockRequest.unlockAll()
-
-	helperWG.Done()
 }
 
 func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fission.Rename2In) (errno syscall.Errno) {
@@ -1997,6 +2020,93 @@ func computeAttrMode(iLayoutInodeType uint8, iLayoutMode uint16) (attrMode uint3
 	default:
 		logFatalf("iLayoutInodeType (%v) unknown", iLayoutInodeType)
 	}
+	return
+}
+
+func gorAttrFetch(inodeNumber uint64, fissionAttr *fission.Attr, gorAttrFetchWG *sync.WaitGroup, gorAttrFetchErrorCount *uint64) {
+	var (
+		err error
+	)
+
+	err = doAttrFetch(inodeNumber, fissionAttr)
+	if nil != err {
+		globals.Lock()
+		*gorAttrFetchErrorCount++
+		globals.Unlock()
+	}
+
+	gorAttrFetchWG.Done()
+}
+
+func doAttrFetch(inodeNumber uint64, fissionAttr *fission.Attr) (err error) {
+	var (
+		inode                *inodeStruct
+		inodeLockRequest     *inodeLockRequestStruct
+		modificationTimeNSec uint32
+		modificationTimeSec  uint64
+		obtainExclusiveLock  bool
+		statusChangeTimeNSec uint32
+		statusChangeTimeSec  uint64
+	)
+
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inodeNumber
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inodeNumber)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		err = fmt.Errorf("lookupInode(inodeNumber) returned nil")
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				err = fmt.Errorf("inode.populateInodeHeadV1() failed: %v", err)
+				return
+			}
+		} else {
+			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
+			goto Retry
+		}
+	}
+
+	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.ModificationTime.UnixNano()))
+	statusChangeTimeSec, statusChangeTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.StatusChangeTime.UnixNano()))
+
+	fissionAttr.Ino = inode.inodeHeadV1.InodeNumber
+	fissionAttr.Size = inode.inodeHeadV1.Size // Possibly overwritten by fixAttrSizes()
+	fissionAttr.Blocks = 0                    // Computed by fixAttrSizes()
+	fissionAttr.ATimeSec = modificationTimeSec
+	fissionAttr.MTimeSec = modificationTimeSec
+	fissionAttr.CTimeSec = statusChangeTimeSec
+	fissionAttr.ATimeNSec = modificationTimeNSec
+	fissionAttr.MTimeNSec = modificationTimeNSec
+	fissionAttr.CTimeNSec = statusChangeTimeNSec
+	fissionAttr.Mode = computeAttrMode(inode.inodeHeadV1.InodeType, inode.inodeHeadV1.Mode)
+	fissionAttr.NLink = uint32(len(inode.inodeHeadV1.LinkTable))
+	fissionAttr.UID = uint32(inode.inodeHeadV1.UserID)
+	fissionAttr.GID = uint32(inode.inodeHeadV1.GroupID)
+	fissionAttr.RDev = attrRDev
+	fissionAttr.BlkSize = attrBlockSize // Possibly overwritten by fixAttrSizes()
+	fissionAttr.Padding = 0
+
+	inodeLockRequest.unlockAll()
+
+	fixAttrSizes(fissionAttr)
+
+	err = nil
 	return
 }
 
