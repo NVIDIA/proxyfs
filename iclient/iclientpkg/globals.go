@@ -113,8 +113,11 @@ type inodeStruct struct {
 	superBlockInodeObjectSizeAdjustment      int64                           //
 	superBlockInodeBytesReferencedAdjustment int64                           //
 	dereferencedObjectNumberArray            []uint64                        //
-	putObjectNumber                          uint64                          // For DirInode & FileInode:
-	putObjectBuffer                          []byte                          //   ObjectNumber and buffer to PUT during next flush
+	putObjectNumber                          uint64                          // ObjectNumber to PUT during flush
+	putObjectBuffer                          []byte                          // PUT content to send to .putObjectNumber'd Object:
+	//                                                                            For DirInode:     marshaled .payload & ilayout.InodeHeadV1Struct
+	//                                                                            For FileInode:    file extents, marshaled .payload, & ilayout.InodeHeadV1Struct
+	//                                                                            For SymLinkInode: marshaled ilayout.InodeHeadV1Struct
 }
 
 type inodeHeldLockStruct struct {
