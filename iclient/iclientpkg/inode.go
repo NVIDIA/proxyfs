@@ -6,6 +6,7 @@ package iclientpkg
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/NVIDIA/sortedmap"
@@ -114,37 +115,131 @@ func (inode *inodeStruct) GetNode(objectNumber uint64, objectOffset uint64, obje
 }
 
 func (inode *inodeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+	var (
+		layoutMapEntry layoutMapEntryStruct
+		ok             bool
+	)
+
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
-		err = fmt.Errorf("TODO")
+		// Fall through
 	case ilayout.InodeTypeFile:
-		err = fmt.Errorf("TODO")
+		// Fall through
 	default:
-		err = fmt.Errorf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
+		logFatalf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
 
+	inode.ensureLayoutMapIsActive()
+
+	inode.ensurePutObjectIsActive()
+
+	layoutMapEntry, ok = inode.layoutMap[inode.putObjectNumber]
+	if !ok {
+		log.Fatalf("inode.layoutMap[old inode.putObjectNumber] returned !ok")
+	}
+
+	objectNumber = inode.putObjectNumber
+	objectOffset = uint64(len(inode.putObjectBuffer))
+
+	layoutMapEntry.objectSize += uint64(len(nodeByteSlice))
+	layoutMapEntry.bytesReferenced += uint64(len(nodeByteSlice))
+
+	inode.layoutMap[inode.putObjectNumber] = layoutMapEntry
+
+	inode.putObjectBuffer = append(inode.putObjectBuffer, nodeByteSlice...)
+
+	err = nil
 	return
 }
 
 func (inode *inodeStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+	var (
+		layoutMapEntry layoutMapEntryStruct
+		ok             bool
+	)
+
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
-		err = fmt.Errorf("TODO")
+		// Fall through
 	case ilayout.InodeTypeFile:
-		err = fmt.Errorf("TODO")
+		// Fall through
 	default:
-		err = fmt.Errorf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
+		logFatalf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
 
+	inode.ensureLayoutMapIsActive()
+
+	layoutMapEntry, ok = inode.layoutMap[objectNumber]
+	if !ok {
+		log.Fatalf("inode.layoutMap[old inode.putObjectNumber] returned !ok")
+	}
+	if objectLength > layoutMapEntry.bytesReferenced {
+		log.Fatalf("objectLength > layoutMapEntry.bytesReferenced")
+	}
+	if (objectOffset + objectLength) > layoutMapEntry.objectSize {
+		log.Fatalf("(objectOffset + objectLength) > layoutMapEntry.objectSize")
+	}
+
+	// It's ok to update lauoutMap... but note that the above checks don't protect against all double deallocations
+
+	if (objectLength == layoutMapEntry.bytesReferenced) && (objectNumber != inode.putObjectNumber) {
+		// Note that we skip the special case where we are currently
+		// discarding the only referenced bytes in an active putObjectBuffer
+		// since a subsequent flush will write (at least) the inodeHeadV1 there
+
+		delete(inode.layoutMap, objectNumber)
+
+		inode.superBlockInodeObjectCountAdjustment--
+		inode.superBlockInodeObjectSizeAdjustment -= int64(layoutMapEntry.objectSize)
+		inode.superBlockInodeBytesReferencedAdjustment -= int64(objectLength)
+
+		inode.dereferencedObjectNumberArray = append(inode.dereferencedObjectNumberArray, objectNumber)
+	} else {
+		layoutMapEntry.bytesReferenced -= objectLength
+
+		inode.layoutMap[objectNumber] = layoutMapEntry
+
+		inode.superBlockInodeBytesReferencedAdjustment -= int64(objectLength)
+	}
+
+	err = nil
 	return
 }
 
 func (inode *inodeStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
+	var (
+		keyAsString  string
+		keyAsUint64  uint64
+		nextPos      int
+		ok           bool
+		packedKeyLen int
+	)
+
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
-		err = fmt.Errorf("TODO")
+		keyAsString, ok = key.(string)
+		if ok {
+			packedKeyLen = 8 + len(keyAsString)
+			packedKey = make([]byte, packedKeyLen)
+			nextPos, err = ilayout.PutLEStringToBuf(packedKey, 0, keyAsString)
+			if (nil == err) && (nextPos != packedKeyLen) {
+				err = fmt.Errorf("nextPos != packedKeyLen")
+			}
+		} else {
+			err = fmt.Errorf("key.(string) returned !ok")
+		}
 	case ilayout.InodeTypeFile:
-		err = fmt.Errorf("TODO")
+		keyAsUint64, ok = key.(uint64)
+		if ok {
+			packedKeyLen = 8
+			packedKey = make([]byte, packedKeyLen)
+			nextPos, err = ilayout.PutLEUint64ToBuf(packedKey, 0, keyAsUint64)
+			if (nil == err) && (nextPos != packedKeyLen) {
+				err = fmt.Errorf("nextPos != packedKeyLen")
+			}
+		} else {
+			err = fmt.Errorf("key.(uint64) returned !ok")
+		}
 	default:
 		err = fmt.Errorf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
@@ -176,11 +271,27 @@ func (inode *inodeStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, byte
 }
 
 func (inode *inodeStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
+	var (
+		valueAsDirectoryEntryValueV1 *ilayout.DirectoryEntryValueV1Struct
+		valueAsExtentMapEntryValueV1 *ilayout.ExtentMapEntryValueV1Struct
+		ok                           bool
+	)
+
 	switch inode.inodeHeadV1.InodeType {
 	case ilayout.InodeTypeDir:
-		err = fmt.Errorf("TODO")
+		valueAsDirectoryEntryValueV1, ok = value.(*ilayout.DirectoryEntryValueV1Struct)
+		if ok {
+			packedValue, err = valueAsDirectoryEntryValueV1.MarshalDirectoryEntryValueV1()
+		} else {
+			err = fmt.Errorf("value.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
+		}
 	case ilayout.InodeTypeFile:
-		err = fmt.Errorf("TODO")
+		valueAsExtentMapEntryValueV1, ok = value.(*ilayout.ExtentMapEntryValueV1Struct)
+		if ok {
+			packedValue, err = valueAsExtentMapEntryValueV1.MarshalExtentMapEntryValueV1()
+		} else {
+			err = fmt.Errorf("value.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
+		}
 	default:
 		err = fmt.Errorf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
@@ -476,5 +587,36 @@ func (inode *inodeStruct) convertLayoutMapToInodeHeadV1Layout() {
 		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectNumber = objectNumber
 		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectSize = layoutMapEntry.objectSize
 		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].BytesReferenced = layoutMapEntry.bytesReferenced
+	}
+}
+
+func (inode *inodeStruct) ensureLayoutMapIsActive() {
+	if inode.layoutMap == nil {
+		inode.convertInodeHeadV1LayoutToLayoutMap()
+	}
+}
+
+func (inode *inodeStruct) ensurePutObjectIsActive() {
+	var (
+		layoutMapEntry layoutMapEntryStruct
+		ok             bool
+	)
+
+	if inode.putObjectNumber == 0 {
+		inode.putObjectNumber = fetchNonce()
+		inode.putObjectBuffer = make([]byte, 0)
+
+		layoutMapEntry, ok = inode.layoutMap[inode.putObjectNumber]
+		if ok {
+			log.Fatalf("inode.layoutMap[inode.putObjectNumber] returned ok")
+		}
+		layoutMapEntry = layoutMapEntryStruct{
+			objectSize:      0,
+			bytesReferenced: 0,
+		}
+
+		inode.layoutMap[inode.putObjectNumber] = layoutMapEntry
+
+		inode.superBlockInodeObjectCountAdjustment++
 	}
 }

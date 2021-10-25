@@ -98,6 +98,7 @@ Retry:
 	} else {
 		inode = &inodeStruct{
 			inodeNumber:                              inodeLockRequest.inodeNumber,
+			dirty:                                    false,
 			markedForDelete:                          false,
 			leaseState:                               inodeLeaseStateNone,
 			listElement:                              nil,
