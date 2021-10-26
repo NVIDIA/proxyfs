@@ -1100,6 +1100,25 @@ func (volume *volumeStruct) fetchInodeHead(inodeHeadObjectNumber uint64, inodeHe
 	return
 }
 
+func (volume *volumeStruct) statusWhileLocked() (numInodes uint64, objectCount uint64, objectSize uint64, bytesReferenced uint64) {
+	var (
+		err           error
+		inodeTableLen int
+	)
+
+	inodeTableLen, err = volume.inodeTable.Len()
+	if nil != err {
+		logFatalf("volume.inodeTable.Len() failed: %v\n", err)
+	}
+	numInodes = uint64(inodeTableLen)
+
+	objectCount = volume.superBlock.InodeObjectCount
+	objectSize = volume.superBlock.InodeObjectSize
+	bytesReferenced = volume.superBlock.InodeBytesReferenced
+
+	return
+}
+
 func (volume *volumeStruct) fetchNonceRangeWhileLocked() (nextNonce uint64, numNoncesFetched uint64, err error) {
 	var (
 		authOK                         bool

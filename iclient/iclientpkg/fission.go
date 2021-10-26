@@ -5,6 +5,7 @@ package iclientpkg
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"syscall"
 	"time"
@@ -905,7 +906,10 @@ Retry:
 
 func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fission.StatFSOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		err                  error
+		startTime            time.Time = time.Now()
+		volumeStatusRequest  *imgrpkg.VolumeStatusRequestStruct
+		volumeStatusResponse *imgrpkg.VolumeStatusResponseStruct
 	)
 
 	logTracef("==> DoStatFS(inHeader: %+v)", inHeader)
@@ -917,9 +921,31 @@ func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fis
 		globals.stats.DoStatFSUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	statFSOut = nil
-	errno = syscall.ENOSYS
+	volumeStatusRequest = &imgrpkg.VolumeStatusRequestStruct{
+		MountID: globals.mountID,
+	}
+	volumeStatusResponse = &imgrpkg.VolumeStatusResponseStruct{}
+
+	err = rpcVolumeStatus(volumeStatusRequest, volumeStatusResponse)
+	if nil != err {
+		logFatal(err)
+	}
+
+	statFSOut = &fission.StatFSOut{
+		KStatFS: fission.KStatFS{
+			Blocks:  (volumeStatusResponse.ObjectSize + uint64(globals.config.FUSEBlockSize) - 1) / uint64(globals.config.FUSEBlockSize),
+			BFree:   math.MaxUint64,
+			BAvail:  math.MaxUint64,
+			Files:   volumeStatusResponse.NumInodes,
+			FFree:   math.MaxUint64,
+			BSize:   globals.config.FUSEBlockSize,
+			FRSize:  globals.config.FUSEBlockSize,
+			Padding: 0,
+			Spare:   [6]uint32{0, 0, 0, 0, 0, 0},
+		},
+	}
+
+	errno = 0
 	return
 }
 

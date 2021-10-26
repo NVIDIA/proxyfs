@@ -25,6 +25,7 @@ import (
 type configStruct struct {
 	VolumeName                       string
 	MountPointDirPath                string
+	FUSEBlockSize                    uint32
 	FUSEAllowOther                   bool
 	FUSEMaxBackground                uint16
 	FUSECongestionThreshhold         uint16
@@ -169,6 +170,7 @@ type statsStruct struct {
 	PutInodeTableEntriesUsecs           bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)PutInodeTableEntries()
 	RenewMountUsecs                     bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)RenewMount()
 	UnmountUsecs                        bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)Unmount()
+	VolumeStatusUsecs                   bucketstats.BucketLog2Round // (*imgrpkg.RetryRPCServerStruct)VolumeStatus()
 
 	DoLookupUsecs      bucketstats.BucketLog2Round // (*globalsStruct)DoLookup()
 	DoForgetUsecs      bucketstats.BucketLog2Round // (*globalsStruct)DoForget()
@@ -270,6 +272,10 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 		logFatal(err)
 	}
 	globals.config.MountPointDirPath, err = confMap.FetchOptionValueString("ICLIENT", "MountPointDirPath")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.FUSEBlockSize, err = confMap.FetchOptionValueUint32("ICLIENT", "FUSEBlockSize")
 	if nil != err {
 		logFatal(err)
 	}
@@ -498,6 +504,7 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 func uninitializeGlobals() (err error) {
 	globals.config.VolumeName = ""
 	globals.config.MountPointDirPath = ""
+	globals.config.FUSEBlockSize = 0
 	globals.config.FUSEAllowOther = false
 	globals.config.FUSEMaxBackground = 0
 	globals.config.FUSECongestionThreshhold = 0

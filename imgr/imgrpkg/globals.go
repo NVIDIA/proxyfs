@@ -104,6 +104,7 @@ type statsStruct struct {
 	PutInodeTableEntriesUsecs           bucketstats.BucketLog2Round // (*RetryRPCServerStruct).PutInodeTableEntries()
 	RenewMountUsecs                     bucketstats.BucketLog2Round // (*RetryRPCServerStruct).RenewMount()
 	UnmountUsecs                        bucketstats.BucketLog2Round // (*RetryRPCServerStruct).Unmount()
+	VolumeStatusUsecs                   bucketstats.BucketLog2Round // (*RetryRPCServerStruct).VolumeStatus()
 
 	VolumeCheckPointUsecs bucketstats.BucketLog2Round
 

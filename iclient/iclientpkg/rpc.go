@@ -390,7 +390,7 @@ func rpcPutInodeTableEntries(putInodeTableEntriesRequest *imgrpkg.PutInodeTableE
 		startTime time.Time = time.Now()
 	)
 
-	logTracef("==> rpcPutInodeTableEntries(rpcPutInodeTableEntries: %+v)", rpcPutInodeTableEntries)
+	logTracef("==> rpcPutInodeTableEntries(putInodeTableEntriesRequest: %+v)", putInodeTableEntriesRequest)
 	defer func() {
 		logTracef("<== rpcPutInodeTableEntries(putInodeTableEntriesResponse: %+v, err: %v)", putInodeTableEntriesResponse, err)
 	}()
@@ -438,6 +438,25 @@ func rpcUnmount(unmountRequest *imgrpkg.UnmountRequestStruct, unmountResponse *i
 	}()
 
 	err = performMountRenewableRPC("Unmount", unmountRequest, unmountResponse)
+
+	return
+}
+
+func rpcVolumeStatus(volumeStatusRequest *imgrpkg.VolumeStatusRequestStruct, volumeStatusResponse *imgrpkg.VolumeStatusResponseStruct) (err error) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	logTracef("==> rpcVolumeStatus(volumeStatusRequest: %+v)", volumeStatusRequest)
+	defer func() {
+		logTracef("<== rpcVolumeStatus(volumeStatusResponse: %+v, err: %v)", volumeStatusResponse, err)
+	}()
+
+	defer func() {
+		globals.stats.VolumeStatusUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	err = performMountRenewableRPC("VolumeStatus", volumeStatusRequest, volumeStatusResponse)
 
 	return
 }

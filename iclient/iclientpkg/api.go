@@ -10,6 +10,7 @@
 //  [ICLIENT]
 //  VolumeName:                       testvol
 //  MountPointDirPath:                /mnt
+//  FUSEBlockSize:                    512      # Several tools/applications actually require fission.KStatFS.BSize to be 512
 //  FUSEAllowOther:                   true
 //  FUSEMaxBackground:                1000
 //  FUSECongestionThreshhold:         0
@@ -17,19 +18,19 @@
 //  FUSEEntryValidDuration:           250ms
 //  FUSEAttrValidDuration:            250ms
 //  AuthPlugInPath:                   iauth-swift.so
-//  AuthPlugInEnvName:                # Only used if not defining AuthPlugInEnvValue here
+//  AuthPlugInEnvName:                         # Only used if not defining AuthPlugInEnvValue here
 //  AuthPlugInEnvValue:               {"AuthURL":"http://swift:8080/auth/v1.0"\u002C"AuthUser":"test:tester"\u002C"AuthKey":"testing"\u002C"Account":"AUTH_test"\u002C"Container":"con"}
 //  SwiftTimeout:                     10m
 //  SwiftRetryLimit:                  4
 //  SwiftRetryDelay:                  100ms
-//  SwiftRetryDelayVariance:          25 # Percentage (1-100) of SwitRetryDelay
+//  SwiftRetryDelayVariance:          25       # Percentage (1-100) of SwitRetryDelay
 //  SwiftRetryExponentialBackoff:     1.4
 //  SwiftConnectionPoolSize:          128
 //  RetryRPCPublicIPAddr:             imgr
 //  RetryRPCPort:                     32356
 //  RetryRPCDeadlineIO:               60s
 //  RetryRPCKeepAlivePeriod:          60s
-//  RetryRPCCACertFilePath:           # Defaults to /dev/null
+//  RetryRPCCACertFilePath:                    # Defaults to /dev/null
 //  MaxSharedLeases:                  500
 //  MaxExclusiveLeases:               100      # Caps pending FileFlush data at 1GiB (with FileFlushTriggerSize of 10MiB)
 //  InodePayloadEvictLowLimit:        100000
@@ -44,8 +45,8 @@
 //  LogToConsole:                     true
 //  TraceEnabled:                     false
 //  FUSELogEnabled:                   false
-//  HTTPServerIPAddr:                 # Defaults to 0.0.0.0 (i.e. all interfaces)
-//  HTTPServerPort:                   # Defaults to disabling the embedded HTTP Server
+//  HTTPServerIPAddr:                          # Defaults to 0.0.0.0 (i.e. all interfaces)
+//  HTTPServerPort:                            # Defaults to disabling the embedded HTTP Server
 //
 // Most of the config keys are required and must have values. One set of exceptions
 // are the HTTPServer{IPAddr|Port} keys that, if not present (or HTTPServerPort is

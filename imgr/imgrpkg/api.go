@@ -258,6 +258,29 @@ func (dummy *RetryRPCServerStruct) Unmount(unmountRequest *UnmountRequestStruct,
 	return unmount(unmountRequest, unmountResponse)
 }
 
+// VolumeStatusRequestStruct is the request object for VolumeStatus.
+//
+type VolumeStatusRequestStruct struct {
+	MountID string
+}
+
+// VolumeStatusResponseStruct is the response object for VolumeStatus.
+//
+type VolumeStatusResponseStruct struct {
+	NumInodes       uint64
+	ObjectCount     uint64
+	ObjectSize      uint64
+	BytesReferenced uint64
+}
+
+// VolumeStatus requests the current status of the mounted volume.
+//
+// Possible errors: EAuthTokenRejected EUnknownMountID
+//
+func (dummy *RetryRPCServerStruct) VolumeStatus(volumeStatusRequest *VolumeStatusRequestStruct, volumeStatusResponse *VolumeStatusResponseStruct) (err error) {
+	return volumeStatus(volumeStatusRequest, volumeStatusResponse)
+}
+
 // FetchNonceRangeRequestStruct is the request object for FetchNonceRange.
 //
 // Possible errors: EAuthTokenRejected EUnknownMountID

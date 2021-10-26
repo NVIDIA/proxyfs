@@ -262,6 +262,48 @@ func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountRespo
 	return fmt.Errorf(ETODO + " unmount")
 }
 
+func volumeStatus(volumeStatusRequest *VolumeStatusRequestStruct, volumeStatusResponse *VolumeStatusResponseStruct) (err error) {
+	var (
+		bytesReferenced uint64
+		mount           *mountStruct
+		numInodes       uint64
+		objectCount     uint64
+		objectSize      uint64
+		ok              bool
+		startTime       time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.VolumeStatusUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	globals.Lock()
+
+	mount, ok = globals.mountMap[volumeStatusRequest.MountID]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("%s %s", EUnknownMountID, volumeStatusRequest.MountID)
+		return
+	}
+
+	if mount.authTokenHasExpired() {
+		globals.Unlock()
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
+		return
+	}
+
+	numInodes, objectCount, objectSize, bytesReferenced = mount.volume.statusWhileLocked()
+
+	globals.Unlock()
+
+	volumeStatusResponse.NumInodes = numInodes
+	volumeStatusResponse.ObjectCount = objectCount
+	volumeStatusResponse.ObjectSize = objectSize
+	volumeStatusResponse.BytesReferenced = bytesReferenced
+
+	return
+}
+
 func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetchNonceRangeResponse *FetchNonceRangeResponseStruct) (err error) {
 	var (
 		mount     *mountStruct
