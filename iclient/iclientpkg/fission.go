@@ -476,10 +476,12 @@ Retry:
 		inodeHeadV1: &ilayout.InodeHeadV1Struct{
 			InodeNumber: symLinkInodeNumber,
 			InodeType:   ilayout.InodeTypeSymLink,
-			LinkTable: []ilayout.InodeLinkTableEntryStruct{ilayout.InodeLinkTableEntryStruct{
-				ParentDirInodeNumber: dirInode.inodeNumber,
-				ParentDirEntryName:   string(symLinkIn.Name[:]),
-			}},
+			LinkTable: []ilayout.InodeLinkTableEntryStruct{
+				ilayout.InodeLinkTableEntryStruct{
+					ParentDirInodeNumber: dirInode.inodeNumber,
+					ParentDirEntryName:   string(symLinkIn.Name[:]),
+				},
+			},
 			Size:                0,
 			ModificationTime:    startTime,
 			StatusChangeTime:    startTime,
@@ -515,8 +517,8 @@ Retry:
 	dirInode.inodeHeadV1.ModificationTime = startTime
 	dirInode.inodeHeadV1.StatusChangeTime = startTime
 
-	ok, err = dirInode.payload.Put(string(
-		symLinkIn.Name[:]),
+	ok, err = dirInode.payload.Put(
+		string(symLinkIn.Name[:]),
 		&ilayout.DirectoryEntryValueV1Struct{
 			InodeNumber: symLinkInodeNumber,
 			InodeType:   ilayout.InodeTypeSymLink,
@@ -591,7 +593,17 @@ func (dummy *globalsStruct) DoMkNod(inHeader *fission.InHeader, mkNodIn *fission
 
 func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission.MkDirIn) (mkDirOut *fission.MkDirOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		childDirInode        *inodeStruct
+		childDirInodeNumber  uint64
+		err                  error
+		inodeLockRequest     *inodeLockRequestStruct
+		modificationTimeNSec uint32
+		modificationTimeSec  uint64
+		ok                   bool
+		parentDirInode       *inodeStruct
+		startTime            time.Time = time.Now()
+		statusChangeTimeNSec uint32
+		statusChangeTimeSec  uint64
 	)
 
 	logTracef("==> DoMkDir(inHeader: %+v, mkDirIn: %+v)", inHeader, mkDirIn)
@@ -603,9 +615,205 @@ func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission
 		globals.stats.DoMkDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	mkDirOut = nil
-	errno = syscall.ENOSYS
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	parentDirInode = lookupInode(inHeader.NodeID)
+	if nil == parentDirInode {
+		inodeLockRequest.unlockAll()
+		mkDirOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == parentDirInode.inodeHeadV1 {
+		err = parentDirInode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			mkDirOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if parentDirInode.payload == nil {
+		err = parentDirInode.oldPayload()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			mkDirOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	_, ok, err = parentDirInode.payload.GetByKey(string(mkDirIn.Name[:]))
+	if nil != err {
+		logFatalf("parentDirInode.payload.GetByKey(string(mkDirIn.Name[:])) failed: %v", err)
+	}
+	if ok {
+		inodeLockRequest.unlockAll()
+		mkDirOut = nil
+		errno = syscall.EEXIST
+		return
+	}
+
+	childDirInodeNumber = fetchNonce()
+
+	childDirInode = &inodeStruct{
+		inodeNumber:     childDirInodeNumber,
+		dirty:           true,
+		markedForDelete: false,
+		leaseState:      inodeLeaseStateNone,
+		listElement:     nil,
+		heldList:        list.New(),
+		requestList:     list.New(),
+		inodeHeadV1: &ilayout.InodeHeadV1Struct{
+			InodeNumber: childDirInodeNumber,
+			InodeType:   ilayout.InodeTypeDir,
+			LinkTable: []ilayout.InodeLinkTableEntryStruct{
+				ilayout.InodeLinkTableEntryStruct{
+					ParentDirInodeNumber: parentDirInode.inodeNumber,
+					ParentDirEntryName:   string(mkDirIn.Name[:]),
+				},
+				ilayout.InodeLinkTableEntryStruct{
+					ParentDirInodeNumber: childDirInodeNumber,
+					ParentDirEntryName:   ".",
+				},
+			},
+			Size:                0,
+			ModificationTime:    startTime,
+			StatusChangeTime:    startTime,
+			Mode:                ilayout.InodeModeMask,
+			UserID:              uint64(inHeader.UID),
+			GroupID:             uint64(inHeader.GID),
+			StreamTable:         make([]ilayout.InodeStreamTableEntryStruct, 0),
+			PayloadObjectNumber: 0,
+			PayloadObjectOffset: 0,
+			PayloadObjectLength: 0,
+			SymLinkTarget:       "",
+			Layout:              nil,
+		},
+		payload:                                  nil,
+		layoutMap:                                nil,
+		superBlockInodeObjectCountAdjustment:     0,
+		superBlockInodeObjectSizeAdjustment:      0,
+		superBlockInodeBytesReferencedAdjustment: 0,
+		dereferencedObjectNumberArray:            make([]uint64, 0),
+		putObjectNumber:                          0,
+		putObjectBuffer:                          nil,
+	}
+
+	err = childDirInode.newPayload()
+	if nil != err {
+		logFatalf("childDirInode.newPayload() failed: %v\n", err)
+	}
+
+	ok, err = childDirInode.payload.Put(
+		".",
+		&ilayout.DirectoryEntryValueV1Struct{
+			InodeNumber: childDirInodeNumber,
+			InodeType:   ilayout.InodeTypeDir,
+		},
+	)
+	if nil != err {
+		logFatalf("parentDirInode.payload.Put(\".\",) failed: %v", err)
+	}
+	if !ok {
+		logFatalf("parentDirInode.payload.Put(\".\",) returned !ok")
+	}
+
+	ok, err = childDirInode.payload.Put(
+		"..",
+		&ilayout.DirectoryEntryValueV1Struct{
+			InodeNumber: parentDirInode.inodeNumber,
+			InodeType:   ilayout.InodeTypeDir,
+		},
+	)
+	if nil != err {
+		logFatalf("parentDirInode.payload.Put(\"..\",) failed: %v", err)
+	}
+	if !ok {
+		logFatalf("parentDirInode.payload.Put(\"..\",) returned !ok")
+	}
+
+	inodeLockRequest.inodeNumber = childDirInodeNumber
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	parentDirInode.dirty = true
+
+	parentDirInode.inodeHeadV1.LinkTable = append(
+		parentDirInode.inodeHeadV1.LinkTable,
+		ilayout.InodeLinkTableEntryStruct{
+			ParentDirInodeNumber: childDirInode.inodeNumber,
+			ParentDirEntryName:   "..",
+		},
+	)
+
+	parentDirInode.inodeHeadV1.ModificationTime = startTime
+	parentDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+	ok, err = parentDirInode.payload.Put(
+		string(mkDirIn.Name[:]),
+		&ilayout.DirectoryEntryValueV1Struct{
+			InodeNumber: childDirInodeNumber,
+			InodeType:   ilayout.InodeTypeDir,
+		})
+	if nil != err {
+		logFatalf("parentDirInode.payload.Put(string(mkDirIn.Name[:]),) failed: %v", err)
+	}
+	if !ok {
+		logFatalf("parentDirInode.payload.Put(string(mkDirIn.Name[:]),) returned !ok")
+	}
+
+	flushInodesInSlice([]*inodeStruct{parentDirInode, childDirInode})
+
+	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(startTime.UnixNano()))
+	statusChangeTimeSec, statusChangeTimeNSec = nsToUnixTime(uint64(startTime.UnixNano()))
+
+	mkDirOut = &fission.MkDirOut{
+		EntryOut: fission.EntryOut{
+			NodeID:         childDirInode.inodeHeadV1.InodeNumber,
+			Generation:     0,
+			EntryValidSec:  globals.fuseEntryValidDurationSec,
+			AttrValidSec:   globals.fuseAttrValidDurationSec,
+			EntryValidNSec: globals.fuseEntryValidDurationNSec,
+			AttrValidNSec:  globals.fuseAttrValidDurationNSec,
+			Attr: fission.Attr{
+				Ino:       childDirInode.inodeHeadV1.InodeNumber,
+				Size:      childDirInode.inodeHeadV1.Size, // Possibly overwritten by fixAttrSizes()
+				Blocks:    0,                              // Computed by fixAttrSizes()
+				ATimeSec:  modificationTimeSec,
+				MTimeSec:  modificationTimeSec,
+				CTimeSec:  statusChangeTimeSec,
+				ATimeNSec: modificationTimeNSec,
+				MTimeNSec: modificationTimeNSec,
+				CTimeNSec: statusChangeTimeNSec,
+				Mode:      computeAttrMode(childDirInode.inodeHeadV1.InodeType, childDirInode.inodeHeadV1.Mode),
+				NLink:     uint32(len(childDirInode.inodeHeadV1.LinkTable)),
+				UID:       uint32(childDirInode.inodeHeadV1.UserID),
+				GID:       uint32(childDirInode.inodeHeadV1.GroupID),
+				RDev:      attrRDev,
+				BlkSize:   attrBlockSize, // Possibly overwritten by fixAttrSizes()
+				Padding:   0,
+			},
+		},
+	}
+
+	fixAttrSizes(&mkDirOut.EntryOut.Attr)
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
