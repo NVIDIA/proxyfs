@@ -479,7 +479,7 @@ const inodeTemplate string = `<!doctype html>
 
       <h1 class="display-4">
         Inode
-        <small class="text-muted">1</small>
+        <small class="text-muted">%[3]v</small>
       </h1>
 
       <h2><small class="text-muted">Volume testvol</small></h2>

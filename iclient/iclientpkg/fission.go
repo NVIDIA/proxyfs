@@ -4,6 +4,7 @@
 package iclientpkg
 
 import (
+	"container/list"
 	"fmt"
 	"math"
 	"sync"
@@ -322,7 +323,11 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 func (dummy *globalsStruct) DoReadLink(inHeader *fission.InHeader) (readLinkOut *fission.ReadLinkOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		err                 error
+		inode               *inodeStruct
+		inodeLockRequest    *inodeLockRequestStruct
+		obtainExclusiveLock bool
+		startTime           time.Time = time.Now()
 	)
 
 	logTracef("==> DoReadLink(inHeader: %+v)", inHeader)
@@ -334,15 +339,71 @@ func (dummy *globalsStruct) DoReadLink(inHeader *fission.InHeader) (readLinkOut 
 		globals.stats.DoReadLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	readLinkOut = nil
-	errno = syscall.ENOSYS
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		readLinkOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				readLinkOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
+			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
+			goto Retry
+		}
+	}
+
+	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeSymLink {
+		inodeLockRequest.unlockAll()
+		readLinkOut = nil
+		errno = syscall.EINVAL
+		return
+	}
+
+	readLinkOut = &fission.ReadLinkOut{
+		Data: []byte(inode.inodeHeadV1.SymLinkTarget),
+	}
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
 func (dummy *globalsStruct) DoSymLink(inHeader *fission.InHeader, symLinkIn *fission.SymLinkIn) (symLinkOut *fission.SymLinkOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		dirInode             *inodeStruct
+		err                  error
+		inodeLockRequest     *inodeLockRequestStruct
+		modificationTimeNSec uint32
+		modificationTimeSec  uint64
+		ok                   bool
+		startTime            time.Time = time.Now()
+		statusChangeTimeNSec uint32
+		statusChangeTimeSec  uint64
+		symLinkInode         *inodeStruct
+		symLinkInodeNumber   uint64
 	)
 
 	logTracef("==> DoSymLink(inHeader: %+v, symLinkIn: %+v)", inHeader, symLinkIn)
@@ -354,9 +415,158 @@ func (dummy *globalsStruct) DoSymLink(inHeader *fission.InHeader, symLinkIn *fis
 		globals.stats.DoSymLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	symLinkOut = nil
-	errno = syscall.ENOSYS
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	dirInode = lookupInode(inHeader.NodeID)
+	if nil == dirInode {
+		inodeLockRequest.unlockAll()
+		symLinkOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == dirInode.inodeHeadV1 {
+		err = dirInode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			symLinkOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if dirInode.payload == nil {
+		err = dirInode.oldPayload()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			symLinkOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	_, ok, err = dirInode.payload.GetByKey(string(symLinkIn.Name[:]))
+	if nil != err {
+		logFatalf("dirInode.payload.GetByKey(string(symLinkIn.Name[:])) failed: %v", err)
+	}
+	if ok {
+		inodeLockRequest.unlockAll()
+		symLinkOut = nil
+		errno = syscall.EEXIST
+		return
+	}
+
+	symLinkInodeNumber = fetchNonce()
+
+	symLinkInode = &inodeStruct{
+		inodeNumber:     symLinkInodeNumber,
+		dirty:           true,
+		markedForDelete: false,
+		leaseState:      inodeLeaseStateNone,
+		listElement:     nil,
+		heldList:        list.New(),
+		requestList:     list.New(),
+		inodeHeadV1: &ilayout.InodeHeadV1Struct{
+			InodeNumber: symLinkInodeNumber,
+			InodeType:   ilayout.InodeTypeSymLink,
+			LinkTable: []ilayout.InodeLinkTableEntryStruct{ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: dirInode.inodeNumber,
+				ParentDirEntryName:   string(symLinkIn.Name[:]),
+			}},
+			Size:                0,
+			ModificationTime:    startTime,
+			StatusChangeTime:    startTime,
+			Mode:                ilayout.InodeModeMask,
+			UserID:              uint64(inHeader.UID),
+			GroupID:             uint64(inHeader.GID),
+			StreamTable:         make([]ilayout.InodeStreamTableEntryStruct, 0),
+			PayloadObjectNumber: 0,
+			PayloadObjectOffset: 0,
+			PayloadObjectLength: 0,
+			SymLinkTarget:       string(symLinkIn.Data[:]),
+			Layout:              nil,
+		},
+		payload:                                  nil,
+		layoutMap:                                nil,
+		superBlockInodeObjectCountAdjustment:     0,
+		superBlockInodeObjectSizeAdjustment:      0,
+		superBlockInodeBytesReferencedAdjustment: 0,
+		dereferencedObjectNumberArray:            make([]uint64, 0),
+		putObjectNumber:                          0,
+		putObjectBuffer:                          nil,
+	}
+
+	inodeLockRequest.inodeNumber = symLinkInodeNumber
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	dirInode.dirty = true
+
+	dirInode.inodeHeadV1.ModificationTime = startTime
+	dirInode.inodeHeadV1.StatusChangeTime = startTime
+
+	ok, err = dirInode.payload.Put(string(
+		symLinkIn.Name[:]),
+		&ilayout.DirectoryEntryValueV1Struct{
+			InodeNumber: symLinkInodeNumber,
+			InodeType:   ilayout.InodeTypeSymLink,
+		})
+	if nil != err {
+		logFatalf("dirInode.payload.Put(string(symLinkIn.Name[:]),) failed: %v", err)
+	}
+	if !ok {
+		logFatalf("dirInode.payload.Put(string(symLinkIn.Name[:]),) returned !ok")
+	}
+
+	flushInodesInSlice([]*inodeStruct{dirInode, symLinkInode})
+
+	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(startTime.UnixNano()))
+	statusChangeTimeSec, statusChangeTimeNSec = nsToUnixTime(uint64(startTime.UnixNano()))
+
+	symLinkOut = &fission.SymLinkOut{
+		EntryOut: fission.EntryOut{
+			NodeID:         symLinkInode.inodeHeadV1.InodeNumber,
+			Generation:     0,
+			EntryValidSec:  globals.fuseEntryValidDurationSec,
+			AttrValidSec:   globals.fuseAttrValidDurationSec,
+			EntryValidNSec: globals.fuseEntryValidDurationNSec,
+			AttrValidNSec:  globals.fuseAttrValidDurationNSec,
+			Attr: fission.Attr{
+				Ino:       symLinkInode.inodeHeadV1.InodeNumber,
+				Size:      symLinkInode.inodeHeadV1.Size, // Possibly overwritten by fixAttrSizes()
+				Blocks:    0,                             // Computed by fixAttrSizes()
+				ATimeSec:  modificationTimeSec,
+				MTimeSec:  modificationTimeSec,
+				CTimeSec:  statusChangeTimeSec,
+				ATimeNSec: modificationTimeNSec,
+				MTimeNSec: modificationTimeNSec,
+				CTimeNSec: statusChangeTimeNSec,
+				Mode:      computeAttrMode(symLinkInode.inodeHeadV1.InodeType, symLinkInode.inodeHeadV1.Mode),
+				NLink:     uint32(len(symLinkInode.inodeHeadV1.LinkTable)),
+				UID:       uint32(symLinkInode.inodeHeadV1.UserID),
+				GID:       uint32(symLinkInode.inodeHeadV1.GroupID),
+				RDev:      attrRDev,
+				BlkSize:   attrBlockSize, // Possibly overwritten by fixAttrSizes()
+				Padding:   0,
+			},
+		},
+	}
+
+	fixAttrSizes(&symLinkOut.EntryOut.Attr)
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
@@ -798,8 +1008,8 @@ Retry:
 		default:
 			// TODO - need to actually read from the cache (in a coherent/cooperative way)
 			// TODO - need to handle case where extent crosses cache line boundary
-			// UNDO - but for now, we will simply append zeroes
-			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length, readPlanEntry.Length)...) // UNDO
+			// TODO - but for now, we will simply append zeroes
+			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length, readPlanEntry.Length)...) // TODO
 		}
 	}
 
@@ -899,7 +1109,7 @@ Retry:
 
 	inodeLockRequest.unlockAll()
 
-	writeOut = nil // UNDO
+	writeOut = nil // TODO
 	errno = syscall.ENOSYS
 	return
 }
