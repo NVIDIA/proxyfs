@@ -654,9 +654,9 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		inodeGETStreamTableEntryValueByte  byte
 		inodeGETStreamTableEntryValueIndex int
 		inodeHeadV1                        *ilayout.InodeHeadV1Struct
-		inodeNumberAsHexDigits             string
-		inodeNumberAsUint64                uint64
+		inodeNumberAsDecimalString         string
 		inodeNumberAsKey                   sortedmap.Key
+		inodeNumberAsUint64                uint64
 		inodeTableEntryValueV1             *ilayout.InodeTableEntryValueV1Struct
 		inodeTableEntryValueV1AsValue      sortedmap.Value
 		inodeTableIndex                    int
@@ -917,11 +917,11 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 
 		volumeName = pathSplit[2]
 		mustBeInode = pathSplit[3]
-		inodeNumberAsHexDigits = pathSplit[4]
+		inodeNumberAsDecimalString = pathSplit[4]
 
 		switch mustBeInode {
 		case "inode":
-			inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAsHexDigits, 16, 64)
+			inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAsDecimalString, 10, 64)
 			if nil != err {
 				responseWriter.WriteHeader(http.StatusBadRequest)
 			} else {
