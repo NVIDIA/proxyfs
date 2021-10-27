@@ -4,6 +4,7 @@
 package iclientpkg
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -523,6 +524,57 @@ func objectGETWithRangeHeader(objectNumber uint64, rangeHeader string) (buf []by
 
 		if retryIndex >= globals.config.SwiftRetryLimit {
 			err = fmt.Errorf("objectGETWithRangeHeader(objectNumber: %v, rangeHeader: \"%s\") reached SwiftRetryLimit", objectNumber, rangeHeader)
+			logWarn(err)
+			return
+		}
+
+		if http.StatusUnauthorized == httpResponse.StatusCode {
+			updateSwithAuthTokenAndSwiftStorageURL()
+		}
+
+		retryDelay = globals.swiftRetryDelay[retryIndex].nominal - time.Duration(rand.Int63n(int64(globals.swiftRetryDelay[retryIndex].variance)))
+		time.Sleep(retryDelay)
+		retryIndex++
+	}
+}
+
+func objectPUT(objectNumber uint64, buf []byte) (err error) {
+	var (
+		httpRequest  *http.Request
+		httpResponse *http.Response
+		retryDelay   time.Duration
+		retryIndex   uint64
+	)
+
+	retryIndex = 0
+
+	for {
+		httpRequest, err = http.NewRequest("PUT", fetchSwiftStorageURL()+"/"+ilayout.GetObjectNameAsString(objectNumber), bytes.NewBuffer(buf))
+		if nil != err {
+			return
+		}
+
+		httpRequest.Header["User-Agent"] = []string{HTTPUserAgent}
+		httpRequest.Header["X-Auth-Token"] = []string{fetchSwiftAuthToken()}
+
+		httpResponse, err = globals.httpClient.Do(httpRequest)
+		if nil != err {
+			logFatalf("globals.httpClient.Do(httpRequest) failed: %v", err)
+		}
+
+		_, err = ioutil.ReadAll(httpResponse.Body)
+		_ = httpResponse.Body.Close()
+		if nil != err {
+			logFatalf("ioutil.ReadAll(httpResponse.Body) failed: %v", err)
+		}
+
+		if (200 <= httpResponse.StatusCode) && (299 >= httpResponse.StatusCode) {
+			err = nil
+			return
+		}
+
+		if retryIndex >= globals.config.SwiftRetryLimit {
+			err = fmt.Errorf("objectPUT(objectNumber: %v,) reached SwiftRetryLimit", objectNumber)
 			logWarn(err)
 			return
 		}

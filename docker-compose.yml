@@ -128,5 +128,5 @@ services:
         published: 15347
         protocol: tcp
         mode: host
-    command: ["./iclient.sh", "-s"]
+    command: ["./iclient.sh", "-fs"]
  

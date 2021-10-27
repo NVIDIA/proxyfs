@@ -2,14 +2,18 @@
 
 Usage="$(basename "$0") - Ask swift/imgr to format and serve testvol... and then sleep
 where:
+  -f  format volume
   -h  show this help text
   -s  supply static AuthToken to imgr"
 
+DoFormat=false
 StaticAuthToken=false
 
-while getopts 'hs' option
+while getopts 'fhs' option
 do
   case "$option" in
+    f) DoFormat=true
+       ;;
     h) echo "$Usage"
        exit 0
        ;;
@@ -40,7 +44,10 @@ do
   DollarQuestionMark=$?
 done
 
-curl -v -s -f imgr:15346/volume -X POST -d "{\"StorageURL\":\"http://swift:8080/v1/AUTH_test/con\",\"AuthToken\":\"$AuthToken\"}"
+if $DoFormat
+then
+  curl -v -s -f imgr:15346/volume -X POST -d "{\"StorageURL\":\"http://swift:8080/v1/AUTH_test/con\",\"AuthToken\":\"$AuthToken\"}"
+fi
 
 if $StaticAuthToken
 then

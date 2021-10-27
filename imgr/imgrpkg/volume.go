@@ -748,8 +748,8 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 	}
 
 	volume.superBlock.InodeTableRootObjectNumber = inodeTableRootObjectNumber
-	volume.superBlock.InodeTableRootObjectNumber = inodeTableRootObjectOffset
-	volume.superBlock.InodeTableRootObjectNumber = inodeTableRootObjectLength
+	volume.superBlock.InodeTableRootObjectOffset = inodeTableRootObjectOffset
+	volume.superBlock.InodeTableRootObjectLength = inodeTableRootObjectLength
 
 	volume.superBlock.InodeTableLayout = make([]ilayout.InodeTableLayoutEntryV1Struct, 0, len(volume.inodeTableLayout))
 
@@ -800,7 +800,7 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 	_, _ = volume.checkPointPutObjectBuffer.Write(superBlockV1Buf)
 
 	volume.checkPoint.SuperBlockObjectNumber = volume.checkPointPutObjectNumber
-	volume.checkPoint.SuperBlockLength = uint64(volume.checkPointPutObjectBuffer.Len())
+	volume.checkPoint.SuperBlockLength = uint64(len(superBlockV1Buf))
 
 	authOK, err = volume.swiftObjectPut(volume.checkPointPutObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes()))
 	if nil != err {

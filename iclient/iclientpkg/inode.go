@@ -129,8 +129,6 @@ func (inode *inodeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, ob
 		logFatalf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
 
-	inode.ensureLayoutMapIsActive()
-
 	inode.ensurePutObjectIsActive()
 
 	layoutMapEntry, ok = inode.layoutMap[inode.putObjectNumber]
@@ -606,17 +604,155 @@ func (inode *inodeStruct) ensurePutObjectIsActive() {
 		inode.putObjectNumber = fetchNonce()
 		inode.putObjectBuffer = make([]byte, 0)
 
-		layoutMapEntry, ok = inode.layoutMap[inode.putObjectNumber]
-		if ok {
-			log.Fatalf("inode.layoutMap[inode.putObjectNumber] returned ok")
-		}
-		layoutMapEntry = layoutMapEntryStruct{
-			objectSize:      0,
-			bytesReferenced: 0,
-		}
+		if inode.inodeHeadV1.InodeType != ilayout.InodeTypeSymLink {
+			inode.ensureLayoutMapIsActive()
 
-		inode.layoutMap[inode.putObjectNumber] = layoutMapEntry
+			layoutMapEntry, ok = inode.layoutMap[inode.putObjectNumber]
+			if ok {
+				log.Fatalf("inode.layoutMap[inode.putObjectNumber] returned ok")
+			}
+			layoutMapEntry = layoutMapEntryStruct{
+				objectSize:      0,
+				bytesReferenced: 0,
+			}
+
+			inode.layoutMap[inode.putObjectNumber] = layoutMapEntry
+		}
 
 		inode.superBlockInodeObjectCountAdjustment++
+	}
+}
+
+// flush marshals the current state of an assumed to be dirty inode into its .putObjectBuffer.
+// This .putObjectBuffer is then passed to objectPUT() following which the inode is marked clean.
+//
+// The return value indicates the size of the marshaled .inodeHeadV1 such that, along with the
+// .superBlockInode*, .dereferencedObjectNumberArray, and .putObjectNumber fields, will be used
+// to construct this inode's portion of an imgrpkg.PutInodeTableEntriesRequestStruct.
+//
+// The caller is assumed to mark the inode clean and reset the .superBlockInode*,
+// .dereferencedObjectNumberArray, and .putObject{Number|Buffer} fields.
+//
+func (inode *inodeStruct) flush() (inodeHeadLength uint64) {
+	var (
+		err            error
+		inodeHeadV1Buf []byte
+	)
+
+	inode.ensurePutObjectIsActive()
+
+	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeSymLink {
+		if inode.payload != nil {
+			inode.inodeHeadV1.PayloadObjectNumber, inode.inodeHeadV1.PayloadObjectOffset, inode.inodeHeadV1.PayloadObjectLength, err = inode.payload.Flush(false)
+			if nil != err {
+				logFatalf("inode.payload.Flush(false) failed: %v", err)
+			}
+
+			err = inode.payload.Prune()
+			if nil != err {
+				logFatalf("inode.payload.Prune() failed: %v", err)
+			}
+		}
+
+		if inode.layoutMap != nil {
+			inode.convertLayoutMapToInodeHeadV1Layout()
+		}
+	}
+
+	inodeHeadV1Buf, err = inode.inodeHeadV1.MarshalInodeHeadV1()
+	if nil != err {
+		logFatalf("inode.inodeHeadV1.MarshalInodeHeadV1() failed: %v", err)
+	}
+
+	inode.putObjectBuffer = append(inode.putObjectBuffer, inodeHeadV1Buf...)
+
+	err = objectPUT(inode.putObjectNumber, inode.putObjectBuffer)
+	if nil != err {
+		logFatalf("objectPUT(inode.putObjectNumber, inode.putObjectBuffer) failed: %v", err)
+	}
+
+	inodeHeadLength = uint64(len(inodeHeadV1Buf))
+	return
+}
+
+func flushInodeNumbersInSlice(inodeNumberSlice []uint64) {
+	var (
+		inodeNumber     uint64
+		inodeSlice      []*inodeStruct
+		inodeSliceIndex int
+		ok              bool
+	)
+
+	inodeSlice = make([]*inodeStruct, len(inodeNumberSlice))
+
+	globals.Lock()
+
+	for inodeSliceIndex, inodeNumber = range inodeNumberSlice {
+		inodeSlice[inodeSliceIndex], ok = globals.inodeTable[inodeNumber]
+		if !ok {
+			logFatalf("globals.inodeTable[inodeNumber: %016X] returned !ok", inodeNumber)
+		}
+	}
+
+	globals.Unlock()
+
+	flushInodesInSlice(inodeSlice)
+}
+
+func flushInodesInSlice(inodeSlice []*inodeStruct) {
+	var (
+		dereferencedObjectNumber     uint64
+		err                          error
+		inode                        *inodeStruct
+		inodeHeadLength              uint64
+		inodeSliceIndex              int
+		putInodeTableEntriesRequest  *imgrpkg.PutInodeTableEntriesRequestStruct
+		putInodeTableEntriesResponse *imgrpkg.PutInodeTableEntriesResponseStruct
+	)
+
+	putInodeTableEntriesRequest = &imgrpkg.PutInodeTableEntriesRequestStruct{
+		MountID:                                  globals.mountID,
+		UpdatedInodeTableEntryArray:              make([]imgrpkg.PutInodeTableEntryStruct, len(inodeSlice)),
+		SuperBlockInodeObjectCountAdjustment:     0,
+		SuperBlockInodeObjectSizeAdjustment:      0,
+		SuperBlockInodeBytesReferencedAdjustment: 0,
+		DereferencedObjectNumberArray:            make([]uint64, 0),
+	}
+	putInodeTableEntriesResponse = &imgrpkg.PutInodeTableEntriesResponseStruct{}
+
+	for inodeSliceIndex, inode = range inodeSlice {
+		if !inode.dirty {
+			logFatalf("inode.dirty for inodeNumber %016X is false", inode.inodeNumber)
+		}
+
+		inodeHeadLength = inode.flush()
+
+		putInodeTableEntriesRequest.UpdatedInodeTableEntryArray[inodeSliceIndex].InodeNumber = inode.inodeNumber
+		putInodeTableEntriesRequest.UpdatedInodeTableEntryArray[inodeSliceIndex].InodeHeadObjectNumber = inode.putObjectNumber
+		putInodeTableEntriesRequest.UpdatedInodeTableEntryArray[inodeSliceIndex].InodeHeadLength = inodeHeadLength
+
+		putInodeTableEntriesRequest.SuperBlockInodeObjectCountAdjustment += inode.superBlockInodeObjectCountAdjustment
+		putInodeTableEntriesRequest.SuperBlockInodeObjectSizeAdjustment += inode.superBlockInodeObjectSizeAdjustment
+		putInodeTableEntriesRequest.SuperBlockInodeBytesReferencedAdjustment += inode.superBlockInodeBytesReferencedAdjustment
+
+		for _, dereferencedObjectNumber = range inode.dereferencedObjectNumberArray {
+			putInodeTableEntriesRequest.DereferencedObjectNumberArray = append(putInodeTableEntriesRequest.DereferencedObjectNumberArray, dereferencedObjectNumber)
+		}
+
+		inode.dirty = false
+
+		inode.superBlockInodeObjectCountAdjustment = 0
+		inode.superBlockInodeObjectSizeAdjustment = 0
+		inode.superBlockInodeBytesReferencedAdjustment = 0
+
+		inode.dereferencedObjectNumberArray = make([]uint64, 0)
+
+		inode.putObjectNumber = 0
+		inode.putObjectBuffer = nil
+	}
+
+	err = rpcPutInodeTableEntries(putInodeTableEntriesRequest, putInodeTableEntriesResponse)
+	if nil != err {
+		logFatalf("rpcPutInodeTableEntries(putInodeTableEntriesRequest, putInodeTableEntriesResponse) failed: %v", err)
 	}
 }
