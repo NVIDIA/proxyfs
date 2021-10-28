@@ -689,7 +689,7 @@ Retry:
 			Size:                0,
 			ModificationTime:    startTime,
 			StatusChangeTime:    startTime,
-			Mode:                ilayout.InodeModeMask,
+			Mode:                uint16(mkDirIn.Mode & ^mkDirIn.UMask) & ilayout.InodeModeMask,
 			UserID:              uint64(inHeader.UID),
 			GroupID:             uint64(inHeader.GID),
 			StreamTable:         make([]ilayout.InodeStreamTableEntryStruct, 0),
@@ -915,6 +915,9 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 		globals.stats.DoOpenUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	// TODO: Validate simply ignoring openIn.Flags containing fission.FOpenRequestEXCL is ok
+	// TODO: Need to handle openIn.Flags containing fission.FOpenRequestCREAT
+
 	obtainExclusiveLock = false
 
 Retry:
@@ -956,6 +959,8 @@ Retry:
 		errno = syscall.ENXIO
 		return
 	}
+
+	// TODO: Need to truncate file if openIn.Flags contains fission.FOpenRequestTRUNC
 
 	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
 		MountID:     globals.mountID,
@@ -2059,7 +2064,22 @@ func (dummy *globalsStruct) DoAccess(inHeader *fission.InHeader, accessIn *fissi
 
 func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fission.CreateIn) (createOut *fission.CreateOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		adjustInodeTableEntryOpenCountRequest  *imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct
+		adjustInodeTableEntryOpenCountResponse *imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct
+		directoryEntryValueV1                  *ilayout.DirectoryEntryValueV1Struct
+		directoryEntryValueV1AsValue           sortedmap.Value
+		dirInode                               *inodeStruct
+		err                                    error
+		fileInode                              *inodeStruct
+		fileInodeNumber                        uint64
+		inodeLockRequest                       *inodeLockRequestStruct
+		// modificationTimeNSec uint32
+		// modificationTimeSec  uint64
+		ok         bool
+		openHandle *openHandleStruct
+		startTime  time.Time = time.Now()
+		// statusChangeTimeNSec uint32
+		// statusChangeTimeSec  uint64
 	)
 
 	logTracef("==> DoCreate(inHeader: %+v, createIn: %+v)", inHeader, createIn)
@@ -2071,9 +2091,200 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 		globals.stats.DoCreateUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	createOut = nil
-	errno = syscall.ENOSYS
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	dirInode = lookupInode(inHeader.NodeID)
+	if nil == dirInode {
+		inodeLockRequest.unlockAll()
+		createOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == dirInode.inodeHeadV1 {
+		err = dirInode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			createOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if dirInode.payload == nil {
+		err = dirInode.oldPayload()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			createOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	directoryEntryValueV1AsValue, ok, err = dirInode.payload.GetByKey(string(createIn.Name[:]))
+	if nil != err {
+		logFatalf("dirInode.payload.GetByKey(string(createIn.Name[:])) failed: %v", err)
+	}
+
+	if ok {
+		directoryEntryValueV1, ok = directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct)
+		if !ok {
+			logFatalf("directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
+		}
+
+		switch directoryEntryValueV1.InodeType {
+		case ilayout.InodeTypeDir:
+			inodeLockRequest.unlockAll()
+			createOut = nil
+			errno = syscall.EISDIR
+			return
+		case ilayout.InodeTypeFile:
+			// Fall through
+		case ilayout.InodeTypeSymLink:
+			inodeLockRequest.unlockAll()
+			createOut = nil
+			errno = syscall.EACCES
+			return
+		default:
+			logFatalf("directoryEntryValueV1.InodeType (%v) unknown", directoryEntryValueV1.InodeType)
+		}
+
+		inodeLockRequest.inodeNumber = directoryEntryValueV1.InodeNumber
+		inodeLockRequest.exclusive = true
+		inodeLockRequest.addThisLock()
+		if len(inodeLockRequest.locksHeld) == 0 {
+			inodeLockRequest.unlockAll()
+			goto Retry
+		}
+
+		fileInode = lookupInode(directoryEntryValueV1.InodeNumber)
+		if nil == fileInode {
+			inodeLockRequest.unlockAll()
+			goto Retry
+		}
+
+		if fileInode.inodeHeadV1.InodeType != ilayout.InodeTypeFile {
+			logFatalf("fileInode.inodeHeadV1.InodeType != ilayout.InodeTypeFile")
+		}
+
+		// TODO: Need to truncate file (i.e. assume createIn.Flags contains fission.FOpenRequestTRUNC)
+	} else { // dirInode.payload.GetByKey(string(createIn.Name[:])) returned !ok
+
+		fileInodeNumber = fetchNonce()
+
+		fileInode = &inodeStruct{
+			inodeNumber:     fileInodeNumber,
+			dirty:           true,
+			markedForDelete: false,
+			leaseState:      inodeLeaseStateNone,
+			listElement:     nil,
+			heldList:        list.New(),
+			requestList:     list.New(),
+			inodeHeadV1: &ilayout.InodeHeadV1Struct{
+				InodeNumber: fileInodeNumber,
+				InodeType:   ilayout.InodeTypeFile,
+				LinkTable: []ilayout.InodeLinkTableEntryStruct{
+					ilayout.InodeLinkTableEntryStruct{
+						ParentDirInodeNumber: dirInode.inodeNumber,
+						ParentDirEntryName:   string(createIn.Name[:]),
+					},
+				},
+				Size:                0,
+				ModificationTime:    startTime,
+				StatusChangeTime:    startTime,
+				Mode:                uint16(createIn.Mode & ^createIn.UMask) & ilayout.InodeModeMask,
+				UserID:              uint64(inHeader.UID),
+				GroupID:             uint64(inHeader.GID),
+				StreamTable:         make([]ilayout.InodeStreamTableEntryStruct, 0),
+				PayloadObjectNumber: 0,
+				PayloadObjectOffset: 0,
+				PayloadObjectLength: 0,
+				SymLinkTarget:       "",
+				Layout:              nil,
+			},
+			payload:                                  nil,
+			layoutMap:                                nil,
+			superBlockInodeObjectCountAdjustment:     0,
+			superBlockInodeObjectSizeAdjustment:      0,
+			superBlockInodeBytesReferencedAdjustment: 0,
+			dereferencedObjectNumberArray:            make([]uint64, 0),
+			putObjectNumber:                          0,
+			putObjectBuffer:                          nil,
+		}
+
+		inodeLockRequest.inodeNumber = fileInodeNumber
+		inodeLockRequest.exclusive = true
+		inodeLockRequest.addThisLock()
+		if len(inodeLockRequest.locksHeld) == 0 {
+			goto Retry
+		}
+
+		dirInode.dirty = true
+
+		dirInode.inodeHeadV1.ModificationTime = startTime
+		dirInode.inodeHeadV1.StatusChangeTime = startTime
+
+		ok, err = dirInode.payload.Put(
+			string(createIn.Name[:]),
+			&ilayout.DirectoryEntryValueV1Struct{
+				InodeNumber: fileInodeNumber,
+				InodeType:   ilayout.InodeTypeFile,
+			})
+		if nil != err {
+			logFatalf("dirInode.payload.Put(string(CreateIn.Name[:]),) failed: %v", err)
+		}
+		if !ok {
+			logFatalf("dirInode.payload.Put(string(CreateIn.Name[:]),) returned !ok")
+		}
+
+		flushInodesInSlice([]*inodeStruct{dirInode, fileInode})
+	}
+
+	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
+		MountID:     globals.mountID,
+		InodeNumber: fileInode.inodeNumber,
+		Adjustment:  1,
+	}
+	adjustInodeTableEntryOpenCountResponse = &imgrpkg.AdjustInodeTableEntryOpenCountResponseStruct{}
+
+	err = rpcAdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+	if nil != err {
+		logFatal(err)
+	}
+
+	openHandle = createOpenHandle(fileInode.inodeNumber)
+
+	openHandle.fissionFlagsAppend = false
+	openHandle.fissionFlagsRead = false
+	openHandle.fissionFlagsWrite = true
+
+	createOut = &fission.CreateOut{
+		EntryOut: fission.EntryOut{
+			NodeID:         fileInode.inodeHeadV1.InodeNumber,
+			Generation:     0,
+			EntryValidSec:  globals.fuseEntryValidDurationSec,
+			AttrValidSec:   globals.fuseAttrValidDurationSec,
+			EntryValidNSec: globals.fuseEntryValidDurationNSec,
+			AttrValidNSec:  globals.fuseAttrValidDurationNSec,
+			// Attr to be filled in below
+		},
+		FH:        openHandle.fissionFH,
+		OpenFlags: 0,
+		Padding:   0,
+	}
+
+	fileInode.doAttrFetch(&createOut.EntryOut.Attr)
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
@@ -2484,13 +2695,9 @@ func gorAttrFetch(inodeNumber uint64, fissionAttr *fission.Attr, gorAttrFetchWG 
 
 func doAttrFetch(inodeNumber uint64, fissionAttr *fission.Attr) (err error) {
 	var (
-		inode                *inodeStruct
-		inodeLockRequest     *inodeLockRequestStruct
-		modificationTimeNSec uint32
-		modificationTimeSec  uint64
-		obtainExclusiveLock  bool
-		statusChangeTimeNSec uint32
-		statusChangeTimeSec  uint64
+		inode               *inodeStruct
+		inodeLockRequest    *inodeLockRequestStruct
+		obtainExclusiveLock bool
 	)
 
 	obtainExclusiveLock = false
@@ -2526,6 +2733,22 @@ Retry:
 		}
 	}
 
+	inode.doAttrFetch(fissionAttr)
+
+	inodeLockRequest.unlockAll()
+
+	err = nil
+	return
+}
+
+func (inode *inodeStruct) doAttrFetch(fissionAttr *fission.Attr) {
+	var (
+		modificationTimeNSec uint32
+		modificationTimeSec  uint64
+		statusChangeTimeNSec uint32
+		statusChangeTimeSec  uint64
+	)
+
 	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.ModificationTime.UnixNano()))
 	statusChangeTimeSec, statusChangeTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.StatusChangeTime.UnixNano()))
 
@@ -2546,12 +2769,7 @@ Retry:
 	fissionAttr.BlkSize = attrBlockSize // Possibly overwritten by fixAttrSizes()
 	fissionAttr.Padding = 0
 
-	inodeLockRequest.unlockAll()
-
 	fixAttrSizes(fissionAttr)
-
-	err = nil
-	return
 }
 
 func fixAttrSizes(attr *fission.Attr) {
