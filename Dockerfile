@@ -106,6 +106,8 @@ RUN ls -l icert
 RUN make clean
 RUN make $MakeTarget
 RUN ls -l icert
+RUN find / -name icert
+RUN echo ${GOPATH}
 
 FROM base as imgr
 COPY --from=build /src/icert/icert ./
