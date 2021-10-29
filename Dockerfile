@@ -68,11 +68,10 @@
 #     --env DISPLAY: tells Docker to set ENV DISPLAY for X apps (e.g. wireshark)
 
 FROM alpine:3.14.0 as base
-ARG GolangVersion=1.17.2
-ARG MakeTarget
 RUN apk add --no-cache libc6-compat
 
 FROM base as dev
+ARG GolangVersion=1.17.2
 RUN apk add --no-cache bind-tools    \
                        curl          \
                        fuse          \
@@ -99,6 +98,7 @@ VOLUME /src
 WORKDIR /src
 
 FROM dev as build
+ARG MakeTarget
 VOLUME /src
 COPY . /src
 WORKDIR /src
