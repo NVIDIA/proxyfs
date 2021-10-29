@@ -11,7 +11,7 @@ bench:
 	go test -bench $(gosubdir)
 
 build:
-	go build -gcflags "-N -l" $(gosubdir)
+	go build -work -a -p 1 -x -gcflags "-N -l" $(gosubdir)
 
 clean:
 	@set -e; \
