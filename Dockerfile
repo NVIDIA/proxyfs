@@ -108,6 +108,9 @@ RUN make $MakeTarget
 RUN ls -l icert
 RUN find / -name icert
 RUN echo ${GOPATH}
+RUN echo ${GOBIN}
+RUN echo ${GOROOT}
+RUN echo ${PWD}
 
 FROM base as imgr
 COPY --from=build /src/icert/icert ./
