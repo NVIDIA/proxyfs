@@ -102,17 +102,8 @@ ARG MakeTarget
 VOLUME /src
 COPY . /src
 WORKDIR /src
-RUN ls -l icert
 RUN make clean
 RUN make $MakeTarget
-RUN ls -l icert
-RUN find / -name icert
-RUN echo ${GOPATH}
-RUN echo ${GOBIN}
-RUN echo ${GOROOT}
-RUN echo ${PWD}
-RUN (cd icert ; ls -l ; make build ; ls -l)
-RUN (cd icert ; ls -l ; go build ; ls -l)
 
 FROM base as imgr
 COPY --from=build /src/icert/icert ./
