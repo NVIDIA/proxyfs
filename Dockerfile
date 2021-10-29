@@ -86,10 +86,10 @@ RUN apk add --no-cache bind-tools    \
 RUN curl -sSL https://github.com/coreos/etcd/releases/download/v3.5.0/etcd-v3.5.0-linux-amd64.tar.gz    \
     | tar -vxz -C /usr/local/bin --strip=1 etcd-v3.5.0-linux-amd64/etcd etcd-v3.5.0-linux-amd64/etcdctl \
     && chown root:root /usr/local/bin/etcd /usr/local/bin/etcdctl
-ENV LIBGL_ALWAYS_INDIRECT 1
-ENV XDG_RUNTIME_DIR /tmp/runtime-root
-ENV GolangBasename "go${GolangVersion}.linux-amd64.tar.gz"
-ENV GolangURL      "https://golang.org/dl/${GolangBasename}"
+ENV LIBGL_ALWAYS_INDIRECT=1
+ENV XDG_RUNTIME_DIR="/tmp/runtime-root"
+ENV GolangBasename="go${GolangVersion}.linux-amd64.tar.gz"
+ENV GolangURL="https://golang.org/dl/${GolangBasename}"
 WORKDIR /tmp
 RUN wget -nv ${GolangURL}
 RUN tar -C /usr/local -xzf $GolangBasename
