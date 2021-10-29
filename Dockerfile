@@ -99,7 +99,6 @@ WORKDIR /src
 
 FROM dev as build
 ARG MakeTarget
-VOLUME /src
 COPY . /src
 WORKDIR /src
 RUN make clean
