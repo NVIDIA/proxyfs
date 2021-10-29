@@ -111,6 +111,8 @@ RUN echo ${GOPATH}
 RUN echo ${GOBIN}
 RUN echo ${GOROOT}
 RUN echo ${PWD}
+RUN (cd icert ; ls -l ; make build ; ls -l)
+RUN (cd icert ; ls -l ; go build ; ls -l)
 
 FROM base as imgr
 COPY --from=build /src/icert/icert ./
