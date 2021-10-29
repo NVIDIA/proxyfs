@@ -92,6 +92,7 @@ ENV XDG_RUNTIME_DIR /tmp/runtime-root
 ENV GolangBasename "go${GolangVersion}.linux-amd64.tar.gz"
 ENV GolangURL      "https://golang.org/dl/${GolangBasename}"
 WORKDIR /tmp
+RUN echo $GolangURL
 RUN wget -nv $GolangURL
 RUN tar -C /usr/local -xzf $GolangBasename
 ENV PATH $PATH:/usr/local/go/bin
