@@ -104,6 +104,7 @@ COPY . /src
 WORKDIR /src
 RUN make clean
 RUN make $MakeTarget
+WORKDIR /
 
 FROM base as imgr
 COPY --from=build /src/icert/icert ./
