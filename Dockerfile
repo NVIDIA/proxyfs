@@ -69,6 +69,7 @@
 
 FROM alpine:3.14.0 as base
 ARG GolangVersion=1.17.2
+RUN echo $GolangVersion
 ARG MakeTarget
 RUN apk add --no-cache libc6-compat
 
