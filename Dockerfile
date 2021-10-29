@@ -102,11 +102,10 @@ ARG MakeTarget
 VOLUME /src
 COPY . /src
 WORKDIR /src
+RUN ls -l icert
 RUN make clean
 RUN make $MakeTarget
-WORKDIR /
-RUN ls -l /src/icert/icert
-RUN ls -l src/icert/icert
+RUN ls -l icert
 
 FROM base as imgr
 COPY --from=build /src/icert/icert ./
