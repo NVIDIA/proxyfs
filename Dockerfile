@@ -91,6 +91,7 @@ RUN curl -sSL https://github.com/coreos/etcd/releases/download/v3.5.0/etcd-v3.5.
 ENV LIBGL_ALWAYS_INDIRECT 1
 ENV XDG_RUNTIME_DIR /tmp/runtime-root
 ENV GolangBasename "go${GolangVersion}.linux-amd64.tar.gz"
+ENV GolangBasename "go1.17.2.linux-amd64.tar.gz"
 ENV GolangURL      "https://golang.org/dl/${GolangBasename}"
 WORKDIR /tmp
 RUN echo $GolangURL
