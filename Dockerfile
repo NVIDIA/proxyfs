@@ -15,7 +15,7 @@
 #       1) builds an image capable of building all elements
 #       2) /src is shared with context dir of host
 #     --target build:
-#       1) clones the context dir at /src
+#       1) clones the context dir at /clone
 #       2) performs a make clean to clear out non-source-controlled artifacts
 #       3) performs a make $MakeTarget
 #     --target imgr:
@@ -63,8 +63,6 @@
 #       1) bind mounts the context into /src in the container
 #       2) /src will be a read-write'able equivalent to the context dir
 #       3) only useful for --target dev
-#       4) /src will be a local copy instead for --target build
-#       5) /src doesn't exist for --target build
 #     --env DISPLAY: tells Docker to set ENV DISPLAY for X apps (e.g. wireshark)
 
 FROM alpine:3.14.0 as base
@@ -99,23 +97,23 @@ WORKDIR /src
 
 FROM dev as build
 ARG MakeTarget
-COPY . /src
-WORKDIR /src
+COPY . /clone
+WORKDIR /clone
 RUN make clean
 RUN make $MakeTarget
 
 FROM base as imgr
-COPY --from=build /src/icert/icert ./
+COPY --from=build /clone/icert/icert ./
 RUN ./icert -ca -ed25519 -caCert caCert.pem -caKey caKey.pem -ttl 3560
 RUN ./icert -ed25519 -caCert caCert.pem -caKey caKey.pem -ttl 3560 -cert cert.pem -key key.pem -dns imgr
-COPY --from=build /src/imgr/imgr      ./
-COPY --from=build /src/imgr/imgr.conf ./
+COPY --from=build /clone/imgr/imgr      ./
+COPY --from=build /clone/imgr/imgr.conf ./
 
 FROM imgr as iclient
 RUN rm icert caKey.pem cert.pem key.pem imgr imgr.conf
 RUN apk add --no-cache fuse
-COPY --from=build /src/iclient/iclient                  ./
-COPY --from=build /src/iclient/iclient.conf             ./
-COPY --from=build /src/iclient/iclient.sh               ./
-COPY --from=build /src/iauth/iauth-swift/iauth-swift.so ./
+COPY --from=build /clone/iclient/iclient                  ./
+COPY --from=build /clone/iclient/iclient.conf             ./
+COPY --from=build /clone/iclient/iclient.sh               ./
+COPY --from=build /clone/iauth/iauth-swift/iauth-swift.so ./
 RUN apk add --no-cache curl
