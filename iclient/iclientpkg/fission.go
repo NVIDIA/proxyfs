@@ -869,8 +869,7 @@ func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fissi
 		globals.stats.DoRenameUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	errno = syscall.ENOSYS
+	errno = doRenameCommon(inHeader.NodeID, string(renameIn.OldName[:]), renameIn.NewDir, string(renameIn.NewName[:]), startTime)
 	return
 }
 
@@ -2615,8 +2614,7 @@ func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fis
 		globals.stats.DoRename2Usecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	errno = syscall.ENOSYS
+	errno = doRenameCommon(inHeader.NodeID, string(rename2In.OldName[:]), rename2In.NewDir, string(rename2In.NewName[:]), startTime)
 	return
 }
 
@@ -2783,4 +2781,220 @@ func fixAttrSizes(attr *fission.Attr) {
 		attr.Blocks = 0
 		attr.BlkSize = 0
 	}
+}
+
+func doRenameCommon(oldDirInodeNumber uint64, oldName string, newDirInodeNumber uint64, newName string, startTime time.Time) (errno syscall.Errno) {
+	var (
+		directoryEntryValueV1        *ilayout.DirectoryEntryValueV1Struct
+		directoryEntryValueV1AsValue sortedmap.Value
+		err                          error
+		inodeLockRequest             *inodeLockRequestStruct
+		inodeSliceToFlush            []*inodeStruct = make([]*inodeStruct, 0)
+		newDirInode                  *inodeStruct
+		ok                           bool
+		oldDirInode                  *inodeStruct
+		renamedInode                 *inodeStruct
+		replacedInode                *inodeStruct
+	)
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = oldDirInodeNumber
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	oldDirInode = lookupInode(oldDirInodeNumber)
+	if nil == oldDirInode {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+	if oldDirInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOTDIR
+		return
+	}
+
+	inodeSliceToFlush = append(inodeSliceToFlush, oldDirInode)
+
+	if nil == oldDirInode.inodeHeadV1 {
+		err = oldDirInode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if oldDirInode.payload == nil {
+		err = oldDirInode.oldPayload()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	directoryEntryValueV1AsValue, ok, err = oldDirInode.payload.GetByKey(oldName)
+	if nil != err {
+		logFatalf("dirInode.payload.GetByKey(oldName) failed: %v", err)
+	}
+	if !ok {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+
+	directoryEntryValueV1, ok = directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct)
+	if !ok {
+		logFatalf("directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
+	}
+
+	inodeLockRequest.inodeNumber = directoryEntryValueV1.InodeNumber
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		inodeLockRequest.unlockAll()
+		goto Retry
+	}
+
+	renamedInode = lookupInode(directoryEntryValueV1.InodeNumber)
+	if nil == renamedInode {
+		inodeLockRequest.unlockAll()
+		goto Retry
+	}
+
+	inodeSliceToFlush = append(inodeSliceToFlush, renamedInode)
+
+	if nil == renamedInode.inodeHeadV1 {
+		err = renamedInode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if oldDirInodeNumber == newDirInodeNumber {
+		newDirInode = oldDirInode
+
+		if oldName == newName {
+			inodeLockRequest.unlockAll()
+			errno = 0
+			return
+		}
+	} else {
+		inodeLockRequest.inodeNumber = newDirInodeNumber
+		inodeLockRequest.exclusive = true
+		inodeLockRequest.addThisLock()
+		if len(inodeLockRequest.locksHeld) == 0 {
+			goto Retry
+		}
+
+		newDirInode = lookupInode(newDirInodeNumber)
+		if nil == newDirInode {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+		if newDirInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOTDIR
+			return
+		}
+
+		inodeSliceToFlush = append(inodeSliceToFlush, newDirInode)
+
+		if nil == newDirInode.inodeHeadV1 {
+			err = newDirInode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				errno = syscall.ENOENT
+				return
+			}
+		}
+
+		if newDirInode.payload == nil {
+			err = newDirInode.oldPayload()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				errno = syscall.ENOENT
+				return
+			}
+		}
+	}
+
+	directoryEntryValueV1AsValue, ok, err = newDirInode.payload.GetByKey(newName)
+	if nil != err {
+		logFatalf("dirInode.payload.GetByKey(newName) failed: %v", err)
+	}
+
+	if ok {
+		directoryEntryValueV1, ok = directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct)
+		if !ok {
+			logFatalf("directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
+		}
+
+		inodeLockRequest.inodeNumber = directoryEntryValueV1.InodeNumber
+		inodeLockRequest.exclusive = true
+		inodeLockRequest.addThisLock()
+		if len(inodeLockRequest.locksHeld) == 0 {
+			inodeLockRequest.unlockAll()
+			goto Retry
+		}
+
+		replacedInode = lookupInode(directoryEntryValueV1.InodeNumber)
+		if nil == renamedInode {
+			inodeLockRequest.unlockAll()
+			goto Retry
+		}
+
+		inodeSliceToFlush = append(inodeSliceToFlush, replacedInode)
+
+		if nil == replacedInode.inodeHeadV1 {
+			err = replacedInode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				errno = syscall.ENOENT
+				return
+			}
+		}
+	} else {
+		replacedInode = nil
+	}
+
+	if renamedInode.inodeHeadV1.InodeType == ilayout.InodeTypeDir {
+		if replacedInode != nil {
+			inodeLockRequest.unlockAll()
+			errno = syscall.EISDIR
+			return
+		}
+
+		// TODO - remove renamedInode from oldDirInode's payload
+		// TODO - remove renamedInode's ".." link from oldDirInode
+		// TODO - replace renamedInode's ".." to point to newDirInode
+		// TODO - add renamedInodes's ".." link in newDirInode
+		// TODO - insert renamedInode in newDirInode's payload
+	} else {
+		if replacedInode != nil {
+			// TODO - first remove replacedInode
+		}
+
+		// TODO - next remove renamedInode from oldDirInode's payload
+		// TODO - replace link entry in renamedInode to be from newDirInode
+		// TODO - finally insert renamedInode in newDirInode's payload
+	}
+
+	fmt.Printf("\nUNDO:      renamedInode: %+v\n", renamedInode)
+	fmt.Printf("UNDO:     replacedInode: %+v\n", replacedInode)
+	fmt.Printf("UNDO: inodeSliceToFlush: %+v\n\n", inodeSliceToFlush)
+
+	inodeLockRequest.unlockAll()
+
+	// TODO
+	errno = syscall.ENOSYS
+	return
 }
