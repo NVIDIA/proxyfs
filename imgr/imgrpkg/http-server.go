@@ -1199,9 +1199,9 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 						}
 
 						for inodeGETLayoutEntryIndex = range inodeHeadV1.Layout {
-							inodeGET.(*dirInodeGETStruct).Layout[inodeGETLayoutEntryIndex].ObjectName = ilayout.GetObjectNameAsString(inodeHeadV1.Layout[inodeGETLayoutEntryIndex].ObjectNumber)
-							inodeGET.(*dirInodeGETStruct).Layout[inodeGETLayoutEntryIndex].ObjectSize = inodeHeadV1.Layout[inodeGETLayoutEntryIndex].ObjectSize
-							inodeGET.(*dirInodeGETStruct).Layout[inodeGETLayoutEntryIndex].BytesReferenced = inodeHeadV1.Layout[inodeGETLayoutEntryIndex].BytesReferenced
+							inodeGET.(*fileInodeGETStruct).Layout[inodeGETLayoutEntryIndex].ObjectName = ilayout.GetObjectNameAsString(inodeHeadV1.Layout[inodeGETLayoutEntryIndex].ObjectNumber)
+							inodeGET.(*fileInodeGETStruct).Layout[inodeGETLayoutEntryIndex].ObjectSize = inodeHeadV1.Layout[inodeGETLayoutEntryIndex].ObjectSize
+							inodeGET.(*fileInodeGETStruct).Layout[inodeGETLayoutEntryIndex].BytesReferenced = inodeHeadV1.Layout[inodeGETLayoutEntryIndex].BytesReferenced
 						}
 					case ilayout.InodeTypeSymLink:
 						inodeGET = &symLinkInodeGETStruct{

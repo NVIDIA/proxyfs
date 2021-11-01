@@ -2073,13 +2073,9 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 		fileInode                              *inodeStruct
 		fileInodeNumber                        uint64
 		inodeLockRequest                       *inodeLockRequestStruct
-		// modificationTimeNSec uint32
-		// modificationTimeSec  uint64
-		ok         bool
-		openHandle *openHandleStruct
-		startTime  time.Time = time.Now()
-		// statusChangeTimeNSec uint32
-		// statusChangeTimeSec  uint64
+		ok                                     bool
+		openHandle                             *openHandleStruct
+		startTime                              time.Time = time.Now()
 	)
 
 	logTracef("==> DoCreate(inHeader: %+v, createIn: %+v)", inHeader, createIn)
@@ -2207,7 +2203,7 @@ Retry:
 				PayloadObjectOffset: 0,
 				PayloadObjectLength: 0,
 				SymLinkTarget:       "",
-				Layout:              nil,
+				Layout:              make([]ilayout.InodeHeadLayoutEntryV1Struct, 0),
 			},
 			payload:                                  nil,
 			layoutMap:                                nil,
@@ -2224,6 +2220,11 @@ Retry:
 		inodeLockRequest.addThisLock()
 		if len(inodeLockRequest.locksHeld) == 0 {
 			goto Retry
+		}
+
+		err = fileInode.newPayload()
+		if nil != err {
+			logFatalf("fileInode.newPayload() failed: %v", err)
 		}
 
 		dirInode.dirty = true
