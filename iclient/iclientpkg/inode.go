@@ -165,8 +165,6 @@ func (inode *inodeStruct) DiscardNode(objectNumber uint64, objectOffset uint64, 
 		logFatalf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
 
-	inode.ensureLayoutMapIsActive()
-
 	layoutMapEntry, ok = inode.layoutMap[objectNumber]
 	if !ok {
 		log.Fatalf("inode.layoutMap[old inode.putObjectNumber] returned !ok")
@@ -500,7 +498,94 @@ func (inode *inodeStruct) populateInodeHeadV1() (err error) {
 		logFatalf("ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf) failed: %v", err)
 	}
 
+	inode.convertInodeHeadV1LinkTableToLinkSet()
+	inode.convertInodeHeadV1StreamTableToStreamMap()
+	inode.convertInodeHeadV1LayoutToLayoutMap()
+
 	return
+}
+
+func (inode *inodeStruct) convertInodeHeadV1LinkTableToLinkSet() {
+	var (
+		ilayoutInodeLinkTableEntry ilayout.InodeLinkTableEntryStruct
+	)
+
+	inode.linkSet = make(map[ilayout.InodeLinkTableEntryStruct]struct{})
+
+	for _, ilayoutInodeLinkTableEntry = range inode.inodeHeadV1.LinkTable {
+		inode.linkSet[ilayoutInodeLinkTableEntry] = struct{}{}
+	}
+}
+
+func (inode *inodeStruct) convertLinkSetToInodeHeadV1LinkTable() {
+	var (
+		ilayoutInodeLinkTableEntry ilayout.InodeLinkTableEntryStruct
+	)
+
+	inode.inodeHeadV1.LinkTable = make([]ilayout.InodeLinkTableEntryStruct, 0, len(inode.linkSet))
+
+	for ilayoutInodeLinkTableEntry = range inode.linkSet {
+		inode.inodeHeadV1.LinkTable = append(inode.inodeHeadV1.LinkTable, ilayoutInodeLinkTableEntry)
+	}
+}
+
+func (inode *inodeStruct) convertInodeHeadV1StreamTableToStreamMap() {
+	var (
+		ilayoutInodeStreamTableEntry ilayout.InodeStreamTableEntryStruct
+	)
+
+	inode.streamMap = make(map[string][]byte)
+
+	for _, ilayoutInodeStreamTableEntry = range inode.inodeHeadV1.StreamTable {
+		inode.streamMap[ilayoutInodeStreamTableEntry.Name] = ilayoutInodeStreamTableEntry.Value
+	}
+}
+
+func (inode *inodeStruct) convertStreamMapToInodeHeadV1StreamTable() {
+	var (
+		name  string
+		value []byte
+	)
+
+	inode.inodeHeadV1.StreamTable = make([]ilayout.InodeStreamTableEntryStruct, 0, len(inode.streamMap))
+
+	for name, value = range inode.streamMap {
+		inode.inodeHeadV1.StreamTable = append(inode.inodeHeadV1.StreamTable, ilayout.InodeStreamTableEntryStruct{
+			Name:  name,
+			Value: value,
+		})
+	}
+}
+
+func (inode *inodeStruct) convertInodeHeadV1LayoutToLayoutMap() {
+	var (
+		ilayoutInodeHeadLayoutEntryV1 ilayout.InodeHeadLayoutEntryV1Struct
+	)
+
+	inode.layoutMap = make(map[uint64]layoutMapEntryStruct)
+
+	for _, ilayoutInodeHeadLayoutEntryV1 = range inode.inodeHeadV1.Layout {
+		inode.layoutMap[ilayoutInodeHeadLayoutEntryV1.ObjectNumber] = layoutMapEntryStruct{
+			objectSize:      ilayoutInodeHeadLayoutEntryV1.ObjectSize,
+			bytesReferenced: ilayoutInodeHeadLayoutEntryV1.BytesReferenced,
+		}
+	}
+}
+
+func (inode *inodeStruct) convertLayoutMapToInodeHeadV1Layout() {
+	var (
+		ilayoutInodeHeadV1LayoutIndex uint64 = 0
+		layoutMapEntry                layoutMapEntryStruct
+		objectNumber                  uint64
+	)
+
+	inode.inodeHeadV1.Layout = make([]ilayout.InodeHeadLayoutEntryV1Struct, len(inode.layoutMap))
+
+	for objectNumber, layoutMapEntry = range inode.layoutMap {
+		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectNumber = objectNumber
+		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectSize = layoutMapEntry.objectSize
+		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].BytesReferenced = layoutMapEntry.bytesReferenced
+	}
 }
 
 func (inode *inodeStruct) newPayload() (err error) {
@@ -557,43 +642,6 @@ func (inode *inodeStruct) oldPayload() (err error) {
 	return
 }
 
-func (inode *inodeStruct) convertInodeHeadV1LayoutToLayoutMap() {
-	var (
-		ilayoutInodeHeadLayoutEntryV1 ilayout.InodeHeadLayoutEntryV1Struct
-	)
-
-	inode.layoutMap = make(map[uint64]layoutMapEntryStruct)
-
-	for _, ilayoutInodeHeadLayoutEntryV1 = range inode.inodeHeadV1.Layout {
-		inode.layoutMap[ilayoutInodeHeadLayoutEntryV1.ObjectNumber] = layoutMapEntryStruct{
-			objectSize:      ilayoutInodeHeadLayoutEntryV1.ObjectSize,
-			bytesReferenced: ilayoutInodeHeadLayoutEntryV1.BytesReferenced,
-		}
-	}
-}
-
-func (inode *inodeStruct) convertLayoutMapToInodeHeadV1Layout() {
-	var (
-		ilayoutInodeHeadV1LayoutIndex uint64 = 0
-		layoutMapEntry                layoutMapEntryStruct
-		objectNumber                  uint64
-	)
-
-	inode.inodeHeadV1.Layout = make([]ilayout.InodeHeadLayoutEntryV1Struct, len(inode.layoutMap))
-
-	for objectNumber, layoutMapEntry = range inode.layoutMap {
-		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectNumber = objectNumber
-		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectSize = layoutMapEntry.objectSize
-		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].BytesReferenced = layoutMapEntry.bytesReferenced
-	}
-}
-
-func (inode *inodeStruct) ensureLayoutMapIsActive() {
-	if inode.layoutMap == nil {
-		inode.convertInodeHeadV1LayoutToLayoutMap()
-	}
-}
-
 func (inode *inodeStruct) ensurePutObjectIsActive() {
 	var (
 		layoutMapEntry layoutMapEntryStruct
@@ -605,8 +653,6 @@ func (inode *inodeStruct) ensurePutObjectIsActive() {
 		inode.putObjectBuffer = make([]byte, 0)
 
 		if inode.inodeHeadV1.InodeType != ilayout.InodeTypeSymLink {
-			inode.ensureLayoutMapIsActive()
-
 			layoutMapEntry, ok = inode.layoutMap[inode.putObjectNumber]
 			if ok {
 				log.Fatalf("inode.layoutMap[inode.putObjectNumber] returned ok")
@@ -653,11 +699,11 @@ func (inode *inodeStruct) flush() (inodeHeadLength uint64) {
 				logFatalf("inode.payload.Prune() failed: %v", err)
 			}
 		}
-
-		if inode.layoutMap != nil {
-			inode.convertLayoutMapToInodeHeadV1Layout()
-		}
 	}
+
+	inode.convertLinkSetToInodeHeadV1LinkTable()
+	inode.convertStreamMapToInodeHeadV1StreamTable()
+	inode.convertLayoutMapToInodeHeadV1Layout()
 
 	inodeHeadV1Buf, err = inode.inodeHeadV1.MarshalInodeHeadV1()
 	if nil != err {

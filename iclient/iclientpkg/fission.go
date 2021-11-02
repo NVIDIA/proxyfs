@@ -474,29 +474,26 @@ Retry:
 		heldList:        list.New(),
 		requestList:     list.New(),
 		inodeHeadV1: &ilayout.InodeHeadV1Struct{
-			InodeNumber: symLinkInodeNumber,
-			InodeType:   ilayout.InodeTypeSymLink,
-			LinkTable: []ilayout.InodeLinkTableEntryStruct{
-				ilayout.InodeLinkTableEntryStruct{
-					ParentDirInodeNumber: dirInode.inodeNumber,
-					ParentDirEntryName:   string(symLinkIn.Name[:]),
-				},
-			},
+			InodeNumber:         symLinkInodeNumber,
+			InodeType:           ilayout.InodeTypeSymLink,
+			LinkTable:           nil,
 			Size:                0,
 			ModificationTime:    startTime,
 			StatusChangeTime:    startTime,
 			Mode:                ilayout.InodeModeMask,
 			UserID:              uint64(inHeader.UID),
 			GroupID:             uint64(inHeader.GID),
-			StreamTable:         make([]ilayout.InodeStreamTableEntryStruct, 0),
+			StreamTable:         nil,
 			PayloadObjectNumber: 0,
 			PayloadObjectOffset: 0,
 			PayloadObjectLength: 0,
 			SymLinkTarget:       string(symLinkIn.Data[:]),
 			Layout:              nil,
 		},
+		linkSet:                                  make(map[ilayout.InodeLinkTableEntryStruct]struct{}),
+		streamMap:                                make(map[string][]byte),
+		layoutMap:                                make(map[uint64]layoutMapEntryStruct),
 		payload:                                  nil,
-		layoutMap:                                nil,
 		superBlockInodeObjectCountAdjustment:     0,
 		superBlockInodeObjectSizeAdjustment:      0,
 		superBlockInodeBytesReferencedAdjustment: 0,
@@ -504,6 +501,11 @@ Retry:
 		putObjectNumber:                          0,
 		putObjectBuffer:                          nil,
 	}
+
+	symLinkInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+		ParentDirInodeNumber: dirInode.inodeNumber,
+		ParentDirEntryName:   string(symLinkIn.Name[:]),
+	}] = struct{}{}
 
 	inodeLockRequest.inodeNumber = symLinkInodeNumber
 	inodeLockRequest.exclusive = true
@@ -674,33 +676,26 @@ Retry:
 		heldList:        list.New(),
 		requestList:     list.New(),
 		inodeHeadV1: &ilayout.InodeHeadV1Struct{
-			InodeNumber: childDirInodeNumber,
-			InodeType:   ilayout.InodeTypeDir,
-			LinkTable: []ilayout.InodeLinkTableEntryStruct{
-				ilayout.InodeLinkTableEntryStruct{
-					ParentDirInodeNumber: parentDirInode.inodeNumber,
-					ParentDirEntryName:   string(mkDirIn.Name[:]),
-				},
-				ilayout.InodeLinkTableEntryStruct{
-					ParentDirInodeNumber: childDirInodeNumber,
-					ParentDirEntryName:   ".",
-				},
-			},
+			InodeNumber:         childDirInodeNumber,
+			InodeType:           ilayout.InodeTypeDir,
+			LinkTable:           nil,
 			Size:                0,
 			ModificationTime:    startTime,
 			StatusChangeTime:    startTime,
 			Mode:                uint16(mkDirIn.Mode & ^mkDirIn.UMask) & ilayout.InodeModeMask,
 			UserID:              uint64(inHeader.UID),
 			GroupID:             uint64(inHeader.GID),
-			StreamTable:         make([]ilayout.InodeStreamTableEntryStruct, 0),
+			StreamTable:         nil,
 			PayloadObjectNumber: 0,
 			PayloadObjectOffset: 0,
 			PayloadObjectLength: 0,
 			SymLinkTarget:       "",
 			Layout:              nil,
 		},
+		linkSet:                                  make(map[ilayout.InodeLinkTableEntryStruct]struct{}),
+		streamMap:                                make(map[string][]byte),
+		layoutMap:                                make(map[uint64]layoutMapEntryStruct),
 		payload:                                  nil,
-		layoutMap:                                nil,
 		superBlockInodeObjectCountAdjustment:     0,
 		superBlockInodeObjectSizeAdjustment:      0,
 		superBlockInodeBytesReferencedAdjustment: 0,
@@ -708,6 +703,15 @@ Retry:
 		putObjectNumber:                          0,
 		putObjectBuffer:                          nil,
 	}
+
+	childDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+		ParentDirInodeNumber: parentDirInode.inodeNumber,
+		ParentDirEntryName:   string(mkDirIn.Name[:]),
+	}] = struct{}{}
+	childDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+		ParentDirInodeNumber: childDirInodeNumber,
+		ParentDirEntryName:   ".",
+	}] = struct{}{}
 
 	err = childDirInode.newPayload()
 	if nil != err {
@@ -751,13 +755,10 @@ Retry:
 
 	parentDirInode.dirty = true
 
-	parentDirInode.inodeHeadV1.LinkTable = append(
-		parentDirInode.inodeHeadV1.LinkTable,
-		ilayout.InodeLinkTableEntryStruct{
-			ParentDirInodeNumber: childDirInode.inodeNumber,
-			ParentDirEntryName:   "..",
-		},
-	)
+	parentDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+		ParentDirInodeNumber: childDirInode.inodeNumber,
+		ParentDirEntryName:   "..",
+	}] = struct{}{}
 
 	parentDirInode.inodeHeadV1.ModificationTime = startTime
 	parentDirInode.inodeHeadV1.StatusChangeTime = startTime
@@ -875,7 +876,11 @@ func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fissi
 
 func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.LinkIn) (linkOut *fission.LinkOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		dirInode         *inodeStruct
+		err              error
+		inodeLockRequest *inodeLockRequestStruct
+		startTime        time.Time = time.Now()
+		// targetInode      *inodeStruct
 	)
 
 	logTracef("==> DoLink(inHeader: %+v, linkIn: %+v)", inHeader, linkIn)
@@ -886,6 +891,50 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 	defer func() {
 		globals.stats.DoLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	dirInode = lookupInode(inHeader.NodeID)
+	if nil == dirInode {
+		inodeLockRequest.unlockAll()
+		linkOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == dirInode.inodeHeadV1 {
+		err = dirInode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			linkOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if dirInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		linkOut = nil
+		errno = syscall.ENOTDIR
+		return
+	}
+
+	if dirInode.payload == nil {
+		err = dirInode.oldPayload()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			linkOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+	}
 
 	// TODO
 	linkOut = nil
@@ -2113,6 +2162,13 @@ Retry:
 		}
 	}
 
+	if dirInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		createOut = nil
+		errno = syscall.ENOTDIR
+		return
+	}
+
 	if dirInode.payload == nil {
 		err = dirInode.oldPayload()
 		if nil != err {
@@ -2183,29 +2239,26 @@ Retry:
 			heldList:        list.New(),
 			requestList:     list.New(),
 			inodeHeadV1: &ilayout.InodeHeadV1Struct{
-				InodeNumber: fileInodeNumber,
-				InodeType:   ilayout.InodeTypeFile,
-				LinkTable: []ilayout.InodeLinkTableEntryStruct{
-					ilayout.InodeLinkTableEntryStruct{
-						ParentDirInodeNumber: dirInode.inodeNumber,
-						ParentDirEntryName:   string(createIn.Name[:]),
-					},
-				},
+				InodeNumber:         fileInodeNumber,
+				InodeType:           ilayout.InodeTypeFile,
+				LinkTable:           nil,
 				Size:                0,
 				ModificationTime:    startTime,
 				StatusChangeTime:    startTime,
 				Mode:                uint16(createIn.Mode & ^createIn.UMask) & ilayout.InodeModeMask,
 				UserID:              uint64(inHeader.UID),
 				GroupID:             uint64(inHeader.GID),
-				StreamTable:         make([]ilayout.InodeStreamTableEntryStruct, 0),
+				StreamTable:         nil,
 				PayloadObjectNumber: 0,
 				PayloadObjectOffset: 0,
 				PayloadObjectLength: 0,
 				SymLinkTarget:       "",
-				Layout:              make([]ilayout.InodeHeadLayoutEntryV1Struct, 0),
+				Layout:              nil,
 			},
+			linkSet:                                  make(map[ilayout.InodeLinkTableEntryStruct]struct{}),
+			streamMap:                                make(map[string][]byte),
+			layoutMap:                                make(map[uint64]layoutMapEntryStruct),
 			payload:                                  nil,
-			layoutMap:                                nil,
 			superBlockInodeObjectCountAdjustment:     0,
 			superBlockInodeObjectSizeAdjustment:      0,
 			superBlockInodeBytesReferencedAdjustment: 0,
@@ -2213,6 +2266,11 @@ Retry:
 			putObjectNumber:                          0,
 			putObjectBuffer:                          nil,
 		}
+
+		fileInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+			ParentDirInodeNumber: dirInode.inodeNumber,
+			ParentDirEntryName:   string(createIn.Name[:]),
+		}] = struct{}{}
 
 		inodeLockRequest.inodeNumber = fileInodeNumber
 		inodeLockRequest.exclusive = true
