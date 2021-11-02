@@ -3035,11 +3035,68 @@ Retry:
 			return
 		}
 
-		// TODO - remove renamedInode from oldDirInode's payload
-		// TODO - remove renamedInode's ".." link from oldDirInode
-		// TODO - replace renamedInode's ".." to point to newDirInode
-		// TODO - add renamedInodes's ".." link in newDirInode
-		// TODO - insert renamedInode in newDirInode's payload
+		if renamedInode.payload == nil {
+			err = renamedInode.oldPayload()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				errno = syscall.ENOENT
+				return
+			}
+		}
+
+		ok, err = oldDirInode.payload.DeleteByKey(oldName)
+		if nil != err {
+			logFatalf("oldDirInode.payload.DeleteByKey(newName) failed: %v", err)
+		}
+		if !ok {
+			logFatalf("oldDirInode.payload.DeleteByKey(newName) returned !ok")
+		}
+
+		delete(oldDirInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+			ParentDirInodeNumber: renamedInode.inodeNumber,
+			ParentDirEntryName:   "..",
+		})
+
+		delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+			ParentDirInodeNumber: oldDirInodeNumber,
+			ParentDirEntryName:   oldName,
+		})
+
+		ok, err = renamedInode.payload.PatchByKey(
+			"..",
+			&ilayout.DirectoryEntryValueV1Struct{
+				InodeNumber: newDirInodeNumber,
+				InodeType:   ilayout.InodeTypeDir,
+			})
+		if nil != err {
+			logFatalf("renamedInode.payload.PatchByKey(\"..\",) failed: %v", err)
+		}
+		if !ok {
+			logFatalf("renamedInode.payload.PatchByKey(\"..\",) returned !ok")
+		}
+
+		ok, err = newDirInode.payload.Put(
+			newName,
+			&ilayout.DirectoryEntryValueV1Struct{
+				InodeNumber: renamedInode.inodeNumber,
+				InodeType:   ilayout.InodeTypeDir,
+			})
+		if nil != err {
+			logFatalf("newDirInode.payload.Put(newName,) failed: %v", err)
+		}
+		if !ok {
+			logFatalf("newDirInode.payload.Put(newName,) returned !ok")
+		}
+
+		newDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+			ParentDirInodeNumber: renamedInode.inodeNumber,
+			ParentDirEntryName:   "..",
+		}] = struct{}{}
+
+		renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+			ParentDirInodeNumber: newDirInodeNumber,
+			ParentDirEntryName:   newName,
+		}] = struct{}{}
 	} else {
 		if replacedInode != nil {
 			ok, err = newDirInode.payload.DeleteByKey(newName)
@@ -3062,10 +3119,10 @@ Retry:
 
 		ok, err = oldDirInode.payload.DeleteByKey(oldName)
 		if nil != err {
-			logFatalf("newDirInode.payload.DeleteByKey(newName) failed: %v", err)
+			logFatalf("oldDirInode.payload.DeleteByKey(newName) failed: %v", err)
 		}
 		if !ok {
-			logFatalf("newDirInode.payload.DeleteByKey(newName) returned !ok")
+			logFatalf("oldDirInode.payload.DeleteByKey(newName) returned !ok")
 		}
 
 		delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
