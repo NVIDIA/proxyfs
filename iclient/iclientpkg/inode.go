@@ -133,7 +133,10 @@ func (inode *inodeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, ob
 
 	layoutMapEntry, ok = inode.layoutMap[inode.putObjectNumber]
 	if !ok {
-		log.Fatalf("inode.layoutMap[old inode.putObjectNumber] returned !ok")
+		layoutMapEntry = layoutMapEntryStruct{
+			objectSize:      0,
+			bytesReferenced: 0,
+		}
 	}
 
 	objectNumber = inode.putObjectNumber
@@ -643,27 +646,9 @@ func (inode *inodeStruct) oldPayload() (err error) {
 }
 
 func (inode *inodeStruct) ensurePutObjectIsActive() {
-	var (
-		layoutMapEntry layoutMapEntryStruct
-		ok             bool
-	)
-
 	if inode.putObjectNumber == 0 {
 		inode.putObjectNumber = fetchNonce()
 		inode.putObjectBuffer = make([]byte, 0)
-
-		if inode.inodeHeadV1.InodeType != ilayout.InodeTypeSymLink {
-			layoutMapEntry, ok = inode.layoutMap[inode.putObjectNumber]
-			if ok {
-				log.Fatalf("inode.layoutMap[inode.putObjectNumber] returned ok")
-			}
-			layoutMapEntry = layoutMapEntryStruct{
-				objectSize:      0,
-				bytesReferenced: 0,
-			}
-
-			inode.layoutMap[inode.putObjectNumber] = layoutMapEntry
-		}
 
 		inode.superBlockInodeObjectCountAdjustment++
 	}
@@ -747,7 +732,6 @@ func flushInodeNumbersInSlice(inodeNumberSlice []uint64) {
 
 func flushInodesInSlice(inodeSlice []*inodeStruct) {
 	var (
-		dereferencedObjectNumber     uint64
 		err                          error
 		inode                        *inodeStruct
 		inodeHeadLength              uint64
@@ -781,9 +765,7 @@ func flushInodesInSlice(inodeSlice []*inodeStruct) {
 		putInodeTableEntriesRequest.SuperBlockInodeObjectSizeAdjustment += inode.superBlockInodeObjectSizeAdjustment
 		putInodeTableEntriesRequest.SuperBlockInodeBytesReferencedAdjustment += inode.superBlockInodeBytesReferencedAdjustment
 
-		for _, dereferencedObjectNumber = range inode.dereferencedObjectNumberArray {
-			putInodeTableEntriesRequest.DereferencedObjectNumberArray = append(putInodeTableEntriesRequest.DereferencedObjectNumberArray, dereferencedObjectNumber)
-		}
+		putInodeTableEntriesRequest.DereferencedObjectNumberArray = append(putInodeTableEntriesRequest.DereferencedObjectNumberArray, inode.dereferencedObjectNumberArray...)
 
 		inode.dirty = false
 
