@@ -755,6 +755,9 @@ Retry:
 
 	parentDirInode.dirty = true
 
+	parentDirInode.inodeHeadV1.ModificationTime = startTime
+	parentDirInode.inodeHeadV1.StatusChangeTime = startTime
+
 	parentDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
 		ParentDirInodeNumber: childDirInode.inodeNumber,
 		ParentDirEntryName:   "..",
@@ -972,12 +975,18 @@ Retry:
 
 	targetInode.dirty = true
 
+	targetInode.inodeHeadV1.ModificationTime = startTime
+	targetInode.inodeHeadV1.StatusChangeTime = startTime
+
 	targetInode.linkSet[ilayout.InodeLinkTableEntryStruct{
 		ParentDirInodeNumber: dirInode.inodeNumber,
 		ParentDirEntryName:   string(linkIn.Name[:]),
 	}] = struct{}{}
 
 	dirInode.dirty = true
+
+	dirInode.inodeHeadV1.ModificationTime = startTime
+	dirInode.inodeHeadV1.StatusChangeTime = startTime
 
 	ok, err = dirInode.payload.Put(
 		string(linkIn.Name[:]),
@@ -2951,6 +2960,9 @@ Retry:
 	oldDirInode.dirty = true
 	inodeSliceToFlush = append(inodeSliceToFlush, oldDirInode)
 
+	oldDirInode.inodeHeadV1.ModificationTime = startTime
+	oldDirInode.inodeHeadV1.StatusChangeTime = startTime
+
 	if nil == oldDirInode.inodeHeadV1 {
 		err = oldDirInode.populateInodeHeadV1()
 		if nil != err {
@@ -3001,6 +3013,9 @@ Retry:
 	renamedInode.dirty = true
 	inodeSliceToFlush = append(inodeSliceToFlush, renamedInode)
 
+	renamedInode.inodeHeadV1.ModificationTime = startTime
+	renamedInode.inodeHeadV1.StatusChangeTime = startTime
+
 	if nil == renamedInode.inodeHeadV1 {
 		err = renamedInode.populateInodeHeadV1()
 		if nil != err {
@@ -3040,6 +3055,9 @@ Retry:
 
 		newDirInode.dirty = true
 		inodeSliceToFlush = append(inodeSliceToFlush, newDirInode)
+
+		newDirInode.inodeHeadV1.ModificationTime = startTime
+		newDirInode.inodeHeadV1.StatusChangeTime = startTime
 
 		if nil == newDirInode.inodeHeadV1 {
 			err = newDirInode.populateInodeHeadV1()
@@ -3087,6 +3105,9 @@ Retry:
 
 		replacedInode.dirty = true
 		inodeSliceToFlush = append(inodeSliceToFlush, replacedInode)
+
+		replacedInode.inodeHeadV1.ModificationTime = startTime
+		replacedInode.inodeHeadV1.StatusChangeTime = startTime
 
 		if nil == replacedInode.inodeHeadV1 {
 			err = replacedInode.populateInodeHeadV1()
