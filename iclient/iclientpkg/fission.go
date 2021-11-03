@@ -879,8 +879,9 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 		dirInode         *inodeStruct
 		err              error
 		inodeLockRequest *inodeLockRequestStruct
+		ok               bool
 		startTime        time.Time = time.Now()
-		// targetInode      *inodeStruct
+		targetInode      *inodeStruct
 	)
 
 	logTracef("==> DoLink(inHeader: %+v, linkIn: %+v)", inHeader, linkIn)
@@ -936,9 +937,80 @@ Retry:
 		}
 	}
 
-	// TODO
-	linkOut = nil
-	errno = syscall.ENOSYS
+	_, ok, err = dirInode.payload.GetByKey(string(linkIn.Name[:]))
+	if nil != err {
+		logFatalf("dirInode.payload.GetByKey(string(linkIn.Name[:])) failed: %v", err)
+	}
+	if ok {
+		inodeLockRequest.unlockAll()
+		linkOut = nil
+		errno = syscall.EEXIST
+		return
+	}
+
+	inodeLockRequest.inodeNumber = linkIn.OldNodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	targetInode = lookupInode(linkIn.OldNodeID)
+	if nil == dirInode {
+		inodeLockRequest.unlockAll()
+		linkOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if targetInode.inodeHeadV1.InodeType == ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		linkOut = nil
+		errno = syscall.EISDIR
+		return
+	}
+
+	targetInode.dirty = true
+
+	targetInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+		ParentDirInodeNumber: dirInode.inodeNumber,
+		ParentDirEntryName:   string(linkIn.Name[:]),
+	}] = struct{}{}
+
+	dirInode.dirty = true
+
+	ok, err = dirInode.payload.Put(
+		string(linkIn.Name[:]),
+		&ilayout.DirectoryEntryValueV1Struct{
+			InodeNumber: targetInode.inodeNumber,
+			InodeType:   targetInode.inodeHeadV1.InodeType,
+		})
+	if nil != err {
+		logFatalf("dirInode.payload.Put(string(linkIn.Name[:]),) failed: %v", err)
+	}
+	if !ok {
+		logFatalf("dirInode.payload.Put(string(linkIn.Name[:]),) returned !ok")
+	}
+
+	flushInodesInSlice([]*inodeStruct{dirInode, targetInode})
+
+	linkOut = &fission.LinkOut{
+		EntryOut: fission.EntryOut{
+			NodeID:         targetInode.inodeHeadV1.InodeNumber,
+			Generation:     0,
+			EntryValidSec:  globals.fuseEntryValidDurationSec,
+			AttrValidSec:   globals.fuseAttrValidDurationSec,
+			EntryValidNSec: globals.fuseEntryValidDurationNSec,
+			AttrValidNSec:  globals.fuseAttrValidDurationNSec,
+			// Attr to be filled in below
+		},
+	}
+
+	targetInode.doAttrFetch(&linkOut.EntryOut.Attr)
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
