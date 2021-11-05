@@ -1893,7 +1893,10 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 
 func (dummy *globalsStruct) DoSetXAttr(inHeader *fission.InHeader, setXAttrIn *fission.SetXAttrIn) (errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		err              error
+		inode            *inodeStruct
+		inodeLockRequest *inodeLockRequestStruct
+		startTime        time.Time = time.Now()
 	)
 
 	logTracef("==> DoSetXAttr(inHeader: %+v, setXAttrIn: %+v)", inHeader, setXAttrIn)
@@ -1905,14 +1908,55 @@ func (dummy *globalsStruct) DoSetXAttr(inHeader *fission.InHeader, setXAttrIn *f
 		globals.stats.DoSetXAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	errno = syscall.ENOSYS
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		err = inode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	inode.dirty = true
+
+	inode.inodeHeadV1.ModificationTime = startTime
+	inode.inodeHeadV1.StatusChangeTime = startTime
+
+	inode.streamMap[string(setXAttrIn.Name[:])] = setXAttrIn.Data
+
+	flushInodesInSlice([]*inodeStruct{inode})
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
 func (dummy *globalsStruct) DoGetXAttr(inHeader *fission.InHeader, getXAttrIn *fission.GetXAttrIn) (getXAttrOut *fission.GetXAttrOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		err                 error
+		inode               *inodeStruct
+		inodeLockRequest    *inodeLockRequestStruct
+		obtainExclusiveLock bool
+		ok                  bool
+		startTime           time.Time = time.Now()
+		streamData          []byte
 	)
 
 	logTracef("==> DoGetXAttr(inHeader: %+v, getXAttrIn: %+v)", inHeader, getXAttrIn)
@@ -1924,15 +1968,91 @@ func (dummy *globalsStruct) DoGetXAttr(inHeader *fission.InHeader, getXAttrIn *f
 		globals.stats.DoGetXAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	getXAttrOut = nil
-	errno = syscall.ENOSYS
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		getXAttrOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				getXAttrOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
+			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
+			goto Retry
+		}
+	}
+
+	streamData, ok = inode.streamMap[string(getXAttrIn.Name[:])]
+	if !ok {
+		inodeLockRequest.unlockAll()
+		getXAttrOut = nil
+		errno = syscall.ENODATA
+		return
+	}
+
+	if getXAttrIn.Size == 0 {
+		getXAttrOut = &fission.GetXAttrOut{
+			Size:    uint32(len(streamData)),
+			Padding: 0,
+			Data:    make([]byte, 0),
+		}
+		inodeLockRequest.unlockAll()
+		errno = 0
+		return
+	}
+
+	if getXAttrIn.Size < uint32(len(streamData)) {
+		inodeLockRequest.unlockAll()
+		getXAttrOut = nil
+		errno = syscall.ERANGE
+		return
+	}
+
+	getXAttrOut = &fission.GetXAttrOut{
+		Size:    uint32(len(streamData)),
+		Padding: 0,
+		Data:    make([]byte, len(streamData)),
+	}
+	_ = copy(getXAttrOut.Data, streamData)
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
 func (dummy *globalsStruct) DoListXAttr(inHeader *fission.InHeader, listXAttrIn *fission.ListXAttrIn) (listXAttrOut *fission.ListXAttrOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		cumulativeStreamNameCount uint32 = 0
+		cumulativeStreamNameSize  uint32 = 0
+		err                       error
+		inode                     *inodeStruct
+		inodeLockRequest          *inodeLockRequestStruct
+		listXAttrOutName          []byte
+		obtainExclusiveLock       bool
+		startTime                 time.Time = time.Now()
+		streamName                string
 	)
 
 	logTracef("==> DoListXAttr(inHeader: %+v, listXAttrIn: %+v)", inHeader, listXAttrIn)
@@ -1944,15 +2064,89 @@ func (dummy *globalsStruct) DoListXAttr(inHeader *fission.InHeader, listXAttrIn 
 		globals.stats.DoListXAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	listXAttrOut = nil
-	errno = syscall.ENOSYS
+	obtainExclusiveLock = false
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = obtainExclusiveLock
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		listXAttrOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		if obtainExclusiveLock {
+			err = inode.populateInodeHeadV1()
+			if nil != err {
+				inodeLockRequest.unlockAll()
+				listXAttrOut = nil
+				errno = syscall.ENOENT
+				return
+			}
+		} else {
+			inodeLockRequest.unlockAll()
+			obtainExclusiveLock = true
+			goto Retry
+		}
+	}
+
+	for streamName = range inode.streamMap {
+		cumulativeStreamNameCount++
+		cumulativeStreamNameSize += uint32(len(streamName)) + 1
+	}
+
+	if listXAttrIn.Size == 0 {
+		inodeLockRequest.unlockAll()
+		listXAttrOut = &fission.ListXAttrOut{
+			Size:    cumulativeStreamNameSize,
+			Padding: 0,
+			Name:    make([][]byte, 0),
+		}
+		errno = 0
+		return
+	}
+
+	if listXAttrIn.Size < cumulativeStreamNameSize {
+		inodeLockRequest.unlockAll()
+		listXAttrOut = nil
+		errno = syscall.ERANGE
+		return
+	}
+
+	listXAttrOut = &fission.ListXAttrOut{
+		Size:    cumulativeStreamNameSize,
+		Padding: 0,
+		Name:    make([][]byte, 0, cumulativeStreamNameCount),
+	}
+
+	for streamName = range inode.streamMap {
+		listXAttrOutName = make([]byte, len(streamName))
+		_ = copy(listXAttrOutName, streamName)
+		listXAttrOut.Name = append(listXAttrOut.Name, listXAttrOutName)
+	}
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
 func (dummy *globalsStruct) DoRemoveXAttr(inHeader *fission.InHeader, removeXAttrIn *fission.RemoveXAttrIn) (errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		err              error
+		inode            *inodeStruct
+		inodeLockRequest *inodeLockRequestStruct
+		ok               bool
+		startTime        time.Time = time.Now()
 	)
 
 	logTracef("==> DoRemoveXAttr(inHeader: %+v, removeXAttrIn: %+v)", inHeader, removeXAttrIn)
@@ -1964,8 +2158,50 @@ func (dummy *globalsStruct) DoRemoveXAttr(inHeader *fission.InHeader, removeXAtt
 		globals.stats.DoRemoveXAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	errno = syscall.ENOSYS
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		err = inode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	_, ok = inode.streamMap[string(removeXAttrIn.Name[:])]
+	if !ok {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENODATA
+		return
+	}
+
+	inode.dirty = true
+
+	inode.inodeHeadV1.ModificationTime = startTime
+	inode.inodeHeadV1.StatusChangeTime = startTime
+
+	delete(inode.streamMap, string(removeXAttrIn.Name[:]))
+
+	flushInodesInSlice([]*inodeStruct{inode})
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
