@@ -823,7 +823,16 @@ Retry:
 
 func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fission.UnlinkIn) (errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		deleteInodeTableEntryRequest  *imgrpkg.DeleteInodeTableEntryRequestStruct
+		deleteInodeTableEntryResponse *imgrpkg.DeleteInodeTableEntryResponseStruct
+		directoryEntryValueV1         *ilayout.DirectoryEntryValueV1Struct
+		directoryEntryValueV1AsValue  sortedmap.Value
+		dirInode                      *inodeStruct
+		err                           error
+		inodeLockRequest              *inodeLockRequestStruct
+		ok                            bool
+		startTime                     time.Time = time.Now()
+		targetInode                   *inodeStruct
 	)
 
 	logTracef("==> DoUnlink(inHeader: %+v, unlinkIn: %+v)", inHeader, unlinkIn)
@@ -835,14 +844,149 @@ func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fissi
 		globals.stats.DoUnlinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	errno = syscall.ENOSYS
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	dirInode = lookupInode(inHeader.NodeID)
+	if nil == dirInode {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == dirInode.inodeHeadV1 {
+		err = dirInode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if dirInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOTDIR
+		return
+	}
+
+	if dirInode.payload == nil {
+		err = dirInode.oldPayload()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	directoryEntryValueV1AsValue, ok, err = dirInode.payload.GetByKey(string(unlinkIn.Name[:]))
+	if nil != err {
+		logFatalf("dirInode.payload.GetByKey(string(unlinkIn.Name[:])) failed: %v", err)
+	}
+	if !ok {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+
+	directoryEntryValueV1, ok = directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct)
+	if !ok {
+		logFatalf("directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
+	}
+
+	inodeLockRequest.inodeNumber = directoryEntryValueV1.InodeNumber
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	targetInode = lookupInode(directoryEntryValueV1.InodeNumber)
+	if nil == targetInode {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == targetInode.inodeHeadV1 {
+		err = targetInode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if targetInode.inodeHeadV1.InodeType == ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		errno = syscall.EISDIR
+		return
+	}
+
+	dirInode.dirty = true
+
+	dirInode.inodeHeadV1.ModificationTime = startTime
+	dirInode.inodeHeadV1.StatusChangeTime = startTime
+
+	ok, err = dirInode.payload.DeleteByKey(string(unlinkIn.Name[:]))
+	if nil != err {
+		logFatalf("dirInode.payload.DeleteByKey(string(unlinkIn.Name[:]) failed: %v", err)
+	}
+	if !ok {
+		logFatalf("dirInode.payload.DeleteByKey(string(unlinkIn.Name[:]) returned !ok")
+	}
+
+	targetInode.dirty = true
+
+	targetInode.inodeHeadV1.ModificationTime = startTime
+	targetInode.inodeHeadV1.StatusChangeTime = startTime
+
+	delete(targetInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+		ParentDirInodeNumber: dirInode.inodeNumber,
+		ParentDirEntryName:   string(unlinkIn.Name[:]),
+	})
+
+	flushInodesInSlice([]*inodeStruct{dirInode, targetInode})
+
+	if len(targetInode.linkSet) == 0 {
+		inodeLockRequest.markForDelete(targetInode.inodeNumber)
+
+		deleteInodeTableEntryRequest = &imgrpkg.DeleteInodeTableEntryRequestStruct{
+			MountID:     globals.mountID,
+			InodeNumber: targetInode.inodeNumber,
+		}
+		deleteInodeTableEntryResponse = &imgrpkg.DeleteInodeTableEntryResponseStruct{}
+
+		err = rpcDeleteInodeTableEntry(deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)
+		if nil != err {
+			logFatalf("rpcDeleteInodeTableEntry(deleteInodeTableEntryRequest, deleteInodeTableEntryResponse) failed: %v", err)
+		}
+	}
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
 func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission.RmDirIn) (errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		childDirInode                 *inodeStruct
+		childDirInodePayloadLen       int
+		deleteInodeTableEntryRequest  *imgrpkg.DeleteInodeTableEntryRequestStruct
+		deleteInodeTableEntryResponse *imgrpkg.DeleteInodeTableEntryResponseStruct
+		directoryEntryValueV1         *ilayout.DirectoryEntryValueV1Struct
+		directoryEntryValueV1AsValue  sortedmap.Value
+		err                           error
+		inodeLockRequest              *inodeLockRequestStruct
+		ok                            bool
+		parentDirInode                *inodeStruct
+		startTime                     time.Time = time.Now()
 	)
 
 	logTracef("==> DoRmDir(inHeader: %+v, rmDirIn: %+v)", inHeader, rmDirIn)
@@ -854,8 +998,145 @@ func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission
 		globals.stats.DoRmDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	errno = syscall.ENOSYS
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	parentDirInode = lookupInode(inHeader.NodeID)
+	if nil == parentDirInode {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == parentDirInode.inodeHeadV1 {
+		err = parentDirInode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if parentDirInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOTDIR
+		return
+	}
+
+	if parentDirInode.payload == nil {
+		err = parentDirInode.oldPayload()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	directoryEntryValueV1AsValue, ok, err = parentDirInode.payload.GetByKey(string(rmDirIn.Name[:]))
+	if nil != err {
+		logFatalf("parentDirInode.payload.GetByKey(string(rmDirIn.Name[:])) failed: %v", err)
+	}
+	if !ok {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+
+	directoryEntryValueV1, ok = directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct)
+	if !ok {
+		logFatalf("directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
+	}
+
+	inodeLockRequest.inodeNumber = directoryEntryValueV1.InodeNumber
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	childDirInode = lookupInode(directoryEntryValueV1.InodeNumber)
+	if nil == childDirInode {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == childDirInode.inodeHeadV1 {
+		err = childDirInode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if childDirInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		errno = syscall.EISDIR
+		return
+	}
+
+	if childDirInode.payload == nil {
+		err = childDirInode.oldPayload()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	childDirInodePayloadLen, err = childDirInode.payload.Len()
+	if nil != err {
+		logFatalf("childDirInode.payload.Len() failed: %v", err)
+	}
+	if childDirInodePayloadLen != 2 {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOTEMPTY
+		return
+	}
+
+	parentDirInode.dirty = true
+
+	parentDirInode.inodeHeadV1.ModificationTime = startTime
+	parentDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+	delete(parentDirInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+		ParentDirInodeNumber: childDirInode.inodeNumber,
+		ParentDirEntryName:   "..",
+	})
+
+	ok, err = parentDirInode.payload.DeleteByKey(string(rmDirIn.Name[:]))
+	if nil != err {
+		logFatalf("parentDirInode.payload.DeleteByKey(oldName) failed: %v", err)
+	}
+	if !ok {
+		logFatalf("parentDirInode.payload.DeleteByKey(oldName) returned !ok")
+	}
+
+	flushInodesInSlice([]*inodeStruct{parentDirInode})
+
+	inodeLockRequest.markForDelete(childDirInode.inodeNumber)
+
+	deleteInodeTableEntryRequest = &imgrpkg.DeleteInodeTableEntryRequestStruct{
+		MountID:     globals.mountID,
+		InodeNumber: childDirInode.inodeNumber,
+	}
+	deleteInodeTableEntryResponse = &imgrpkg.DeleteInodeTableEntryResponseStruct{}
+
+	err = rpcDeleteInodeTableEntry(deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)
+	if nil != err {
+		logFatalf("rpcDeleteInodeTableEntry(deleteInodeTableEntryRequest, deleteInodeTableEntryResponse) failed: %v", err)
+	}
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
@@ -959,7 +1240,7 @@ Retry:
 	}
 
 	targetInode = lookupInode(linkIn.OldNodeID)
-	if nil == dirInode {
+	if nil == targetInode {
 		inodeLockRequest.unlockAll()
 		linkOut = nil
 		errno = syscall.ENOENT
@@ -2924,16 +3205,17 @@ func fixAttrSizes(attr *fission.Attr) {
 
 func doRenameCommon(oldDirInodeNumber uint64, oldName string, newDirInodeNumber uint64, newName string, startTime time.Time) (errno syscall.Errno) {
 	var (
-		directoryEntryValueV1        *ilayout.DirectoryEntryValueV1Struct
-		directoryEntryValueV1AsValue sortedmap.Value
-		err                          error
-		inodeLockRequest             *inodeLockRequestStruct
-		inodeSliceToFlush            []*inodeStruct = make([]*inodeStruct, 0)
-		newDirInode                  *inodeStruct
-		ok                           bool
-		oldDirInode                  *inodeStruct
-		renamedInode                 *inodeStruct
-		replacedInode                *inodeStruct
+		deleteInodeTableEntryRequest  *imgrpkg.DeleteInodeTableEntryRequestStruct
+		deleteInodeTableEntryResponse *imgrpkg.DeleteInodeTableEntryResponseStruct
+		directoryEntryValueV1         *ilayout.DirectoryEntryValueV1Struct
+		directoryEntryValueV1AsValue  sortedmap.Value
+		err                           error
+		inodeLockRequest              *inodeLockRequestStruct
+		newDirInode                   *inodeStruct
+		ok                            bool
+		oldDirInode                   *inodeStruct
+		renamedInode                  *inodeStruct
+		replacedInode                 *inodeStruct
 	)
 
 Retry:
@@ -2951,17 +3233,6 @@ Retry:
 		errno = syscall.ENOENT
 		return
 	}
-	if oldDirInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
-		inodeLockRequest.unlockAll()
-		errno = syscall.ENOTDIR
-		return
-	}
-
-	oldDirInode.dirty = true
-	inodeSliceToFlush = append(inodeSliceToFlush, oldDirInode)
-
-	oldDirInode.inodeHeadV1.ModificationTime = startTime
-	oldDirInode.inodeHeadV1.StatusChangeTime = startTime
 
 	if nil == oldDirInode.inodeHeadV1 {
 		err = oldDirInode.populateInodeHeadV1()
@@ -2970,6 +3241,12 @@ Retry:
 			errno = syscall.ENOENT
 			return
 		}
+	}
+
+	if oldDirInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOTDIR
+		return
 	}
 
 	if oldDirInode.payload == nil {
@@ -3010,12 +3287,6 @@ Retry:
 		goto Retry
 	}
 
-	renamedInode.dirty = true
-	inodeSliceToFlush = append(inodeSliceToFlush, renamedInode)
-
-	renamedInode.inodeHeadV1.ModificationTime = startTime
-	renamedInode.inodeHeadV1.StatusChangeTime = startTime
-
 	if nil == renamedInode.inodeHeadV1 {
 		err = renamedInode.populateInodeHeadV1()
 		if nil != err {
@@ -3052,12 +3323,6 @@ Retry:
 			errno = syscall.ENOTDIR
 			return
 		}
-
-		newDirInode.dirty = true
-		inodeSliceToFlush = append(inodeSliceToFlush, newDirInode)
-
-		newDirInode.inodeHeadV1.ModificationTime = startTime
-		newDirInode.inodeHeadV1.StatusChangeTime = startTime
 
 		if nil == newDirInode.inodeHeadV1 {
 			err = newDirInode.populateInodeHeadV1()
@@ -3098,24 +3363,23 @@ Retry:
 		}
 
 		replacedInode = lookupInode(directoryEntryValueV1.InodeNumber)
-		if nil == renamedInode {
+		if nil == replacedInode {
 			inodeLockRequest.unlockAll()
 			goto Retry
 		}
-
-		replacedInode.dirty = true
-		inodeSliceToFlush = append(inodeSliceToFlush, replacedInode)
-
-		replacedInode.inodeHeadV1.ModificationTime = startTime
-		replacedInode.inodeHeadV1.StatusChangeTime = startTime
 
 		if nil == replacedInode.inodeHeadV1 {
 			err = replacedInode.populateInodeHeadV1()
 			if nil != err {
 				inodeLockRequest.unlockAll()
-				errno = syscall.ENOENT
-				return
+				goto Retry
 			}
+		}
+
+		if replacedInode.inodeHeadV1.InodeType == ilayout.InodeTypeDir {
+			inodeLockRequest.unlockAll()
+			errno = syscall.EISDIR
+			return
 		}
 	} else {
 		replacedInode = nil
@@ -3137,23 +3401,20 @@ Retry:
 			}
 		}
 
-		ok, err = oldDirInode.payload.DeleteByKey(oldName)
-		if nil != err {
-			logFatalf("oldDirInode.payload.DeleteByKey(newName) failed: %v", err)
-		}
-		if !ok {
-			logFatalf("oldDirInode.payload.DeleteByKey(newName) returned !ok")
-		}
+		renamedInode.dirty = true
 
-		delete(oldDirInode.linkSet, ilayout.InodeLinkTableEntryStruct{
-			ParentDirInodeNumber: renamedInode.inodeNumber,
-			ParentDirEntryName:   "..",
-		})
+		renamedInode.inodeHeadV1.ModificationTime = startTime
+		renamedInode.inodeHeadV1.StatusChangeTime = startTime
 
 		delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
 			ParentDirInodeNumber: oldDirInodeNumber,
 			ParentDirEntryName:   oldName,
 		})
+
+		renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+			ParentDirInodeNumber: newDirInodeNumber,
+			ParentDirEntryName:   newName,
+		}] = struct{}{}
 
 		ok, err = renamedInode.payload.PatchByKey(
 			"..",
@@ -3168,6 +3429,34 @@ Retry:
 			logFatalf("renamedInode.payload.PatchByKey(\"..\",) returned !ok")
 		}
 
+		oldDirInode.dirty = true
+
+		oldDirInode.inodeHeadV1.ModificationTime = startTime
+		oldDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+		delete(oldDirInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+			ParentDirInodeNumber: renamedInode.inodeNumber,
+			ParentDirEntryName:   oldName,
+		})
+
+		ok, err = oldDirInode.payload.DeleteByKey(oldName)
+		if nil != err {
+			logFatalf("oldDirInode.payload.DeleteByKey(oldName) failed: %v", err)
+		}
+		if !ok {
+			logFatalf("oldDirInode.payload.DeleteByKey(oldName) returned !ok")
+		}
+
+		newDirInode.dirty = true
+
+		newDirInode.inodeHeadV1.ModificationTime = startTime
+		newDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+		newDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+			ParentDirInodeNumber: renamedInode.inodeNumber,
+			ParentDirEntryName:   "..",
+		}] = struct{}{}
+
 		ok, err = newDirInode.payload.Put(
 			newName,
 			&ilayout.DirectoryEntryValueV1Struct{
@@ -3180,69 +3469,140 @@ Retry:
 		if !ok {
 			logFatalf("newDirInode.payload.Put(newName,) returned !ok")
 		}
-
-		newDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
-			ParentDirInodeNumber: renamedInode.inodeNumber,
-			ParentDirEntryName:   "..",
-		}] = struct{}{}
-
-		renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
-			ParentDirInodeNumber: newDirInodeNumber,
-			ParentDirEntryName:   newName,
-		}] = struct{}{}
 	} else {
 		if replacedInode != nil {
-			ok, err = newDirInode.payload.DeleteByKey(newName)
-			if nil != err {
-				logFatalf("newDirInode.payload.DeleteByKey(newName) failed: %v", err)
-			}
-			if !ok {
-				logFatalf("newDirInode.payload.DeleteByKey(newName) returned !ok")
-			}
+			replacedInode.dirty = true
+
+			replacedInode.inodeHeadV1.ModificationTime = startTime
+			replacedInode.inodeHeadV1.StatusChangeTime = startTime
 
 			delete(replacedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
 				ParentDirInodeNumber: newDirInodeNumber,
 				ParentDirEntryName:   newName,
 			})
 
-			if len(replacedInode.linkSet) == 0 {
-				logWarnf("TODO: we need to delete replacedInode")
+			renamedInode.dirty = true
+
+			renamedInode.inodeHeadV1.ModificationTime = startTime
+			renamedInode.inodeHeadV1.StatusChangeTime = startTime
+
+			delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: oldDirInodeNumber,
+				ParentDirEntryName:   oldName,
+			})
+
+			renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: newDirInodeNumber,
+				ParentDirEntryName:   newName,
+			}] = struct{}{}
+
+			oldDirInode.dirty = true
+
+			oldDirInode.inodeHeadV1.ModificationTime = startTime
+			oldDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+			ok, err = oldDirInode.payload.DeleteByKey(oldName)
+			if nil != err {
+				logFatalf("oldDirInode.payload.DeleteByKey(oldName) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("oldDirInode.payload.DeleteByKey(oldName) returned !ok")
+			}
+
+			newDirInode.dirty = true
+
+			newDirInode.inodeHeadV1.ModificationTime = startTime
+			newDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+			ok, err = newDirInode.payload.PatchByKey(
+				newName,
+				&ilayout.DirectoryEntryValueV1Struct{
+					InodeNumber: renamedInode.inodeNumber,
+					InodeType:   ilayout.InodeTypeDir,
+				})
+			if nil != err {
+				logFatalf("newDirInode.payload.PatchByKey(newName,) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("newDirInode.payload.PatchByKey(newName,) returned !ok")
+			}
+		} else {
+			renamedInode.dirty = true
+
+			renamedInode.inodeHeadV1.ModificationTime = startTime
+			renamedInode.inodeHeadV1.StatusChangeTime = startTime
+
+			delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: oldDirInodeNumber,
+				ParentDirEntryName:   oldName,
+			})
+
+			renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: newDirInodeNumber,
+				ParentDirEntryName:   newName,
+			}] = struct{}{}
+
+			oldDirInode.dirty = true
+
+			oldDirInode.inodeHeadV1.ModificationTime = startTime
+			oldDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+			ok, err = oldDirInode.payload.DeleteByKey(oldName)
+			if nil != err {
+				logFatalf("oldDirInode.payload.DeleteByKey(oldName) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("oldDirInode.payload.DeleteByKey(oldName) returned !ok")
+			}
+
+			newDirInode.dirty = true
+
+			newDirInode.inodeHeadV1.ModificationTime = startTime
+			newDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+			ok, err = newDirInode.payload.Put(
+				newName,
+				&ilayout.DirectoryEntryValueV1Struct{
+					InodeNumber: renamedInode.inodeNumber,
+					InodeType:   ilayout.InodeTypeDir,
+				})
+			if nil != err {
+				logFatalf("newDirInode.payload.Put(newName,) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("newDirInode.payload.Put(newName,) returned !ok")
 			}
 		}
-
-		ok, err = oldDirInode.payload.DeleteByKey(oldName)
-		if nil != err {
-			logFatalf("oldDirInode.payload.DeleteByKey(newName) failed: %v", err)
-		}
-		if !ok {
-			logFatalf("oldDirInode.payload.DeleteByKey(newName) returned !ok")
-		}
-
-		delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
-			ParentDirInodeNumber: oldDirInodeNumber,
-			ParentDirEntryName:   oldName,
-		})
-
-		ok, err = newDirInode.payload.Put(
-			newName,
-			&ilayout.DirectoryEntryValueV1Struct{
-				InodeNumber: renamedInode.inodeNumber,
-				InodeType:   renamedInode.inodeHeadV1.InodeType,
-			})
-		if nil != err {
-			logFatalf("newDirInode.payload.Put(newName,) failed: %v", err)
-		}
-		if !ok {
-			logFatalf("newDirInode.payload.Put(newName,) returned !ok")
-		}
-
-		renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
-			ParentDirInodeNumber: newDirInodeNumber,
-			ParentDirEntryName:   newName,
-		}] = struct{}{}
 	}
 
-	flushInodesInSlice(inodeSliceToFlush)
+	if replacedInode == nil {
+		if oldDirInodeNumber == newDirInodeNumber {
+			flushInodesInSlice([]*inodeStruct{renamedInode, oldDirInode})
+		} else {
+			flushInodesInSlice([]*inodeStruct{renamedInode, oldDirInode, newDirInode})
+		}
+	} else {
+		if oldDirInodeNumber == newDirInodeNumber {
+			flushInodesInSlice([]*inodeStruct{replacedInode, renamedInode, oldDirInode})
+		} else {
+			flushInodesInSlice([]*inodeStruct{replacedInode, renamedInode, oldDirInode, newDirInode})
+		}
+
+		if len(replacedInode.linkSet) == 0 {
+			inodeLockRequest.markForDelete(replacedInode.inodeNumber)
+
+			deleteInodeTableEntryRequest = &imgrpkg.DeleteInodeTableEntryRequestStruct{
+				MountID:     globals.mountID,
+				InodeNumber: replacedInode.inodeNumber,
+			}
+			deleteInodeTableEntryResponse = &imgrpkg.DeleteInodeTableEntryResponseStruct{}
+
+			err = rpcDeleteInodeTableEntry(deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)
+			if nil != err {
+				logFatalf("rpcDeleteInodeTableEntry(deleteInodeTableEntryRequest, deleteInodeTableEntryResponse) failed: %v", err)
+			}
+		}
+	}
 
 	inodeLockRequest.unlockAll()
 

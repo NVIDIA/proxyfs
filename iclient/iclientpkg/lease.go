@@ -30,6 +30,32 @@ func newLockRequest() (inodeLockRequest *inodeLockRequestStruct) {
 	return
 }
 
+// markForDelete is called to schedule an inode to be deleted from globals.inodeTable
+// upon last dereference. Note that an exclusive lock must be held for the specified
+// inodeNumber and that globals.Lock() must not be held.
+//
+func (inodeLockRequest *inodeLockRequestStruct) markForDelete(inodeNumber uint64) {
+	var (
+		inodeHeldLock *inodeHeldLockStruct
+		ok            bool
+	)
+
+	globals.Lock()
+
+	inodeHeldLock, ok = inodeLockRequest.locksHeld[inodeNumber]
+	if !ok {
+		logFatalf("inodeLockRequest.locksHeld[inodeNumber] returned !ok")
+	}
+
+	if !inodeHeldLock.exclusive {
+		logFatalf("inodeHeldLock.exclusive was false")
+	}
+
+	inodeHeldLock.inode.markedForDelete = true
+
+	globals.Unlock()
+}
+
 // addThisLock is called for an existing inodeLockRequestStruct with the inodeNumber and
 // exclusive fields set to specify the inode to be locked and whether or not the lock
 // should be exlusive.
@@ -54,8 +80,6 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		ok            bool
 	)
 
-Retry:
-
 	globals.Lock()
 
 	if inodeLockRequest.inodeNumber == 0 {
@@ -68,12 +92,6 @@ Retry:
 
 	inode, ok = globals.inodeTable[inodeLockRequest.inodeNumber]
 	if ok {
-		if inode.markedForDelete {
-			globals.Unlock()
-			inode.Wait()
-			goto Retry
-		}
-
 		switch inode.leaseState {
 		case inodeLeaseStateNone:
 		case inodeLeaseStateSharedRequested:
@@ -492,8 +510,6 @@ func (inodeLockRequest *inodeLockRequestStruct) unlockAll() {
 		if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypeReleased {
 			logFatalf("received unexpected leaseResponse.LeaseResponseType: %v", leaseResponse.LeaseResponseType)
 		}
-
-		inode.Done()
 	}
 
 	inodeLockRequest.locksHeld = make(map[uint64]*inodeHeldLockStruct)

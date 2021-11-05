@@ -479,17 +479,56 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 
 func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *DeleteInodeTableEntryResponseStruct) (err error) {
 	var (
-		startTime time.Time = time.Now()
+		leaseRequest *leaseRequestStruct
+		mount        *mountStruct
+		ok           bool
+		startTime    time.Time = time.Now()
 	)
 
 	defer func() {
 		globals.stats.DeleteInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO: Mark for deletion... and, if inodeOpenCount == 0, kick off delete of inode now
+	globals.Lock()
 
-	return fmt.Errorf(ETODO + " deleteInodeTableEntry")
+	mount, ok = globals.mountMap[deleteInodeTableEntryRequest.MountID]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("%s %s", EUnknownMountID, deleteInodeTableEntryRequest.MountID)
+		return
+	}
+
+	if mount.authTokenHasExpired() {
+		globals.Unlock()
+		err = fmt.Errorf("%s %s", EAuthTokenRejected, mount.authToken)
+		return
+	}
+
+	leaseRequest, ok = mount.leaseRequestMap[deleteInodeTableEntryRequest.InodeNumber]
+	if !ok || (leaseRequestStateExclusiveGranted != leaseRequest.requestState) {
+		globals.Unlock()
+		err = fmt.Errorf("%s %016X", EMissingLease, deleteInodeTableEntryRequest.InodeNumber)
+		return
+	}
+
+	// TODO: Need to actually clean up the Inode... but for now, just remove it
+
+	ok, err = mount.volume.inodeTable.DeleteByKey(deleteInodeTableEntryRequest.InodeNumber)
+	if nil != err {
+		logFatalf("volume.inodeTable.DeleteByKey(n.InodeNumber) failed: %v", err)
+	}
+	if !ok {
+		logFatalf("volume.inodeTable.DeleteByKey(n.InodeNumber) returned !ok")
+	}
+
+	globals.Unlock()
+
+	err = nil
+	return
 }
+
+// TODO - The thinking is that some "to-be-deleted-upon-last-close" logic will substitute
+// for the InodeTable entry... and that some background garbage collector will do the work.
 
 func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct) (err error) {
 	var (

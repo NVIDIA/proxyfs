@@ -99,7 +99,6 @@ type openHandleStruct struct {
 }
 
 type inodeStruct struct {
-	sync.WaitGroup                                                 // Signaled to indicate .markedForDelete == true triggered removal has completed
 	inodeNumber     uint64                                         //
 	dirty           bool                                           //
 	markedForDelete bool                                           // If true, remove from globalsStruct.inodeTable upon last dereference
