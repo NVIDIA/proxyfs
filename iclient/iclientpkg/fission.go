@@ -1896,6 +1896,7 @@ func (dummy *globalsStruct) DoSetXAttr(inHeader *fission.InHeader, setXAttrIn *f
 		err              error
 		inode            *inodeStruct
 		inodeLockRequest *inodeLockRequestStruct
+		ok               bool
 		startTime        time.Time = time.Now()
 	)
 
@@ -1931,6 +1932,29 @@ Retry:
 			errno = syscall.ENOENT
 			return
 		}
+	}
+
+	_, ok = inode.streamMap[string(setXAttrIn.Name[:])]
+
+	switch setXAttrIn.Flags {
+	case 0:
+		// Fall through
+	case fission.SetXAttrInCreate:
+		if ok {
+			inodeLockRequest.unlockAll()
+			errno = syscall.EEXIST
+			return
+		}
+	case fission.SetXAttrInReplace:
+		if !ok {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENODATA
+			return
+		}
+	default:
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOTSUP
+		return
 	}
 
 	inode.dirty = true
