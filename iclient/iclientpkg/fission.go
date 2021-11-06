@@ -303,7 +303,11 @@ Retry:
 
 func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fission.SetAttrIn) (setAttrOut *fission.SetAttrOut, errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		err              error
+		inode            *inodeStruct
+		inodeLockRequest *inodeLockRequestStruct
+		inodeNumber      uint64
+		startTime        time.Time = time.Now()
 	)
 
 	logTracef("==> DoSetAttr(inHeader: %+v, setAttrIn: %+v)", inHeader, setAttrIn)
@@ -315,9 +319,92 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 		globals.stats.DoSetAttrUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	setAttrOut = nil
-	errno = syscall.ENOSYS
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		setAttrOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		err = inode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			setAttrOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if (setAttrIn.Valid & fission.SetAttrInValidSize) != 0 {
+		if inode.inodeHeadV1.InodeType != ilayout.InodeTypeFile {
+			inodeLockRequest.unlockAll()
+			setAttrOut = nil
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	inode.dirty = true
+
+	inode.inodeHeadV1.StatusChangeTime = startTime
+
+	if (setAttrIn.Valid & fission.SetAttrInValidMode) != 0 {
+		inode.inodeHeadV1.Mode = uint16(setAttrIn.Mode & uint32(syscall.S_IRWXU|syscall.S_IRWXG|syscall.S_IRWXO))
+	}
+
+	if (setAttrIn.Valid & fission.SetAttrInValidUID) != 0 {
+		inode.inodeHeadV1.UserID = uint64(setAttrIn.UID)
+	}
+
+	if (setAttrIn.Valid & fission.SetAttrInValidGID) != 0 {
+		inode.inodeHeadV1.GroupID = uint64(setAttrIn.GID)
+	}
+
+	// if (setAttrIn.Valid & fission.SetAttrInValidSize) != 0 {
+	//     // TODO - need to adjust file size...
+	// }
+
+	if (setAttrIn.Valid & fission.SetAttrInValidMTime) != 0 {
+		if (setAttrIn.Valid & fission.SetAttrInValidMTimeNow) != 0 {
+			inode.inodeHeadV1.ModificationTime = startTime
+		} else {
+			inode.inodeHeadV1.ModificationTime = time.Unix(int64(setAttrIn.MTimeSec), int64(setAttrIn.MTimeNSec))
+		}
+	}
+
+	inodeNumber = inode.inodeNumber
+
+	flushInodesInSlice([]*inodeStruct{inode})
+
+	inodeLockRequest.unlockAll()
+
+	setAttrOut = &fission.SetAttrOut{
+		AttrValidSec:  globals.fuseAttrValidDurationSec,
+		AttrValidNSec: globals.fuseAttrValidDurationNSec,
+		Dummy:         0,
+		// Attr to be filled in below
+	}
+
+	err = doAttrFetch(inodeNumber, &setAttrOut.Attr)
+
+	if nil == err {
+		errno = 0
+	} else {
+		setAttrOut = nil
+		errno = syscall.EIO
+	}
+
 	return
 }
 
@@ -3320,11 +3407,6 @@ func (dummy *globalsStruct) DoLSeek(inHeader *fission.InHeader, lSeekIn *fission
 func nsToUnixTime(ns uint64) (sec uint64, nsec uint32) {
 	sec = ns / 1e9
 	nsec = uint32(ns - (sec * 1e9))
-	return
-}
-
-func unixTimeToNs(sec uint64, nsec uint32) (ns uint64) {
-	ns = (sec * 1e9) + uint64(nsec)
 	return
 }
 
