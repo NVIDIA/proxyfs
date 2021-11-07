@@ -577,17 +577,35 @@ func (inode *inodeStruct) convertInodeHeadV1LayoutToLayoutMap() {
 
 func (inode *inodeStruct) convertLayoutMapToInodeHeadV1Layout() {
 	var (
-		ilayoutInodeHeadV1LayoutIndex uint64 = 0
-		layoutMapEntry                layoutMapEntryStruct
-		objectNumber                  uint64
+		layoutMapEntry             layoutMapEntryStruct
+		layoutMapEntryToDeleteList []uint64
+		objectNumber               uint64
 	)
 
-	inode.inodeHeadV1.Layout = make([]ilayout.InodeHeadLayoutEntryV1Struct, len(inode.layoutMap))
+	inode.inodeHeadV1.Layout = make([]ilayout.InodeHeadLayoutEntryV1Struct, 0, len(inode.layoutMap))
 
 	for objectNumber, layoutMapEntry = range inode.layoutMap {
-		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectNumber = objectNumber
-		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].ObjectSize = layoutMapEntry.objectSize
-		inode.inodeHeadV1.Layout[ilayoutInodeHeadV1LayoutIndex].BytesReferenced = layoutMapEntry.bytesReferenced
+		if layoutMapEntry.objectSize == 0 {
+			if layoutMapEntry.bytesReferenced != 0 {
+				logFatalf("(layoutMapEntry.objectSize == 0) && (layoutMapEntry.bytesReferenced != 0)")
+			}
+
+			layoutMapEntryToDeleteList = append(layoutMapEntryToDeleteList, objectNumber)
+		} else {
+			if layoutMapEntry.bytesReferenced == 0 {
+				logFatalf("(layoutMapEntry.objectSize != 0) && (layoutMapEntry.bytesReferenced == 0)")
+			}
+
+			inode.inodeHeadV1.Layout = append(inode.inodeHeadV1.Layout, ilayout.InodeHeadLayoutEntryV1Struct{
+				ObjectNumber:    objectNumber,
+				ObjectSize:      layoutMapEntry.objectSize,
+				BytesReferenced: layoutMapEntry.bytesReferenced,
+			})
+		}
+	}
+
+	for _, objectNumber = range layoutMapEntryToDeleteList {
+		delete(inode.layoutMap, objectNumber)
 	}
 }
 

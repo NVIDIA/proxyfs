@@ -371,9 +371,19 @@ Retry:
 		inode.inodeHeadV1.GroupID = uint64(setAttrIn.GID)
 	}
 
-	// if (setAttrIn.Valid & fission.SetAttrInValidSize) != 0 {
-	//     // TODO - need to adjust file size...
-	// }
+	if (setAttrIn.Valid & fission.SetAttrInValidSize) != 0 {
+		if setAttrIn.Size < inode.inodeHeadV1.Size {
+			if inode.payload == nil {
+				err = inode.oldPayload()
+				if nil != err {
+					logFatalf("inode.oldPayload() failed: %v", err)
+				}
+			}
+
+			inode.unmapExtent(setAttrIn.Size, 0)
+		}
+		inode.inodeHeadV1.Size = setAttrIn.Size
+	}
 
 	if (setAttrIn.Valid & fission.SetAttrInValidMTime) != 0 {
 		if (setAttrIn.Valid & fission.SetAttrInValidMTimeNow) != 0 {
@@ -1457,7 +1467,16 @@ Retry:
 		return
 	}
 
-	// TODO: Need to truncate file if openIn.Flags contains fission.FOpenRequestTRUNC
+	if (openIn.Flags & fission.FOpenRequestTRUNC) == fission.FOpenRequestTRUNC {
+		if inode.payload == nil {
+			err = inode.oldPayload()
+			if nil != err {
+				logFatalf("inode.oldPayload() failed: %v", err)
+			}
+		}
+
+		inode.unmapExtent(0, 0)
+	}
 
 	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
 		MountID:     globals.mountID,
@@ -1522,6 +1541,9 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 
 	defer func() {
 		globals.stats.DoReadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if (errno == 0) && (readOut != nil) {
+			globals.stats.DoReadBytes.Add(uint64(len(readOut.Data)))
+		}
 	}()
 
 	obtainExclusiveLock = false
@@ -1535,7 +1557,7 @@ Retry:
 		goto Retry
 	}
 
-	openHandle = lookupOpenHandleByInodeNumber(readIn.FH)
+	openHandle = lookupOpenHandleByFissionFH(readIn.FH)
 	if nil == openHandle {
 		inodeLockRequest.unlockAll()
 		readOut = nil
@@ -1638,7 +1660,7 @@ Retry:
 
 	readPlan = make([]*ilayout.ExtentMapEntryValueV1Struct, 0, 2*(extentMapEntryIndexV1Max-extentMapEntryIndexV1Min))
 
-	for extentMapEntryIndexV1 = extentMapEntryIndexV1Min; extentMapEntryIndexV1 < extentMapEntryIndexV1Max; extentMapEntryIndexV1++ {
+	for extentMapEntryIndexV1 = extentMapEntryIndexV1Min; extentMapEntryIndexV1 <= extentMapEntryIndexV1Max; extentMapEntryIndexV1++ {
 		extentMapEntryKeyV1AsKey, extentMapEntryValueV1AsValue, _, err = inode.payload.GetByIndex(extentMapEntryIndexV1)
 		if nil != err {
 			logFatal(err)
@@ -1712,14 +1734,15 @@ Retry:
 	for _, readPlanEntry = range readPlan {
 		switch readPlanEntry.ObjectNumber {
 		case 0:
-			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length, readPlanEntry.Length)...)
+			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length)...)
 		case inode.putObjectNumber:
+			// Note that if putObject is inactive, case 0: will hae already matched readPlanEntry.ObjectNumber
 			readOut.Data = append(readOut.Data, inode.putObjectBuffer[readPlanEntry.ObjectOffset:(readPlanEntry.ObjectOffset+readPlanEntry.Length)]...)
 		default:
 			// TODO - need to actually read from the cache (in a coherent/cooperative way)
 			// TODO - need to handle case where extent crosses cache line boundary
 			// TODO - but for now, we will simply append zeroes
-			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length, readPlanEntry.Length)...) // TODO
+			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length)...) // TODO
 		}
 	}
 
@@ -1734,6 +1757,9 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		err              error
 		inode            *inodeStruct
 		inodeLockRequest *inodeLockRequestStruct
+		newSize          uint64
+		offset           uint64
+		oldSize          uint64
 		openHandle       *openHandleStruct
 		startTime        time.Time = time.Now()
 	)
@@ -1745,7 +1771,16 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 	defer func() {
 		globals.stats.DoWriteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if (errno == 0) && (writeOut != nil) {
+			globals.stats.DoWriteBytes.Add(uint64(writeOut.Size))
+		}
 	}()
+
+	if uint64(writeIn.Size) != uint64(len(writeIn.Data)) {
+		writeOut = nil
+		errno = syscall.EIO
+		return
+	}
 
 Retry:
 	inodeLockRequest = newLockRequest()
@@ -1756,7 +1791,7 @@ Retry:
 		goto Retry
 	}
 
-	openHandle = lookupOpenHandleByInodeNumber(writeIn.FH)
+	openHandle = lookupOpenHandleByFissionFH(writeIn.FH)
 	if nil == openHandle {
 		inodeLockRequest.unlockAll()
 		writeOut = nil
@@ -1811,16 +1846,49 @@ Retry:
 		logFatalf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
 
-	// TODO - need to patch ExtentMap
-	// TODO - need to append to inode.putObjectBuffer
-	// TODO - need to detect combinable ExtentMap entries
+	if inode.payload == nil {
+		err = inode.oldPayload()
+		if nil != err {
+			logFatalf("inode.oldPayload() failed: %v", err)
+		}
+	}
+
+	oldSize = inode.inodeHeadV1.Size
+
+	if openHandle.fissionFlagsAppend {
+		offset = oldSize
+		newSize = oldSize + uint64(len(writeIn.Data))
+	} else {
+		offset = writeIn.Offset
+		newSize = writeIn.Offset + uint64(len(writeIn.Data))
+		if newSize < oldSize {
+			newSize = oldSize
+		}
+	}
+
+	inode.dirty = true
+
+	inode.inodeHeadV1.ModificationTime = startTime
+
+	inode.inodeHeadV1.Size = newSize
+
+	inode.recordExtent(offset, uint64(len(writeIn.Data)))
+
+	inode.putObjectBuffer = append(inode.putObjectBuffer, writeIn.Data...)
+
 	// TODO - need to trigger a flush if len(payload.putObjectBuffer) >= globals.config.FileFlushTriggerSize
 	// TODO - need to (possibly) trigger new timer after globals.config.FileFlushTriggerDuration
+	// TODO - for now, we could just flush every write (but DoRead() will not read flushed data yet)
+	// flushInodesInSlice([]*inodeStruct{inode})
 
 	inodeLockRequest.unlockAll()
 
-	writeOut = nil // TODO
-	errno = syscall.ENOSYS
+	writeOut = &fission.WriteOut{
+		Size:    writeIn.Size,
+		Padding: 0,
+	}
+
+	errno = 0
 	return
 }
 
@@ -2934,9 +3002,15 @@ Retry:
 			logFatalf("fileInode.inodeHeadV1.InodeType != ilayout.InodeTypeFile")
 		}
 
-		// TODO: Need to truncate file (i.e. assume createIn.Flags contains fission.FOpenRequestTRUNC)
-	} else { // dirInode.payload.GetByKey(string(createIn.Name[:])) returned !ok
+		if fileInode.payload == nil {
+			err = fileInode.oldPayload()
+			if nil != err {
+				logFatalf("fileInode.oldPayload() failed: %v", err)
+			}
+		}
 
+		fileInode.unmapExtent(0, 0)
+	} else { // dirInode.payload.GetByKey(string(createIn.Name[:])) returned !ok
 		fileInodeNumber = fetchNonce()
 
 		fileInode = &inodeStruct{

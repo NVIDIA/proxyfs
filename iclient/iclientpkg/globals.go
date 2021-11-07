@@ -215,6 +215,9 @@ type statsStruct struct {
 	DoReadDirPlusUsecs bucketstats.BucketLog2Round // (*globalsStruct)DoReadDirPlus()
 	DoRename2Usecs     bucketstats.BucketLog2Round // (*globalsStruct)DoRename2()
 	DoLSeekUsecs       bucketstats.BucketLog2Round // (*globalsStruct)DoLSeek()
+
+	DoReadBytes  bucketstats.BucketLog2Round // (*globalsStruct)DoRead()
+	DoWriteBytes bucketstats.BucketLog2Round // (*globalsStruct)DoWrite()
 }
 
 type globalsStruct struct {
