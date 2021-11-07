@@ -47,6 +47,8 @@ github.com/NVIDIA/fission v0.0.0-20211019224312-9bcd4fabb066 h1:K/8Os/A5UFB6mJiQ
 github.com/NVIDIA/fission v0.0.0-20211019224312-9bcd4fabb066/go.mod h1:Cf+nuyjoIDp/RE+QDwIDWKpOzl3S81S5N3ajaewMe+U=
 github.com/NVIDIA/fission v0.0.0-20211105235624-b9d1d59bb6c2 h1:aeeSFyX1qAyT7AgMJcAqj2f3mpoKJC6jvhqkl14qtr4=
 github.com/NVIDIA/fission v0.0.0-20211105235624-b9d1d59bb6c2/go.mod h1:Cf+nuyjoIDp/RE+QDwIDWKpOzl3S81S5N3ajaewMe+U=
+github.com/NVIDIA/fission v0.0.0-20211107202641-3e344bcb438b h1:iJ0ZiDsn950iZV10cAAxltZxmJleVa5Cfza3BS4WJ24=
+github.com/NVIDIA/fission v0.0.0-20211107202641-3e344bcb438b/go.mod h1:Cf+nuyjoIDp/RE+QDwIDWKpOzl3S81S5N3ajaewMe+U=
 github.com/NVIDIA/sortedmap v0.0.0-20210902154213-c8c741ed94c5 h1:mDx/maO8psu+pHQqEDoL15WTj/BAAnu/sKSeOVR8wZI=
 github.com/NVIDIA/sortedmap v0.0.0-20210902154213-c8c741ed94c5/go.mod h1:YtiQTabdmrFxECTKRqpuY/sXCKXOvaEc8plI2zYFb+k=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=

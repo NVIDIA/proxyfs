@@ -44,6 +44,7 @@ func performMountFUSE() (err error) {
 		globals.config.VolumeName,
 		globals.config.MountPointDirPath,
 		fuseSubtype,
+		globals.config.FUSEMaxRead,
 		globals.config.FUSEMaxWrite,
 		fuseDefaultPermissions,
 		globals.config.FUSEAllowOther,

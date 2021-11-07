@@ -14,6 +14,7 @@
 //  FUSEAllowOther:                   true
 //  FUSEMaxBackground:                1000
 //  FUSECongestionThreshhold:         0
+//  FUSEMaxRead:                      131076
 //  FUSEMaxWrite:                     131076
 //  FUSEEntryValidDuration:           250ms
 //  FUSEAttrValidDuration:            250ms
