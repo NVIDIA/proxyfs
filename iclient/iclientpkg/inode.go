@@ -920,9 +920,10 @@ func (fileInode *inodeStruct) recordExtent(startingFileOffset uint64, length uin
 
 // unmapExtent releases references for a range of bytes in a fileInode. If length
 // is zero, the unmapped extent is assumed to be to the end of the fileInode (i.e.
-// a truncate opereration). The fileInode's Size will not be adjusted as holes in
-// the ExtentMap equate to "read as zero" and the fileInode's Size may have been
-// established via SetAttr (i.e. without actually writing data to extend the fileInode).
+// a truncate opereration) as indicated by the fileInode's current Size. The
+// fileInode's Size will not be adjusted as holes in the ExtentMap equate to
+// "read as zero" and the fileInode's Size may have been established via SetAttr
+// (i.e. without actually writing data to extend the fileInode).
 //
 // The fileInode's layoutMap and, potentially, dereferencedObjectNumberArray will be
 // updated to reflect the dereferenced extent. Similarly, the fileInode's pending
@@ -943,6 +944,10 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 		ok                           bool
 		subsequentFileOffset         uint64
 	)
+
+	if length == 0 {
+		length = fileInode.inodeHeadV1.Size - startingFileOffset
+	}
 
 	index, found, err = fileInode.payload.BisectLeft(startingFileOffset)
 	if nil != err {
@@ -1042,7 +1047,7 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 			logFatalf("extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1Struct) returned !ok")
 		}
 
-		if (extentMapEntryKeyV1 + extentMapEntryValueV1.Length) <= subsequentFileOffset {
+		if (extentMapEntryKeyV1 + extentMapEntryValueV1.Length) > subsequentFileOffset {
 			// Trim this extent on the left
 
 			extentLengthToTrim = subsequentFileOffset - extentMapEntryKeyV1

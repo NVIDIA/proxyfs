@@ -1511,24 +1511,32 @@ Retry:
 
 func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.ReadIn) (readOut *fission.ReadOut, errno syscall.Errno) {
 	var (
-		curOffset                    uint64
-		err                          error
-		extentMapEntryIndexV1        int
-		extentMapEntryIndexV1Max     int // Entry entry at or just after  where readIn.Offset+readIn.Size may reside
-		extentMapEntryIndexV1Min     int // First entry at or just before where readIn.Offset may reside
-		extentMapEntryKeyV1          uint64
-		extentMapEntryKeyV1AsKey     sortedmap.Key
-		extentMapEntryValueV1        *ilayout.ExtentMapEntryValueV1Struct
-		extentMapEntryValueV1AsValue sortedmap.Value
-		inode                        *inodeStruct
-		inodeLockRequest             *inodeLockRequestStruct
-		obtainExclusiveLock          bool
-		ok                           bool
-		openHandle                   *openHandleStruct
-		readPlan                     []*ilayout.ExtentMapEntryValueV1Struct
-		readPlanEntry                *ilayout.ExtentMapEntryValueV1Struct // If .ObjectNumber == 0, .ObjectOffset is ignored... .Length is the number of zero fill bytes
-		remainingSize                uint64
-		startTime                    time.Time = time.Now()
+		curOffset                                uint64
+		err                                      error
+		extentMapEntryIndexV1                    int
+		extentMapEntryIndexV1Max                 int // Entry entry at or just after  where readIn.Offset+readIn.Size may reside
+		extentMapEntryIndexV1Min                 int // First entry at or just before where readIn.Offset may reside
+		extentMapEntryKeyV1                      uint64
+		extentMapEntryKeyV1AsKey                 sortedmap.Key
+		extentMapEntryValueV1                    *ilayout.ExtentMapEntryValueV1Struct
+		extentMapEntryValueV1AsValue             sortedmap.Value
+		inode                                    *inodeStruct
+		inodeLockRequest                         *inodeLockRequestStruct
+		obtainExclusiveLock                      bool
+		ok                                       bool
+		openHandle                               *openHandleStruct
+		readCacheKey                             readCacheKeyStruct
+		readCacheLine                            *readCacheLineStruct
+		readCacheLineBuf                         []byte
+		readCacheLineBufLengthAvailableToConsume uint64
+		readCacheLineOffset                      uint64
+		readCacheLineToEvict                     *readCacheLineStruct
+		readCacheLineToEvictListElement          *list.Element
+		readCacheLineWG                          *sync.WaitGroup
+		readPlan                                 []*ilayout.ExtentMapEntryValueV1Struct
+		readPlanEntry                            *ilayout.ExtentMapEntryValueV1Struct // If .ObjectNumber == 0, .ObjectOffset is ignored... .Length is the number of zero fill bytes
+		remainingSize                            uint64
+		startTime                                time.Time = time.Now()
 	)
 
 	logTracef("==> DoRead(inHeader: %+v, readIn: %+v)", inHeader, readIn)
@@ -1732,18 +1740,154 @@ Retry:
 		})
 	}
 
+	// Now process readPlan
+
 	for _, readPlanEntry = range readPlan {
 		switch readPlanEntry.ObjectNumber {
 		case 0:
 			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length)...)
 		case inode.putObjectNumber:
-			// Note that if putObject is inactive, case 0: will hae already matched readPlanEntry.ObjectNumber
+			// Note that if putObject is inactive, case 0: will have already matched readPlanEntry.ObjectNumber
 			readOut.Data = append(readOut.Data, inode.putObjectBuffer[readPlanEntry.ObjectOffset:(readPlanEntry.ObjectOffset+readPlanEntry.Length)]...)
 		default:
-			// TODO - need to actually read from the cache (in a coherent/cooperative way)
-			// TODO - need to handle case where extent crosses cache line boundary
-			// TODO - but for now, we will simply append zeroes
-			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length)...) // TODO
+			for readPlanEntry.Length > 0 {
+				readCacheKey = readCacheKeyStruct{
+					objectNumber: readPlanEntry.ObjectNumber,
+					lineNumber:   readPlanEntry.ObjectOffset / globals.config.ReadCacheLineSize,
+				}
+				readCacheLineOffset = readPlanEntry.ObjectOffset - (readCacheKey.lineNumber * globals.config.ReadCacheLineSize)
+
+				globals.Lock()
+
+				readCacheLine, ok = globals.readCacheMap[readCacheKey]
+
+				if ok {
+					// readCacheLine is in globals.readCacheMap but may be being filled
+
+					globals.readCacheLRU.MoveToBack(readCacheLine.listElement)
+
+					if readCacheLine.wg == nil {
+						// readCacheLine is already filled...
+
+						readCacheLineBuf = readCacheLine.buf
+
+						globals.Unlock()
+					} else {
+						// readCacheLine is being filled... so just wait for it
+
+						readCacheLineWG = readCacheLine.wg
+
+						globals.Unlock()
+
+						readCacheLineWG.Wait()
+
+						// If readCacheLine fill failed... we must exit
+
+						globals.Lock()
+						readCacheLineBuf = readCacheLine.buf
+						globals.Unlock()
+
+						if nil == readCacheLineBuf {
+							inodeLockRequest.unlockAll()
+							readOut = nil
+							errno = syscall.EIO
+							return
+						}
+					}
+				} else {
+					// readCacheLine is absent from globals.readCacheMap... so put it there and fill it
+
+					readCacheLineWG = &sync.WaitGroup{}
+
+					readCacheLine = &readCacheLineStruct{
+						wg:  readCacheLineWG,
+						key: readCacheKey,
+						buf: nil,
+					}
+
+					readCacheLine.wg.Add(1)
+
+					readCacheLine.listElement = globals.readCacheLRU.PushBack(readCacheLine)
+
+					// Need to evict LRU'd readCacheLine if globals.config.ReadCacheLineCountMax is exceeded
+
+					for globals.config.ReadCacheLineCountMax < uint64(globals.readCacheLRU.Len()) {
+						readCacheLineToEvictListElement = globals.readCacheLRU.Front()
+						readCacheLineToEvict, ok = readCacheLineToEvictListElement.Value.(*readCacheLineStruct)
+						if !ok {
+							logFatalf("readCacheLineToEvictListElement.Value.(*readCacheLineStruct) returned !ok")
+						}
+
+						delete(globals.readCacheMap, readCacheLineToEvict.key)
+						_ = globals.readCacheLRU.Remove(readCacheLineToEvict.listElement)
+					}
+
+					globals.Unlock()
+
+					readCacheLineBuf, err = objectGETRange(
+						readCacheLine.key.objectNumber,
+						readCacheLine.key.lineNumber&globals.config.ReadCacheLineSize,
+						globals.config.ReadCacheLineSize)
+
+					if nil != err {
+						// readCacheLine fill failed... so tell others and exit
+
+						globals.Lock()
+
+						delete(globals.readCacheMap, readCacheKey)
+						_ = globals.readCacheLRU.Remove(readCacheLine.listElement)
+
+						readCacheLine.wg = nil
+
+						readCacheLineWG.Done()
+
+						inodeLockRequest.unlockAll()
+
+						readOut = nil
+						errno = syscall.EIO
+						return
+					}
+
+					// readCacheLine fill succeeded... so tell others and continue
+
+					globals.Lock()
+
+					readCacheLine.wg = nil
+					readCacheLine.buf = readCacheLineBuf
+
+					readCacheLineWG.Done()
+
+					globals.Unlock()
+				}
+
+				// If we make it here, we have a non-nil readCacheLineBuf matching readCacheKey
+
+				if readCacheLineOffset >= uint64(len(readCacheLineBuf)) {
+					// readCacheLineBuf unexpectedly too short... we must exit
+
+					inodeLockRequest.unlockAll()
+					readOut = nil
+					errno = syscall.EIO
+					return
+				}
+
+				readCacheLineBufLengthAvailableToConsume = uint64(len(readCacheLineBuf)) - readCacheLineOffset
+
+				if readPlanEntry.Length > readCacheLineBufLengthAvailableToConsume {
+					// Consume tail of readCacheLineBuf starting at readCacheLineOffset and continue looping
+
+					readOut.Data = append(readOut.Data, readCacheLineBuf[readCacheLineOffset:]...)
+
+					readPlanEntry.Length -= readCacheLineBufLengthAvailableToConsume
+					readPlanEntry.ObjectOffset += readCacheLineBufLengthAvailableToConsume
+				} else {
+					// Consume only the portion of readCacheLineBuf needed and trigger loop exit
+
+					readOut.Data = append(readOut.Data, readCacheLineBuf[readCacheLineOffset:(readCacheLineOffset+readPlanEntry.Length)]...)
+
+					readPlanEntry.Length = 0
+				}
+			}
 		}
 	}
 
@@ -1880,7 +2024,7 @@ Retry:
 	// TODO - need to trigger a flush if len(payload.putObjectBuffer) >= globals.config.FileFlushTriggerSize
 	// TODO - need to (possibly) trigger new timer after globals.config.FileFlushTriggerDuration
 	// TODO - for now, we could just flush every write (but DoRead() will not read flushed data yet)
-	// flushInodesInSlice([]*inodeStruct{inode})
+	flushInodesInSlice([]*inodeStruct{inode})
 
 	inodeLockRequest.unlockAll()
 

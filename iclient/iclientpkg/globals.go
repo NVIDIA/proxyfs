@@ -104,7 +104,7 @@ type inodeStruct struct {
 	dirty           bool                                           //
 	markedForDelete bool                                           // If true, remove from globalsStruct.inodeTable upon last dereference
 	leaseState      inodeLeaseStateType                            //
-	listElement     *list.Element                                  // Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
+	listElement     *list.Element                                  // Maintains position in globalsStruct.{shared|exclusive}LeaseLRU
 	heldList        *list.List                                     // List of granted inodeHeldLockStruct's
 	requestList     *list.List                                     // List of pending inodeLockRequestStruct's
 	inodeHeadV1     *ilayout.InodeHeadV1Struct                     //
@@ -147,10 +147,10 @@ type readCacheKeyStruct struct {
 }
 
 type readCacheLineStruct struct {
-	sync.WaitGroup                    // Used by those needing to block while a prior accessor reads in .buf
-	key            readCacheKeyStruct //
-	listElement    *list.Element      // Maintains position in globalsStruct.{shared|exclusive|LeaseLRU
-	buf            []byte             // == nil if being read in
+	wg          *sync.WaitGroup    // If != nil, used by those needing to block while a prior accessor reads in .buf
+	key         readCacheKeyStruct //
+	listElement *list.Element      // Maintains position in globalsStruct.readCacheLRU
+	buf         []byte             // == nil if being read in
 }
 
 type statsStruct struct {
@@ -222,39 +222,39 @@ type statsStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex                                                            //
-	config                     configStruct                               //
-	fuseEntryValidDurationSec  uint64                                     //
-	fuseEntryValidDurationNSec uint32                                     //
-	fuseAttrValidDurationSec   uint64                                     //
-	fuseAttrValidDurationNSec  uint32                                     //
-	logFile                    *os.File                                   // == nil if config.LogFilePath == ""
-	retryRPCCACertPEM          []byte                                     // == nil if config.RetryRPCCACertFilePath == ""
-	httpClient                 *http.Client                               //
-	swiftRetryDelay            []swiftRetryDelayElementStruct             //
-	swiftAuthInString          string                                     //
-	swiftAuthWaitGroup         *sync.WaitGroup                            // != nil if updateAuthTokenAndStorageURL() is active
-	swiftAuthToken             string                                     //
-	swiftStorageURL            string                                     //
-	retryRPCClientConfig       *retryrpc.ClientConfig                     //
-	retryRPCClient             *retryrpc.Client                           //
-	mountID                    string                                     //
-	fissionErrChan             chan error                                 //
-	nonceWaitGroup             *sync.WaitGroup                            // != nil if rpcFetchNonceRange() already underway
-	nextNonce                  uint64                                     //
-	noncesRemaining            uint64                                     //
-	readCacheMap               map[readCacheKeyStruct]readCacheLineStruct //
-	readCacheLRU               *list.List                                 // LRU-ordered list of readCacheLineStruct.listElement's
-	inodeTable                 map[uint64]*inodeStruct                    //
-	inodePayloadCache          sortedmap.BPlusTreeCache                   //
-	openHandleMapByInodeNumber map[uint64]*openHandleStruct               // Key == openHandleStruct.inodeNumber
-	openHandleMapByFissionFH   map[uint64]*openHandleStruct               // Key == openHandleStruct.fissionFH
-	sharedLeaseLRU             *list.List                                 // LRU-ordered list of inodeStruct.listElement's in or transitioning to inodeLeaseStateSharedGranted
-	exclusiveLeaseLRU          *list.List                                 // LRU-ordered list of inodeStruct.listElement's in or transitioning to inodeLeaseStateExclusiveGranted
-	httpServer                 *http.Server                               //
-	httpServerWG               sync.WaitGroup                             //
-	stats                      *statsStruct                               //
-	fissionVolume              fission.Volume                             //
+	sync.Mutex                                                             //
+	config                     configStruct                                //
+	fuseEntryValidDurationSec  uint64                                      //
+	fuseEntryValidDurationNSec uint32                                      //
+	fuseAttrValidDurationSec   uint64                                      //
+	fuseAttrValidDurationNSec  uint32                                      //
+	logFile                    *os.File                                    // == nil if config.LogFilePath == ""
+	retryRPCCACertPEM          []byte                                      // == nil if config.RetryRPCCACertFilePath == ""
+	httpClient                 *http.Client                                //
+	swiftRetryDelay            []swiftRetryDelayElementStruct              //
+	swiftAuthInString          string                                      //
+	swiftAuthWaitGroup         *sync.WaitGroup                             // != nil if updateAuthTokenAndStorageURL() is active
+	swiftAuthToken             string                                      //
+	swiftStorageURL            string                                      //
+	retryRPCClientConfig       *retryrpc.ClientConfig                      //
+	retryRPCClient             *retryrpc.Client                            //
+	mountID                    string                                      //
+	fissionErrChan             chan error                                  //
+	nonceWaitGroup             *sync.WaitGroup                             // != nil if rpcFetchNonceRange() already underway
+	nextNonce                  uint64                                      //
+	noncesRemaining            uint64                                      //
+	readCacheMap               map[readCacheKeyStruct]*readCacheLineStruct //
+	readCacheLRU               *list.List                                  // LRU-ordered list of readCacheLineStruct.listElement's
+	inodeTable                 map[uint64]*inodeStruct                     //
+	inodePayloadCache          sortedmap.BPlusTreeCache                    //
+	openHandleMapByInodeNumber map[uint64]*openHandleStruct                // Key == openHandleStruct.inodeNumber
+	openHandleMapByFissionFH   map[uint64]*openHandleStruct                // Key == openHandleStruct.fissionFH
+	sharedLeaseLRU             *list.List                                  // LRU-ordered list of inodeStruct.listElement's in or transitioning to inodeLeaseStateSharedGranted
+	exclusiveLeaseLRU          *list.List                                  // LRU-ordered list of inodeStruct.listElement's in or transitioning to inodeLeaseStateExclusiveGranted
+	httpServer                 *http.Server                                //
+	httpServerWG               sync.WaitGroup                              //
+	stats                      *statsStruct                                //
+	fissionVolume              fission.Volume                              //
 }
 
 var globals globalsStruct
@@ -492,7 +492,7 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	globals.nextNonce = 0
 	globals.noncesRemaining = 0
 
-	globals.readCacheMap = make(map[readCacheKeyStruct]readCacheLineStruct)
+	globals.readCacheMap = make(map[readCacheKeyStruct]*readCacheLineStruct)
 	globals.readCacheLRU = list.New()
 
 	globals.inodeTable = make(map[uint64]*inodeStruct)
