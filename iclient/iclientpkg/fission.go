@@ -596,6 +596,7 @@ Retry:
 		superBlockInodeObjectSizeAdjustment:      0,
 		superBlockInodeBytesReferencedAdjustment: 0,
 		dereferencedObjectNumberArray:            make([]uint64, 0),
+		flusherTrigger:                           nil,
 		putObjectNumber:                          0,
 		putObjectBuffer:                          nil,
 	}
@@ -798,6 +799,7 @@ Retry:
 		superBlockInodeObjectSizeAdjustment:      0,
 		superBlockInodeBytesReferencedAdjustment: 0,
 		dereferencedObjectNumberArray:            make([]uint64, 0),
+		flusherTrigger:                           nil,
 		putObjectNumber:                          0,
 		putObjectBuffer:                          nil,
 	}
@@ -1998,6 +2000,8 @@ Retry:
 		}
 	}
 
+	// TODO - if this write would exceed globals.config.FileFlushTriggerSize, flush first
+
 	oldSize = inode.inodeHeadV1.Size
 
 	if openHandle.fissionFlagsAppend {
@@ -2021,7 +2025,6 @@ Retry:
 
 	inode.putObjectBuffer = append(inode.putObjectBuffer, writeIn.Data...)
 
-	// TODO - need to trigger a flush if len(payload.putObjectBuffer) >= globals.config.FileFlushTriggerSize
 	// TODO - need to (possibly) trigger new timer after globals.config.FileFlushTriggerDuration
 	// TODO - for now, we could just flush every write (but DoRead() will not read flushed data yet)
 	flushInodesInSlice([]*inodeStruct{inode})
@@ -3191,6 +3194,7 @@ Retry:
 			superBlockInodeObjectSizeAdjustment:      0,
 			superBlockInodeBytesReferencedAdjustment: 0,
 			dereferencedObjectNumberArray:            make([]uint64, 0),
+			flusherTrigger:                           nil,
 			putObjectNumber:                          0,
 			putObjectBuffer:                          nil,
 		}

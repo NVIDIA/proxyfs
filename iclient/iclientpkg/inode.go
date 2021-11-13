@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/NVIDIA/sortedmap"
 
@@ -1133,4 +1134,65 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 
 		// Now loop back to fetch the next existing extent
 	}
+}
+
+func (fileInode *inodeStruct) launchFlusher(withTimeout bool) {
+	var (
+		timer *time.Timer
+	)
+
+	if withTimeout {
+		timer = time.NewTimer(globals.config.FileFlushTriggerDuration)
+	} else {
+		timer = nil
+	}
+
+	fileInode.flusherWG.Add(1)
+	fileInode.flusherTrigger = make(chan struct{}, 1)
+
+	go fileInode.gorFlusher(timer)
+}
+
+func (fileInode *inodeStruct) forceFlusher() {
+	if fileInode.flusherTrigger == nil {
+		fileInode.launchFlusher(false)
+	}
+
+	fileInode.flusherTrigger <- struct{}{}
+
+	fileInode.flusherWG.Wait()
+
+	select {
+	case <-fileInode.flusherTrigger:
+		// Our write to .flusherTrigger arrived after  gorFlusher's timer (if any) had expired
+	default:
+		// Our write to .flusherTrigger arrived before gorFlusher's timer (if any) had expired
+	}
+
+	// Either way, .flusherTrigger is now drained... so drop it
+
+	close(fileInode.flusherTrigger)
+	fileInode.flusherTrigger = nil
+}
+
+func (fileInode *inodeStruct) gorFlusher(timer *time.Timer) {
+	if timer == nil {
+		<-fileInode.flusherTrigger
+	} else {
+		select {
+		case <-timer.C:
+			// Our timer has expired
+		case <-fileInode.flusherTrigger:
+			// We need to cancel our timer safely
+
+			if !timer.Stop() {
+				<-timer.C
+			}
+		}
+	}
+
+	// TODO - finally, actually perform the flush
+	// TODO - note that if the timer popped, we need to get the lock first... somehow avoiding deadlock...
+
+	fileInode.flusherWG.Done()
 }

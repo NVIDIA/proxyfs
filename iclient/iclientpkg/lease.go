@@ -131,6 +131,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			superBlockInodeObjectSizeAdjustment:      0,
 			superBlockInodeBytesReferencedAdjustment: 0,
 			dereferencedObjectNumberArray:            make([]uint64, 0),
+			flusherTrigger:                           nil,
 			putObjectNumber:                          0,
 			putObjectBuffer:                          nil,
 		}
