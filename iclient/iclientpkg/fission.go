@@ -596,9 +596,9 @@ Retry:
 		superBlockInodeObjectSizeAdjustment:      0,
 		superBlockInodeBytesReferencedAdjustment: 0,
 		dereferencedObjectNumberArray:            make([]uint64, 0),
-		flusherTrigger:                           nil,
 		putObjectNumber:                          0,
 		putObjectBuffer:                          nil,
+		fileFlusher:                              nil,
 	}
 
 	symLinkInode.linkSet[ilayout.InodeLinkTableEntryStruct{
@@ -799,9 +799,9 @@ Retry:
 		superBlockInodeObjectSizeAdjustment:      0,
 		superBlockInodeBytesReferencedAdjustment: 0,
 		dereferencedObjectNumberArray:            make([]uint64, 0),
-		flusherTrigger:                           nil,
 		putObjectNumber:                          0,
 		putObjectBuffer:                          nil,
+		fileFlusher:                              nil,
 	}
 
 	childDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
@@ -2000,7 +2000,27 @@ Retry:
 		}
 	}
 
-	// TODO - if this write would exceed globals.config.FileFlushTriggerSize, flush first
+	if inode.dirty {
+		// A prior call to DoWrite() put something in inode.putObjectBuffer...
+		//
+		// Pre-flush if this write would cause inode.putObjectBuffer to exceed globals.config.FileFlushTriggerSize
+
+		if (uint64(len(inode.putObjectBuffer)) + uint64(len(writeIn.Data))) > globals.config.FileFlushTriggerSize {
+			flushInodesInSlice([]*inodeStruct{inode})
+
+			inode.dirty = true
+
+			inode.ensurePutObjectIsActive()
+
+			inode.launchFlusher()
+		}
+	} else {
+		inode.dirty = true
+
+		inode.ensurePutObjectIsActive()
+
+		inode.launchFlusher()
+	}
 
 	oldSize = inode.inodeHeadV1.Size
 
@@ -2015,8 +2035,6 @@ Retry:
 		}
 	}
 
-	inode.dirty = true
-
 	inode.inodeHeadV1.ModificationTime = startTime
 
 	inode.inodeHeadV1.Size = newSize
@@ -2024,10 +2042,6 @@ Retry:
 	inode.recordExtent(offset, uint64(len(writeIn.Data)))
 
 	inode.putObjectBuffer = append(inode.putObjectBuffer, writeIn.Data...)
-
-	// TODO - need to (possibly) trigger new timer after globals.config.FileFlushTriggerDuration
-	// TODO - for now, we could just flush every write (but DoRead() will not read flushed data yet)
-	flushInodesInSlice([]*inodeStruct{inode})
 
 	inodeLockRequest.unlockAll()
 
@@ -2534,7 +2548,11 @@ Retry:
 
 func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission.FlushIn) (errno syscall.Errno) {
 	var (
-		startTime time.Time = time.Now()
+		err              error
+		inode            *inodeStruct
+		inodeLockRequest *inodeLockRequestStruct
+		openHandle       *openHandleStruct
+		startTime        time.Time = time.Now()
 	)
 
 	logTracef("==> DoFlush(inHeader: %+v, flushIn: %+v)", inHeader, flushIn)
@@ -2546,8 +2564,61 @@ func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission
 		globals.stats.DoFlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
-	errno = syscall.ENOSYS
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = true
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		goto Retry
+	}
+
+	openHandle = lookupOpenHandleByFissionFH(flushIn.FH)
+	if nil == openHandle {
+		inodeLockRequest.unlockAll()
+		errno = syscall.EBADF
+		return
+	}
+	if openHandle.inodeNumber != inHeader.NodeID {
+		inodeLockRequest.unlockAll()
+		errno = syscall.EBADF
+		return
+	}
+	if !openHandle.fissionFlagsWrite {
+		inodeLockRequest.unlockAll()
+		errno = syscall.EBADF
+		return
+	}
+
+	inode = lookupInode(openHandle.inodeNumber)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		err = inode.populateInodeHeadV1()
+		if nil != err {
+			inodeLockRequest.unlockAll()
+			errno = syscall.ENOENT
+			return
+		}
+	}
+
+	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeFile {
+		inodeLockRequest.unlockAll()
+		errno = syscall.EBADF
+		return
+	}
+
+	if inode.dirty {
+		flushInodesInSlice([]*inodeStruct{inode})
+	}
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
 	return
 }
 
@@ -3194,9 +3265,9 @@ Retry:
 			superBlockInodeObjectSizeAdjustment:      0,
 			superBlockInodeBytesReferencedAdjustment: 0,
 			dereferencedObjectNumberArray:            make([]uint64, 0),
-			flusherTrigger:                           nil,
 			putObjectNumber:                          0,
 			putObjectBuffer:                          nil,
+			fileFlusher:                              nil,
 		}
 
 		fileInode.linkSet[ilayout.InodeLinkTableEntryStruct{

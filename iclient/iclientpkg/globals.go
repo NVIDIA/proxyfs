@@ -99,6 +99,13 @@ type openHandleStruct struct {
 	fissionFlagsWrite  bool   // As supplied in fission.{CreateIn|OpenIn|OpenDirIn}.Flags [true if (.Flags & (syscall.O_ACCMODE) is one of syscall.{O_RDWR|O_WRONLY}]
 }
 
+type fileInodeFlusherStruct struct {
+	inode       *inodeStruct
+	inodeNumber uint64        // Having a copy avoids needing to accessing a potentially ExclusivelyLock'd inodeStruct
+	timer       *time.Timer   // Initiated with time.NewTimer(globals.config.FileFlushTriggerDuration)
+	cancelChan  chan struct{} // Buffered chan to tell (*fileInodeFlusherStruct).gorFlusher() to exit now w/out flushing
+}
+
 type inodeStruct struct {
 	inodeNumber     uint64                                         //
 	dirty           bool                                           //
@@ -113,18 +120,16 @@ type inodeStruct struct {
 	layoutMap       map[uint64]layoutMapEntryStruct                // For DirInode & FileInode: Map form of .inodeHeadV1.Layout; key == ilayout.InodeHeadLayoutEntryV1Struct.ObjectNumber
 	payload         sortedmap.BPlusTree                            // For DirInode:  Directory B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
 	//                                                                For FileInode: ExtentMap B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
-	superBlockInodeObjectCountAdjustment     int64          //
-	superBlockInodeObjectSizeAdjustment      int64          //
-	superBlockInodeBytesReferencedAdjustment int64          //
-	dereferencedObjectNumberArray            []uint64       //
-	flusherWG                                sync.WaitGroup //        For FileInode, marked Done() when a flush operation has completed
-	flusherTrigger                           chan struct{}  //        For FileInode, used to immediately trigger a flush operation
-	//                                                                  If nil, no flusher has been launched yet (& .flusherWG.Done() will immediately return)
-	putObjectNumber uint64 //                                         ObjectNumber to PUT during flush
-	putObjectBuffer []byte //                                         PUT content to send to .putObjectNumber'd Object:
+	superBlockInodeObjectCountAdjustment     int64    //
+	superBlockInodeObjectSizeAdjustment      int64    //
+	superBlockInodeBytesReferencedAdjustment int64    //
+	dereferencedObjectNumberArray            []uint64 //
+	putObjectNumber                          uint64   //              ObjectNumber to PUT during flush
+	putObjectBuffer                          []byte   //              PUT content to send to .putObjectNumber'd Object:
 	//                                                                  For DirInode:                       marshaled .payload &å ilayout.InodeHeadV1Struct
 	//                                                                  For FileInode:    file extents then marshaled .payload & ilayout.InodeHeadV1Struct
 	//                                                                  For SymLinkInode:                   marshaled            ilayout.InodeHeadV1Struct
+	fileFlusher *fileInodeFlusherStruct //                            If non-nil, FileInode data in .putObjectBuffer time-triggered flush tracked by a (*fileInodeFlusherStruct).gorFlusher()
 }
 
 type inodeHeldLockStruct struct {

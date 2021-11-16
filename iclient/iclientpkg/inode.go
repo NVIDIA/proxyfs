@@ -680,6 +680,70 @@ func (inode *inodeStruct) ensurePutObjectIsActive() {
 	}
 }
 
+func (fileInode *inodeStruct) launchFlusher() {
+	fileInode.fileFlusher = &fileInodeFlusherStruct{
+		inode:       fileInode,
+		inodeNumber: fileInode.inodeNumber,
+		timer:       time.NewTimer(globals.config.FileFlushTriggerDuration),
+		cancelChan:  make(chan struct{}, 1),
+	}
+
+	go fileInode.fileFlusher.gor()
+}
+
+func (fileFlusher *fileInodeFlusherStruct) gor() {
+	var (
+		inodeLockRequest *inodeLockRequestStruct
+	)
+
+	select {
+	case <-fileFlusher.cancelChan:
+		// We need to cancel our timer safely
+
+		if !fileFlusher.timer.Stop() {
+			<-fileFlusher.timer.C
+		}
+	case <-fileFlusher.timer.C:
+		// Our timer has expired - so we likely need to do a flush... but we need an Exclusive Lock to do so
+		//
+		// But note that "our" fileFlusher.putObjectNumber may have already been flushed...
+
+	Retry:
+		inodeLockRequest = newLockRequest()
+		inodeLockRequest.inodeNumber = fileFlusher.inodeNumber
+		inodeLockRequest.exclusive = true
+		inodeLockRequest.addThisLock()
+		if len(inodeLockRequest.locksHeld) == 0 {
+			goto Retry
+		}
+
+		if fileFlusher == fileFlusher.inode.fileFlusher {
+			// We now know that fileFlusher.inode.dirty == true and
+			// that we need to flush "our" fileFlusher.putObjectNumber
+
+			flushInodesInSlice([]*inodeStruct{fileFlusher.inode})
+		}
+
+		inodeLockRequest.unlockAll()
+	}
+}
+
+func (fileFlusher *fileInodeFlusherStruct) cancel() {
+	// Prevent (*fileInodeFlusherStruct).gor() from case where it's .timer had already expired
+	// and it is awaiting the ExclusiveLock before checking fileFlusher.inode.fileFlusher
+
+	fileFlusher.inode.fileFlusher = nil
+
+	// Now send "cancel" request to (*fileInodeFlusherStruct).gor()
+	//
+	// Note that it may never actually read the "cancel" request, but since .cancelChan
+	// is buffered, and we close it here, the garbage collector will soon reclaim it
+
+	fileFlusher.cancelChan <- struct{}{}
+
+	close(fileFlusher.cancelChan)
+}
+
 // flush marshals the current state of an assumed to be dirty inode into its .putObjectBuffer.
 // This .putObjectBuffer is then passed to objectPUT() following which the inode is marked clean.
 //
@@ -709,6 +773,12 @@ func (inode *inodeStruct) flush() (inodeHeadLength uint64) {
 			if nil != err {
 				logFatalf("inode.payload.Prune() failed: %v", err)
 			}
+		}
+	}
+
+	if inode.inodeHeadV1.InodeType == ilayout.InodeTypeFile {
+		if inode.fileFlusher != nil {
+			inode.fileFlusher.cancel()
 		}
 	}
 
@@ -1134,65 +1204,4 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 
 		// Now loop back to fetch the next existing extent
 	}
-}
-
-func (fileInode *inodeStruct) launchFlusher(withTimeout bool) {
-	var (
-		timer *time.Timer
-	)
-
-	if withTimeout {
-		timer = time.NewTimer(globals.config.FileFlushTriggerDuration)
-	} else {
-		timer = nil
-	}
-
-	fileInode.flusherWG.Add(1)
-	fileInode.flusherTrigger = make(chan struct{}, 1)
-
-	go fileInode.gorFlusher(timer)
-}
-
-func (fileInode *inodeStruct) forceFlusher() {
-	if fileInode.flusherTrigger == nil {
-		fileInode.launchFlusher(false)
-	}
-
-	fileInode.flusherTrigger <- struct{}{}
-
-	fileInode.flusherWG.Wait()
-
-	select {
-	case <-fileInode.flusherTrigger:
-		// Our write to .flusherTrigger arrived after  gorFlusher's timer (if any) had expired
-	default:
-		// Our write to .flusherTrigger arrived before gorFlusher's timer (if any) had expired
-	}
-
-	// Either way, .flusherTrigger is now drained... so drop it
-
-	close(fileInode.flusherTrigger)
-	fileInode.flusherTrigger = nil
-}
-
-func (fileInode *inodeStruct) gorFlusher(timer *time.Timer) {
-	if timer == nil {
-		<-fileInode.flusherTrigger
-	} else {
-		select {
-		case <-timer.C:
-			// Our timer has expired
-		case <-fileInode.flusherTrigger:
-			// We need to cancel our timer safely
-
-			if !timer.Stop() {
-				<-timer.C
-			}
-		}
-	}
-
-	// TODO - finally, actually perform the flush
-	// TODO - note that if the timer popped, we need to get the lock first... somehow avoiding deadlock...
-
-	fileInode.flusherWG.Done()
 }

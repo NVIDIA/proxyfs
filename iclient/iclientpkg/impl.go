@@ -23,14 +23,10 @@ func start(confMap conf.ConfMap, fissionErrChan chan error) (err error) {
 		return
 	}
 
-	// TODO
-
 	err = performMountFUSE()
 	if nil != err {
 		return
 	}
-
-	// TODO
 
 	err = startHTTPServer()
 	if nil != err {
@@ -46,14 +42,10 @@ func stop() (err error) {
 		return
 	}
 
-	// TODO
-
 	err = performUnmountFUSE()
 	if nil != err {
 		return
 	}
-
-	// TODO
 
 	err = stopLeaseHandler()
 	if nil != err {
