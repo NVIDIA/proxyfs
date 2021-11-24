@@ -1,13 +1,8 @@
 # To build the `development` service
 #
-#   docker compose build [--no-cache]
+#   docker compose build
 #
 #   Notes:
-#     --no-cache:
-#       1) tells Docker to ignore cached images that might be stale
-#       2) useful due to Docker not understanding changes to build-args
-#       3) useful due to Docker not understanding changes to context dir
-#       4) finer grained alternative to previously running docker builder prune
 #     Images built will be named "proxyfs_<service>:latest"
 #     Use docker tag SOURCE_IMAGE[:TAG] TARGET_IMAGE[:TAG] to create an alias
 #

@@ -4,7 +4,6 @@
 #          --target {base|dev|build|imgr|iclient}     \
 #          [--build-arg GolangVersion=<X.YY.Z>]       \
 #          [--build-arg MakeTarget={|all|ci|minimal}] \
-#          [--no-cache]                               \
 #          [-t <repository>[:<tag>]]                  .
 #
 #   Notes:
@@ -31,11 +30,6 @@
 #       1) identifies Makefile target(s) to build (following make clean)
 #       2) defaults to blank (equivalent to "all")
 #       3) only used in --target build
-#     --no-cache:
-#       1) tells Docker to ignore cached images that might be stale
-#       2) useful due to Docker not understanding changes to build-args
-#       3) useful due to Docker not understanding changes to context dir
-#       4) if running a sequence of builds, consider instead docker builder prune
 #     -t:
 #       1) provides a name REPOSITORY:TAG for the built image
 #       2) if no tag is specified, TAG will be "latest"
