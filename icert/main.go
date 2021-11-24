@@ -14,6 +14,8 @@
 //      	path to CA Certificate's PrivateKey
 //    -cert string
 //      	path to Endpoint Certificate
+//    -commonName string
+//          generated Certificate's Subject.CommonName
 //    -country value
 //      	generated Certificate's Subject.Country
 //    -dns value
@@ -87,6 +89,8 @@ func main() {
 		generateKeyAlgorithmEd25519Flag = flag.Bool(icertpkg.GenerateKeyAlgorithmEd25519, false, "generate key via Ed25519")
 		generateKeyAlgorithmRSAFlag     = flag.Bool(icertpkg.GenerateKeyAlgorithmRSA, false, "generate key via RSA")
 
+		commonNameFlag = flag.String("commonName", "", "generated Certificate's Subject.CommonName")
+
 		organizationFlag  stringSlice
 		countryFlag       stringSlice
 		provinceFlag      stringSlice
@@ -129,6 +133,8 @@ func main() {
 		fmt.Println()
 		fmt.Printf("generateKeyAlgorithmEd25519Flag: %v\n", *generateKeyAlgorithmEd25519Flag)
 		fmt.Printf("    generateKeyAlgorithmRSAFlag: %v\n", *generateKeyAlgorithmRSAFlag)
+		fmt.Println()
+		fmt.Printf("                 commonNameFlag: \"%v\"\n", *commonNameFlag)
 		fmt.Println()
 		fmt.Printf("               organizationFlag: %v\n", organizationFlag)
 		fmt.Printf("                    countryFlag: %v\n", countryFlag)
@@ -196,6 +202,7 @@ func main() {
 	}
 
 	subject = pkix.Name{
+		CommonName:    *commonNameFlag,
 		Organization:  organizationFlag,
 		Country:       countryFlag,
 		Province:      provinceFlag,

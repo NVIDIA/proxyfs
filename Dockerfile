@@ -104,8 +104,8 @@ RUN make $MakeTarget
 
 FROM base as imgr
 COPY --from=build /clone/icert/icert ./
-RUN ./icert -ca -ed25519 -caCert caCert.pem -caKey caKey.pem -ttl 3560
-RUN ./icert -ed25519 -caCert caCert.pem -caKey caKey.pem -ttl 3560 -cert cert.pem -key key.pem -dns imgr
+RUN ./icert -ca -ed25519 -caCert caCert.pem -caKey caKey.pem -commonName RootCA -ttl 3560
+RUN ./icert -ed25519 -caCert caCert.pem -caKey caKey.pem -commonName imgr -ttl 3560 -cert cert.pem -key key.pem -dns imgr
 COPY --from=build /clone/imgr/imgr      ./
 COPY --from=build /clone/imgr/imgr.conf ./
 
