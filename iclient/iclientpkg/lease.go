@@ -5,17 +5,11 @@ package iclientpkg
 
 import (
 	"container/list"
+	"math/rand"
+	"time"
 
 	"github.com/NVIDIA/proxyfs/imgr/imgrpkg"
 )
-
-func startLeaseHandler() (err error) {
-	return nil // TODO
-}
-
-func stopLeaseHandler() (err error) {
-	return nil // TODO
-}
 
 // newLockRequest is called to create and initialize an inodeLockRequestStruct.
 //
@@ -56,6 +50,29 @@ func (inodeLockRequest *inodeLockRequestStruct) markForDelete(inodeNumber uint64
 	globals.Unlock()
 }
 
+// performInodeLockRetryDelay simply delays the current goroutine for InodeLockRetryDelay
+// interval +/- InodeLockRetryDelayVariance (interpreted as a percentage).
+//
+// It is expected that a caller to addThisLock(), when noticing locksHeld map is empty,
+// will call performInodeLockRetryDelay() before re-attempting a lock sequence.
+//
+func performInodeLockRetryDelay() {
+	var (
+		delay    time.Duration
+		variance int64
+	)
+
+	variance = rand.Int63n(int64(globals.config.InodeLockRetryDelay) & int64(globals.config.InodeLockRetryDelayVariance) / int64(100))
+
+	if (variance % 2) == 0 {
+		delay = time.Duration(int64(globals.config.InodeLockRetryDelay) + variance)
+	} else {
+		delay = time.Duration(int64(globals.config.InodeLockRetryDelay) - variance)
+	}
+
+	time.Sleep(delay)
+}
+
 // addThisLock is called for an existing inodeLockRequestStruct with the inodeNumber and
 // exclusive fields set to specify the inode to be locked and whether or not the lock
 // should be exlusive.
@@ -70,15 +87,20 @@ func (inodeLockRequest *inodeLockRequestStruct) markForDelete(inodeNumber uint64
 // requested lock but also the implicit releasing of any locks previously in the locksHeld map
 // at the time of the call.
 //
+// It is expected that the caller, when noticing locksHeld map is empty, will call
+// performInodeLockRetryDelay() before re-attempting the lock sequence.
+//
 func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	var (
-		err           error
-		inode         *inodeStruct
-		inodeHeldLock *inodeHeldLockStruct
-		leaseRequest  *imgrpkg.LeaseRequestStruct
-		leaseResponse *imgrpkg.LeaseResponseStruct
-		ok            bool
+		blockedInodeLockRequest *inodeLockRequestStruct
+		err                     error
+		inode                   *inodeStruct
+		inodeHeldLock           *inodeHeldLockStruct
+		leaseRequest            *imgrpkg.LeaseRequestStruct
+		leaseResponse           *imgrpkg.LeaseResponseStruct
+		ok                      bool
 	)
+	logTracef("UNDO: entered addThisLock() with .inodeNumber: %v .exclusive: %v", inodeLockRequest.inodeNumber, inodeLockRequest.exclusive)
 
 	globals.Lock()
 
@@ -140,8 +162,21 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	}
 
 	if inode.requestList.Len() != 0 {
-		// At lease one other inodeLockRequestStruct is blocked, so this one must block
+		logTracef("UNDO: ok... addThisLock() found that we cannot immediately grant the lock as others are blocked...")
+		// At lease one other inodeLockRequestStruct is blocked, so this one must either block or, to avoid deadlock, release other held locks and retry
 
+		if len(inodeLockRequest.locksHeld) != 0 {
+			// We must avoid deadlock by releasing other held locks and return
+			logTracef("UNDO: ok... addThisLock() needs to avoid deadlock, so we must release our other locks and trigger a retry")
+
+			globals.Unlock()
+
+			inodeLockRequest.unlockAll()
+
+			return
+		}
+
+		logTracef("UNDO: ok... addThisLock() will simply block this request")
 		inodeLockRequest.Add(1)
 
 		inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
@@ -156,6 +191,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	if inode.heldList.Len() != 0 {
 		if inodeLockRequest.exclusive {
 			// Lock is held, so this exclusive inodeLockRequestStruct must block
+			logTracef("UNDO: ok... addThisLock() needs to block on .inodeNunber: %v .exclusive: TRUEv while inode.heldList.Len() == %v", inodeLockRequest.inodeNumber, inode.heldList.Len())
 
 			inodeLockRequest.Add(1)
 
@@ -380,9 +416,34 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 			inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
 			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+			logInfof("UNDO: @ CheckRequestList: loop in addThisLock()")
+
+		CheckRequestList:
 
 			if inode.requestList.Front() != nil {
-				logFatalf("TODO: for now, we don't handle multiple shared lock requests queued up")
+				blockedInodeLockRequest = inode.requestList.Front().Value.(*inodeLockRequestStruct)
+
+				if !blockedInodeLockRequest.exclusive {
+					// We can also unblock blockedInodeLockRequest
+
+					_ = inode.requestList.Remove(blockedInodeLockRequest.listElement)
+					blockedInodeLockRequest.listElement = nil
+
+					inodeHeldLock = &inodeHeldLockStruct{
+						inode:            inode,
+						inodeLockRequest: blockedInodeLockRequest,
+						exclusive:        false,
+					}
+
+					inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
+					blockedInodeLockRequest.locksHeld[blockedInodeLockRequest.inodeNumber] = inodeHeldLock
+
+					blockedInodeLockRequest.Done()
+
+					// Now go back and check for more
+
+					goto CheckRequestList
+				}
 			}
 
 			globals.Unlock()
@@ -460,27 +521,83 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 //
 func (inodeLockRequest *inodeLockRequestStruct) unlockAll() {
 	var (
-		err           error
-		inode         *inodeStruct
-		inodeHeldLock *inodeHeldLockStruct
-		leaseRequest  *imgrpkg.LeaseRequestStruct
-		leaseResponse *imgrpkg.LeaseResponseStruct
-		releaseList   []*inodeStruct = make([]*inodeStruct, 0)
+		blockedInodeLockRequest *inodeLockRequestStruct
+		err                     error
+		inode                   *inodeStruct
+		inodeHeldLock           *inodeHeldLockStruct
+		leaseRequest            *imgrpkg.LeaseRequestStruct
+		leaseResponse           *imgrpkg.LeaseResponseStruct
+		releaseList             []*inodeStruct = make([]*inodeStruct, 0)
 	)
 
 	globals.Lock()
 
 	for _, inodeHeldLock = range inodeLockRequest.locksHeld {
-		_ = inodeHeldLock.inode.heldList.Remove(inodeHeldLock.listElement)
-		if inodeHeldLock.inode.requestList.Len() == 0 {
-			if inodeHeldLock.inode.heldList.Len() == 0 {
-				if inodeHeldLock.inode.markedForDelete {
-					releaseList = append(releaseList, inodeHeldLock.inode)
-					delete(globals.inodeTable, inodeHeldLock.inode.inodeNumber)
+		inode = inodeHeldLock.inode
+		logTracef("UNDO: entered unlockAll()... found an inodeHeldLock with .inode..inodeNumber: %v .exclusive: %v", inodeHeldLock.inode.inodeNumber, inodeHeldLock.exclusive)
+
+		_ = inode.heldList.Remove(inodeHeldLock.listElement)
+
+		if inode.requestList.Len() == 0 {
+			if inode.heldList.Len() == 0 {
+				if inode.markedForDelete {
+					releaseList = append(releaseList, inode)
+					delete(globals.inodeTable, inode.inodeNumber)
 				}
 			}
 		} else {
-			logFatalf("TODO: for now, we don't handle blocked inodeLockRequestStruct's")
+			if inodeHeldLock.exclusive {
+				logInfof("UNDO: @ We can unblock at least one blockedInodeLockRequest")
+				// We can unblock at least one blockedInodeLockRequest
+
+				blockedInodeLockRequest = inode.requestList.Front().Value.(*inodeLockRequestStruct)
+
+				_ = inode.requestList.Remove(blockedInodeLockRequest.listElement)
+				blockedInodeLockRequest.listElement = nil
+
+				inodeHeldLock = &inodeHeldLockStruct{
+					inode:            inode,
+					inodeLockRequest: blockedInodeLockRequest,
+					exclusive:        blockedInodeLockRequest.exclusive,
+				}
+
+				inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
+				blockedInodeLockRequest.locksHeld[blockedInodeLockRequest.inodeNumber] = inodeHeldLock
+
+				blockedInodeLockRequest.Done()
+
+				if !blockedInodeLockRequest.exclusive {
+					// We can also unblock following blockedInodeLockRequest's that are !.exclusive
+
+				CheckRequestList:
+
+					if inode.requestList.Front() != nil {
+						blockedInodeLockRequest = inode.requestList.Front().Value.(*inodeLockRequestStruct)
+
+						if !blockedInodeLockRequest.exclusive {
+							// We can also unblock next blockedInodeLockRequest
+
+							_ = inode.requestList.Remove(blockedInodeLockRequest.listElement)
+							blockedInodeLockRequest.listElement = nil
+
+							inodeHeldLock = &inodeHeldLockStruct{
+								inode:            inode,
+								inodeLockRequest: blockedInodeLockRequest,
+								exclusive:        false,
+							}
+
+							inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
+							blockedInodeLockRequest.locksHeld[blockedInodeLockRequest.inodeNumber] = inodeHeldLock
+
+							blockedInodeLockRequest.Done()
+
+							// Now go back and check for more
+
+							goto CheckRequestList
+						}
+					}
+				}
+			}
 		}
 	}
 

@@ -42,6 +42,8 @@
 //  ReadCacheLineCountMax:            1024     # 1GiB (with ReadCacheLineSize of 1MiB)
 //  FileFlushTriggerSize:             10485760 # [10MiB] Amount of written data before metadata is appended and flush is triggered
 //  FileFlushTriggerDuration:         10s # Amount of time before unwritten data and its metadata flush is triggered
+//  InodeLockRetryDelay:              10ms
+//  InodeLockRetryDelayVariance:      50       # Percentage (1-100) of InodeLockRetryDelay
 //  LogFilePath:                      iclient.log
 //  LogToConsole:                     true
 //  TraceEnabled:                     false

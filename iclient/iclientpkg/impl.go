@@ -18,11 +18,6 @@ func start(confMap conf.ConfMap, fissionErrChan chan error) (err error) {
 		return
 	}
 
-	err = startLeaseHandler()
-	if nil != err {
-		return
-	}
-
 	err = performMountFUSE()
 	if nil != err {
 		return
@@ -43,11 +38,6 @@ func stop() (err error) {
 	}
 
 	err = performUnmountFUSE()
-	if nil != err {
-		return
-	}
-
-	err = stopLeaseHandler()
 	if nil != err {
 		return
 	}

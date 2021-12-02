@@ -57,6 +57,10 @@ type configStruct struct {
 	ReadCacheLineCountMax            uint64
 	FileFlushTriggerSize             uint64
 	FileFlushTriggerDuration         time.Duration
+	InodeLockRetryLimit              uint64
+	InodeLockRetryDelay              time.Duration
+	InodeLockRetryDelayVariance      uint8
+	InodeLockRetryExponentialBackoff float64
 	LogFilePath                      string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole                     bool
 	TraceEnabled                     bool
@@ -371,10 +375,10 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	}
 	globals.config.SwiftRetryDelayVariance, err = confMap.FetchOptionValueUint8("ICLIENT", "SwiftRetryDelayVariance")
 	if nil == err {
-		if 0 == globals.config.SwiftRetryDelayVariance {
+		if globals.config.SwiftRetryDelayVariance == 0 {
 			logFatalf("[Agent]SwiftRetryDelayVariance must be > 0")
 		}
-		if 100 < globals.config.SwiftRetryDelayVariance {
+		if globals.config.SwiftRetryDelayVariance > 100 {
 			logFatalf("[Agent]SwiftRetryDelayVariance (%v) must be <= 100", globals.config.SwiftRetryDelayVariance)
 		}
 	} else {
@@ -446,6 +450,21 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	}
 	globals.config.FileFlushTriggerDuration, err = confMap.FetchOptionValueDuration("ICLIENT", "FileFlushTriggerDuration")
 	if nil != err {
+		logFatal(err)
+	}
+	globals.config.InodeLockRetryDelay, err = confMap.FetchOptionValueDuration("ICLIENT", "InodeLockRetryDelay")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.InodeLockRetryDelayVariance, err = confMap.FetchOptionValueUint8("ICLIENT", "InodeLockRetryDelayVariance")
+	if nil == err {
+		if globals.config.InodeLockRetryDelayVariance == 0 {
+			logFatalf("[Agent]InodeLockRetryDelayVariance must be > 0")
+		}
+		if globals.config.InodeLockRetryDelayVariance > 100 {
+			logFatalf("[Agent]InodeLockRetryDelayVariance (%v) must be <= 100", globals.config.InodeLockRetryDelayVariance)
+		}
+	} else {
 		logFatal(err)
 	}
 	globals.config.LogFilePath, err = confMap.FetchOptionValueString("ICLIENT", "LogFilePath")
@@ -553,6 +572,8 @@ func uninitializeGlobals() (err error) {
 	globals.config.ReadCacheLineCountMax = 0
 	globals.config.FileFlushTriggerSize = 0
 	globals.config.FileFlushTriggerDuration = time.Duration(0)
+	globals.config.InodeLockRetryDelay = time.Duration(0)
+	globals.config.InodeLockRetryDelayVariance = 0
 	globals.config.LogFilePath = ""
 	globals.config.LogToConsole = false
 	globals.config.TraceEnabled = false

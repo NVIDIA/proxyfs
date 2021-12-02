@@ -714,6 +714,7 @@ func (fileFlusher *fileInodeFlusherStruct) gor() {
 		inodeLockRequest.exclusive = true
 		inodeLockRequest.addThisLock()
 		if len(inodeLockRequest.locksHeld) == 0 {
+			performInodeLockRetryDelay()
 			goto Retry
 		}
 

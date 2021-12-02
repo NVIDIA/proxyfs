@@ -101,6 +101,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -240,6 +241,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -326,6 +328,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -445,6 +448,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -519,6 +523,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -610,6 +615,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -722,6 +728,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -850,6 +857,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -950,6 +958,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -1003,6 +1012,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -1104,6 +1114,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -1157,6 +1168,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -1283,6 +1295,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -1336,6 +1349,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -1436,6 +1450,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -1565,6 +1580,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -1935,6 +1951,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -2138,6 +2155,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -2232,6 +2250,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -2317,6 +2336,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -2413,6 +2433,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -2505,6 +2526,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -2570,6 +2592,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -2685,6 +2708,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -2799,6 +2823,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -2962,6 +2987,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -3137,6 +3163,7 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -3207,7 +3234,7 @@ Retry:
 		inodeLockRequest.exclusive = true
 		inodeLockRequest.addThisLock()
 		if len(inodeLockRequest.locksHeld) == 0 {
-			inodeLockRequest.unlockAll()
+			performInodeLockRetryDelay()
 			goto Retry
 		}
 
@@ -3279,6 +3306,7 @@ Retry:
 		inodeLockRequest.exclusive = true
 		inodeLockRequest.addThisLock()
 		if len(inodeLockRequest.locksHeld) == 0 {
+			performInodeLockRetryDelay()
 			goto Retry
 		}
 
@@ -3509,6 +3537,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -3763,6 +3792,7 @@ Retry:
 	inodeLockRequest.exclusive = obtainExclusiveLock
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
 		goto Retry
 	}
 
@@ -3853,15 +3883,25 @@ func doRenameCommon(oldDirInodeNumber uint64, oldName string, newDirInodeNumber 
 		renamedInode                  *inodeStruct
 		replacedInode                 *inodeStruct
 	)
+	logInfof("UNDO: entered doRenameCommon(oldDirInodeNumber: %v, oldName: %s, newDirInodeNumber: %v, newName: %s)", oldDirInodeNumber, oldName, newDirInodeNumber, newName)
+	defer func() {
+		logTracef("UNDO: leaving doRenameCommon() with errno: %v", errno)
+	}()
 
 Retry:
+	logTracef("UNDO: Reached doRenameCommon() Point A")
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = oldDirInodeNumber
 	inodeLockRequest.exclusive = true
+	logTracef("UNDO: Reached doRenameCommon() Point A.1")
 	inodeLockRequest.addThisLock()
+	logTracef("UNDO: Reached doRenameCommon() Point A.2")
 	if len(inodeLockRequest.locksHeld) == 0 {
+		logTracef("UNDO: Reached doRenameCommon() Point A.3")
+		performInodeLockRetryDelay()
 		goto Retry
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point A.4")
 
 	oldDirInode = lookupInode(oldDirInodeNumber)
 	if nil == oldDirInode {
@@ -3869,6 +3909,7 @@ Retry:
 		errno = syscall.ENOENT
 		return
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point A.5")
 
 	if nil == oldDirInode.inodeHeadV1 {
 		err = oldDirInode.populateInodeHeadV1()
@@ -3878,12 +3919,14 @@ Retry:
 			return
 		}
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point A.6")
 
 	if oldDirInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir {
 		inodeLockRequest.unlockAll()
 		errno = syscall.ENOTDIR
 		return
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point A.7")
 
 	if oldDirInode.payload == nil {
 		err = oldDirInode.oldPayload()
@@ -3893,6 +3936,7 @@ Retry:
 			return
 		}
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point A.8")
 
 	directoryEntryValueV1AsValue, ok, err = oldDirInode.payload.GetByKey(oldName)
 	if nil != err {
@@ -3903,6 +3947,7 @@ Retry:
 		errno = syscall.ENOENT
 		return
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point A.9")
 
 	directoryEntryValueV1, ok = directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct)
 	if !ok {
@@ -3913,15 +3958,17 @@ Retry:
 	inodeLockRequest.exclusive = true
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
-		inodeLockRequest.unlockAll()
+		performInodeLockRetryDelay()
 		goto Retry
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point A.A")
 
 	renamedInode = lookupInode(directoryEntryValueV1.InodeNumber)
 	if nil == renamedInode {
 		inodeLockRequest.unlockAll()
 		goto Retry
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point A.B")
 
 	if nil == renamedInode.inodeHeadV1 {
 		err = renamedInode.populateInodeHeadV1()
@@ -3932,6 +3979,7 @@ Retry:
 		}
 	}
 
+	logTracef("UNDO: Reached doRenameCommon() Point B")
 	if oldDirInodeNumber == newDirInodeNumber {
 		newDirInode = oldDirInode
 
@@ -3945,6 +3993,7 @@ Retry:
 		inodeLockRequest.exclusive = true
 		inodeLockRequest.addThisLock()
 		if len(inodeLockRequest.locksHeld) == 0 {
+			performInodeLockRetryDelay()
 			goto Retry
 		}
 
@@ -3978,6 +4027,7 @@ Retry:
 			}
 		}
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point C")
 
 	directoryEntryValueV1AsValue, ok, err = newDirInode.payload.GetByKey(newName)
 	if nil != err {
@@ -3994,7 +4044,7 @@ Retry:
 		inodeLockRequest.exclusive = true
 		inodeLockRequest.addThisLock()
 		if len(inodeLockRequest.locksHeld) == 0 {
-			inodeLockRequest.unlockAll()
+			performInodeLockRetryDelay()
 			goto Retry
 		}
 
@@ -4020,8 +4070,10 @@ Retry:
 	} else {
 		replacedInode = nil
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point D")
 
 	if renamedInode.inodeHeadV1.InodeType == ilayout.InodeTypeDir {
+		logTracef("UNDO: Reached doRenameCommon() Point E")
 		if replacedInode != nil {
 			inodeLockRequest.unlockAll()
 			errno = syscall.EISDIR
@@ -4106,7 +4158,9 @@ Retry:
 			logFatalf("newDirInode.payload.Put(newName,) returned !ok")
 		}
 	} else {
+		logTracef("UNDO: Reached doRenameCommon() Point F")
 		if replacedInode != nil {
+			logTracef("UNDO: Reached doRenameCommon() Point G")
 			replacedInode.dirty = true
 
 			replacedInode.inodeHeadV1.ModificationTime = startTime
@@ -4163,6 +4217,7 @@ Retry:
 				logFatalf("newDirInode.payload.PatchByKey(newName,) returned !ok")
 			}
 		} else {
+			logTracef("UNDO: Reached doRenameCommon() Point H")
 			renamedInode.dirty = true
 
 			renamedInode.inodeHeadV1.ModificationTime = startTime
@@ -4210,6 +4265,7 @@ Retry:
 			}
 		}
 	}
+	logTracef("UNDO: Reached doRenameCommon() Point I")
 
 	if replacedInode == nil {
 		if oldDirInodeNumber == newDirInodeNumber {

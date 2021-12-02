@@ -86,6 +86,10 @@ WORKDIR /tmp
 RUN wget -nv ${GolangURL}
 RUN tar -C /usr/local -xzf $GolangBasename
 ENV PATH $PATH:/usr/local/go/bin
+RUN git clone https://github.com/go-delve/delve
+WORKDIR /tmp/delve
+RUN go build github.com/go-delve/delve/cmd/dlv
+RUN cp dlv /usr/local/go/bin/.
 VOLUME /src
 WORKDIR /src
 
