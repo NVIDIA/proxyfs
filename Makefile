@@ -27,15 +27,15 @@ gobindirs = \
 	imgr \
 	iswift
 
-godirsforci = $(gopkgdirs) $(goplugindirs) $(gobindirs);
+godirsforci = $(gopkgdirs) $(gobindirs)
 godirpathsforci = $(addprefix github.com/NVIDIA/proxyfs/,$(godirsforci))
 
 generatedfiles := \
 	coverage.coverprofile
 
-all: version fmt pre-generate generate test build
+all: version fmt pre-generate generate build test
 
-ci: version fmt pre-generate generate test cover build
+ci: version fmt pre-generate generate build test cover
 
 minimal: version pre-generate generate build
 

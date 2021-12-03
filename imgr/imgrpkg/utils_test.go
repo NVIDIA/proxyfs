@@ -180,7 +180,7 @@ func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 
 	err = iswiftpkg.Start(testGlobals.confMap)
 	if nil != err {
-		t.Fatalf("iswifpkg.Start(testGlobals.confMap) failed: %v", err)
+		t.Fatalf("iswiftpkg.Start(testGlobals.confMap) failed: %v", err)
 	}
 
 	err = testDoAuth()

@@ -234,7 +234,7 @@ func testSetup(t *testing.T) {
 
 	err = iswiftpkg.Start(testGlobals.confMap)
 	if nil != err {
-		t.Fatalf("iswifpkg.Start(testGlobals.confMap) failed: %v", err)
+		t.Fatalf("iswiftpkg.Start(testGlobals.confMap) failed: %v", err)
 	}
 
 	authRequestHeaders = make(http.Header)

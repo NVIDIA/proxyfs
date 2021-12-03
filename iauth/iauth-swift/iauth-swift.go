@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/NVIDIA/proxyfs/version"
 )
 
 type authInStruct struct {
@@ -50,7 +48,7 @@ func PerformAuth(authInJSON string) (authToken string, storageURL string, err er
 	authRequest.Header.Add("X-Auth-User", authIn.AuthUser)
 	authRequest.Header.Add("X-Auth-Key", authIn.AuthKey)
 
-	authRequest.Header.Add("User-Agent", "iauth-swift "+version.ProxyFSVersion)
+	authRequest.Header.Add("User-Agent", "iauth-swift")
 
 	authResponse, err = http.DefaultClient.Do(authRequest)
 	if nil != err {
