@@ -23,10 +23,10 @@ import (
 
 const (
 	testIPAddr               = "dev"
-	testRetryRPCPort         = 32356
-	testMgrHTTPServerPort    = 15346
-	testClientHTTPServerPort = 15347
-	testSwiftProxyTCPPort    = 8080
+	testRetryRPCPort         = 9101
+	testMgrHTTPServerPort    = 9102
+	testClientHTTPServerPort = 9103
+	testSwiftProxyTCPPort    = 9104
 	testSwiftAuthUser        = "test"
 	testSwiftAuthKey         = "test"
 	testAccount              = "AUTH_test"
@@ -150,7 +150,7 @@ func testSetup(t *testing.T) {
 		"ICLIENT.SwiftRetryExponentialBackoff=1.4",
 		"ICLIENT.SwiftConnectionPoolSize=128",
 		"ICLIENT.RetryRPCPublicIPAddr=dev",
-		"ICLIENT.RetryRPCPort=32356",
+		"ICLIENT.RetryRPCPort=" + fmt.Sprintf("%d", testRetryRPCPort),
 		"ICLIENT.RetryRPCDeadlineIO=60s",
 		"ICLIENT.RetryRPCKeepAlivePeriod=60s",
 		"ICLIENT.RetryRPCCACertFilePath=" + testGlobals.caCertFile,
