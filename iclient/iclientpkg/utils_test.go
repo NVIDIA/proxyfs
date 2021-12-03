@@ -22,11 +22,11 @@ import (
 )
 
 const (
-	testIPAddr               = "dev"
-	testRetryRPCPort         = 9101
-	testMgrHTTPServerPort    = 9102
-	testClientHTTPServerPort = 9103
-	testSwiftProxyTCPPort    = 9104
+	testIPAddr               = "127.0.0.1" // Don't use IPv6... the code doesn't properly "join" this with :port #s
+	testRetryRPCPort         = 32356
+	testMgrHTTPServerPort    = 15346
+	testClientHTTPServerPort = 15347
+	testSwiftProxyTCPPort    = 8080
 	testSwiftAuthUser        = "test"
 	testSwiftAuthKey         = "test"
 	testAccount              = "AUTH_test"
@@ -113,8 +113,8 @@ func testSetup(t *testing.T) {
 			StreetAddress: []string{},
 			PostalCode:    []string{},
 		},
-		[]string{testIPAddr},
-		[]net.IP{},
+		[]string{},
+		[]net.IP{net.ParseIP(testIPAddr)},
 		time.Hour,
 		testGlobals.caCertPEMBlock,
 		testGlobals.caKeyPEMBlock,
@@ -142,14 +142,14 @@ func testSetup(t *testing.T) {
 		"ICLIENT.FUSEAttrValidDuration=250ms",
 		"ICLIENT.AuthPlugInPath=../../iauth/iauth-swift/iauth-swift.so",
 		"ICLIENT.AuthPlugInEnvName=",
-		"ICLIENT.AuthPlugInEnvValue=" + fmt.Sprintf("{\"AuthURL\":\"http://dev:%d/auth/v1.0\"\\u002C\"AuthUser\":\"%s\"\\u002C\"AuthKey\":\"%s\"\\u002C\"Account\":\"%s\"\\u002C\"Container\":\"%s\"}", testSwiftProxyTCPPort, testSwiftAuthUser, testSwiftAuthKey, testAccount, testContainer),
+		"ICLIENT.AuthPlugInEnvValue=" + fmt.Sprintf("{\"AuthURL\":\"http://%s:%d/auth/v1.0\"\\u002C\"AuthUser\":\"%s\"\\u002C\"AuthKey\":\"%s\"\\u002C\"Account\":\"%s\"\\u002C\"Container\":\"%s\"}", testIPAddr, testSwiftProxyTCPPort, testSwiftAuthUser, testSwiftAuthKey, testAccount, testContainer),
 		"ICLIENT.SwiftTimeout=10m",
 		"ICLIENT.SwiftRetryLimit=4",
 		"ICLIENT.SwiftRetryDelay=100ms",
 		"ICLIENT.SwiftRetryDelayVariance=25",
 		"ICLIENT.SwiftRetryExponentialBackoff=1.4",
 		"ICLIENT.SwiftConnectionPoolSize=128",
-		"ICLIENT.RetryRPCPublicIPAddr=dev",
+		"ICLIENT.RetryRPCPublicIPAddr=" + testIPAddr,
 		"ICLIENT.RetryRPCPort=" + fmt.Sprintf("%d", testRetryRPCPort),
 		"ICLIENT.RetryRPCDeadlineIO=60s",
 		"ICLIENT.RetryRPCKeepAlivePeriod=60s",

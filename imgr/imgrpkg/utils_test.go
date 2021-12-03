@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	testIPAddr             = "127.0.0.1"
-	testRetryRPCPort       = 9201
-	testHTTPServerPort     = 9202
-	testSwiftProxyTCPPort  = 9203
+	testIPAddr             = "127.0.0.1" // Don't use IPv6... the code doesn't properly "join" this with :port #s
+	testRetryRPCPort       = 32356
+	testHTTPServerPort     = 15346
+	testSwiftProxyTCPPort  = 8080
 	testSwiftAuthUser      = "test"
 	testSwiftAuthKey       = "test"
 	testContainer          = "testContainer"
