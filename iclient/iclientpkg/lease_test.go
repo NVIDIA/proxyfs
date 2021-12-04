@@ -120,7 +120,7 @@ func TestLocks(t *testing.T) {
 		t.Fatalf("startRPCHandler() failed: %v", err)
 	}
 
-	t.Logf("Verify we can get a shared lock on currently unlocked testInodeLockInodeNumberA")
+	// Verify we can get a shared lock on currently unlocked testInodeLockInodeNumberA
 
 	inodeLockRequestA = newLockRequest()
 	inodeLockRequestA.inodeNumber = testInodeLockInodeNumberA
@@ -140,7 +140,7 @@ func TestLocks(t *testing.T) {
 		t.Fatalf("inodeHeldLock.exclusive should have been false")
 	}
 
-	t.Logf("Verify we can add in an exclusive lock on currently unlocked testInodeLockInodeNumberB")
+	// Verify we can add in an exclusive lock on currently unlocked testInodeLockInodeNumberB
 
 	inodeLockRequestA.inodeNumber = testInodeLockInodeNumberB
 	inodeLockRequestA.exclusive = true
@@ -169,7 +169,7 @@ func TestLocks(t *testing.T) {
 		t.Fatalf("inodeHeldLock.exclusive should have been true")
 	}
 
-	t.Logf("Verify we can get a shared lock on currently shared locked testInodeLockInodeNumberA")
+	// Verify we can get a shared lock on currently shared locked testInodeLockInodeNumberA
 
 	inodeLockRequestB = newLockRequest()
 	inodeLockRequestB.inodeNumber = testInodeLockInodeNumberA
@@ -194,7 +194,7 @@ func TestLocks(t *testing.T) {
 		t.Fatalf("len(inodeLockRequestB.locksHeld) (%v) should have been == 0", len(inodeLockRequestB.locksHeld))
 	}
 
-	t.Logf("TODO: Verify attempting an exclusive lock on a currently shared locked testInodeLockInodeNumberA while holding a shared lock on testInodeLockInodeNumberC fails releasing the shared lock on testInodeLockInodeNumberC")
+	// Verify attempting an exclusive lock on a currently shared locked testInodeLockInodeNumberA while holding a shared lock on testInodeLockInodeNumberC fails releasing the shared lock on testInodeLockInodeNumberC
 
 	// inodeLockRequestB.inodeNumber = testInodeLockInodeNumberC
 	// inodeLockRequestB.exclusive = false
@@ -206,7 +206,7 @@ func TestLocks(t *testing.T) {
 	// 	t.Fatalf("len(inodeLockRequestB.locksHeld) (%v) should have been == 0", len(inodeLockRequestB.locksHeld))
 	// }
 
-	t.Logf("TODO: Verify attempting a shared lock on a currently exclusively locked testInodeLockInodeNumberB while holding a shared lock on testInodeLockInodeNumberC fails releasing the shared lock on testInodeLockInodeNumberC")
+	// Verify attempting a shared lock on a currently exclusively locked testInodeLockInodeNumberB while holding a shared lock on testInodeLockInodeNumberC fails releasing the shared lock on testInodeLockInodeNumberC
 
 	// inodeLockRequestB.inodeNumber = testInodeLockInodeNumberC
 	// inodeLockRequestB.exclusive = false
@@ -218,7 +218,7 @@ func TestLocks(t *testing.T) {
 	// 	t.Fatalf("len(inodeLockRequestB.locksHeld) (%v) should have been == 0", len(inodeLockRequestB.locksHeld))
 	// }
 
-	t.Logf("Verify we can release the shared lock on testInodeLockInodeNumberB and the exclusive lock on testInodeLockInodeNumberB")
+	// Verify we can release the shared lock on testInodeLockInodeNumberB and the exclusive lock on testInodeLockInodeNumberB
 
 	inodeLockRequestA.unlockAll()
 	if len(inodeLockRequestA.locksHeld) != 0 {
