@@ -65,8 +65,8 @@ func (testChildLock *testChildLockStruct) gor() {
 		testChildLock.err = fmt.Errorf("inodeHeldLock.inode.inodeNumber (%v) != testInodeLockInodeNumberA (%v)", inodeHeldLock.inode.inodeNumber, testInodeLockInodeNumberA)
 		runtime.Goexit()
 	}
-	if inodeHeldLock.exclusive {
-		testChildLock.err = fmt.Errorf("inodeHeldLock.exclusive should have been false")
+	if inodeHeldLock.exclusive != testChildLock.exclusive {
+		testChildLock.err = fmt.Errorf("inodeHeldLock.exclusive should have been %v", testChildLock.exclusive)
 		runtime.Goexit()
 	}
 
@@ -283,80 +283,80 @@ func TestLocks(t *testing.T) {
 	childLock[1].finish()
 	childLock[1].delayAndCheckForError(t)
 
-	// if childLock[0].lockHeld ||
-	// 	childLock[1].lockHeld ||
-	// 	!childLock[2].lockHeld ||
-	// 	childLock[3].lockHeld ||
-	// 	childLock[4].lockHeld ||
-	// 	childLock[5].lockHeld ||
-	// 	childLock[6].lockHeld {
-	// 	t.Fatalf("After 1 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 2")
-	// }
+	if childLock[0].lockHeld ||
+		childLock[1].lockHeld ||
+		!childLock[2].lockHeld ||
+		childLock[3].lockHeld ||
+		childLock[4].lockHeld ||
+		childLock[5].lockHeld ||
+		childLock[6].lockHeld {
+		t.Fatalf("After 1 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 2")
+	}
 
 	childLock[2].finish()
 	childLock[2].delayAndCheckForError(t)
 
-	// if childLock[0].lockHeld ||
-	// 	childLock[1].lockHeld ||
-	// 	childLock[2].lockHeld ||
-	// 	!childLock[3].lockHeld ||
-	// 	!childLock[4].lockHeld ||
-	// 	childLock[5].lockHeld ||
-	// 	childLock[6].lockHeld {
-	// 	t.Fatalf("After 2 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 3 & 4")
-	// }
+	if childLock[0].lockHeld ||
+		childLock[1].lockHeld ||
+		childLock[2].lockHeld ||
+		!childLock[3].lockHeld ||
+		!childLock[4].lockHeld ||
+		childLock[5].lockHeld ||
+		childLock[6].lockHeld {
+		t.Fatalf("After 2 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 3 & 4")
+	}
 
 	childLock[3].finish()
 	childLock[3].delayAndCheckForError(t)
 
-	// if childLock[0].lockHeld ||
-	// 	childLock[1].lockHeld ||
-	// 	childLock[2].lockHeld ||
-	// 	childLock[3].lockHeld ||
-	// 	!childLock[4].lockHeld ||
-	// 	childLock[5].lockHeld ||
-	// 	childLock[6].lockHeld {
-	// 	t.Fatalf("After 3 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 4")
-	// }
+	if childLock[0].lockHeld ||
+		childLock[1].lockHeld ||
+		childLock[2].lockHeld ||
+		childLock[3].lockHeld ||
+		!childLock[4].lockHeld ||
+		childLock[5].lockHeld ||
+		childLock[6].lockHeld {
+		t.Fatalf("After 3 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 4")
+	}
 
 	childLock[4].finish()
 	childLock[4].delayAndCheckForError(t)
 
-	// if childLock[0].lockHeld ||
-	// 	childLock[1].lockHeld ||
-	// 	childLock[2].lockHeld ||
-	// 	childLock[3].lockHeld ||
-	// 	childLock[4].lockHeld ||
-	// 	!childLock[5].lockHeld ||
-	// 	childLock[6].lockHeld {
-	// 	t.Fatalf("After 4 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 5")
-	// }
+	if childLock[0].lockHeld ||
+		childLock[1].lockHeld ||
+		childLock[2].lockHeld ||
+		childLock[3].lockHeld ||
+		childLock[4].lockHeld ||
+		!childLock[5].lockHeld ||
+		childLock[6].lockHeld {
+		t.Fatalf("After 4 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 5")
+	}
 
 	childLock[5].finish()
 	childLock[5].delayAndCheckForError(t)
 
-	// if childLock[0].lockHeld ||
-	// 	childLock[1].lockHeld ||
-	// 	childLock[2].lockHeld ||
-	// 	childLock[3].lockHeld ||
-	// 	childLock[4].lockHeld ||
-	// 	childLock[5].lockHeld ||
-	// 	!childLock[6].lockHeld {
-	// 	t.Fatalf("After 5 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 6")
-	// }
+	if childLock[0].lockHeld ||
+		childLock[1].lockHeld ||
+		childLock[2].lockHeld ||
+		childLock[3].lockHeld ||
+		childLock[4].lockHeld ||
+		childLock[5].lockHeld ||
+		!childLock[6].lockHeld {
+		t.Fatalf("After 5 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 6")
+	}
 
 	childLock[6].finish()
 	childLock[6].delayAndCheckForError(t)
 
-	// if childLock[0].lockHeld ||
-	// 	childLock[1].lockHeld ||
-	// 	childLock[2].lockHeld ||
-	// 	childLock[3].lockHeld ||
-	// 	childLock[4].lockHeld ||
-	// 	childLock[5].lockHeld ||
-	// 	childLock[6].lockHeld {
-	// 	t.Fatalf("After 6 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by none")
-	// }
+	if childLock[0].lockHeld ||
+		childLock[1].lockHeld ||
+		childLock[2].lockHeld ||
+		childLock[3].lockHeld ||
+		childLock[4].lockHeld ||
+		childLock[5].lockHeld ||
+		childLock[6].lockHeld {
+		t.Fatalf("After 6 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by none")
+	}
 
 	err = stopRPCHandler()
 	if nil != err {
