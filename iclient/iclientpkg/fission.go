@@ -571,6 +571,7 @@ Retry:
 	symLinkInode = &inodeStruct{
 		inodeNumber:     symLinkInodeNumber,
 		dirty:           true,
+		openCount:       0,
 		markedForDelete: false,
 		leaseState:      inodeLeaseStateNone,
 		listElement:     nil,
@@ -776,6 +777,7 @@ Retry:
 	childDirInode = &inodeStruct{
 		inodeNumber:     childDirInodeNumber,
 		dirty:           true,
+		openCount:       0,
 		markedForDelete: false,
 		leaseState:      inodeLeaseStateNone,
 		listElement:     nil,
@@ -1584,7 +1586,7 @@ Retry:
 		goto Retry
 	}
 
-	openHandle = lookupOpenHandleByFissionFH(readIn.FH)
+	openHandle = lookupOpenHandle(readIn.FH)
 	if nil == openHandle {
 		inodeLockRequest.unlockAll()
 		readOut = nil
@@ -1955,7 +1957,7 @@ Retry:
 		goto Retry
 	}
 
-	openHandle = lookupOpenHandleByFissionFH(writeIn.FH)
+	openHandle = lookupOpenHandle(writeIn.FH)
 	if nil == openHandle {
 		inodeLockRequest.unlockAll()
 		writeOut = nil
@@ -2137,7 +2139,7 @@ func (dummy *globalsStruct) DoRelease(inHeader *fission.InHeader, releaseIn *fis
 		globals.stats.DoReleaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	openHandle = lookupOpenHandleByFissionFH(releaseIn.FH)
+	openHandle = lookupOpenHandle(releaseIn.FH)
 	if nil == openHandle {
 		errno = syscall.EBADF
 		return
@@ -2596,7 +2598,7 @@ Retry:
 		goto Retry
 	}
 
-	openHandle = lookupOpenHandleByFissionFH(flushIn.FH)
+	openHandle = lookupOpenHandle(flushIn.FH)
 	if nil == openHandle {
 		inodeLockRequest.unlockAll()
 		errno = syscall.EBADF
@@ -2803,7 +2805,7 @@ func (dummy *globalsStruct) DoReadDir(inHeader *fission.InHeader, readDirIn *fis
 		globals.stats.DoReadDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	openHandle = lookupOpenHandleByFissionFH(readDirIn.FH)
+	openHandle = lookupOpenHandle(readDirIn.FH)
 	if nil == openHandle {
 		readDirOut = nil
 		errno = syscall.EBADF
@@ -2969,7 +2971,7 @@ func (dummy *globalsStruct) DoReleaseDir(inHeader *fission.InHeader, releaseDirI
 		globals.stats.DoReleaseDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	openHandle = lookupOpenHandleByFissionFH(releaseDirIn.FH)
+	openHandle = lookupOpenHandle(releaseDirIn.FH)
 	if nil == openHandle {
 		errno = syscall.EBADF
 		return
@@ -3262,6 +3264,7 @@ Retry:
 		fileInode = &inodeStruct{
 			inodeNumber:     fileInodeNumber,
 			dirty:           true,
+			openCount:       0,
 			markedForDelete: false,
 			leaseState:      inodeLeaseStateNone,
 			listElement:     nil,
@@ -3517,7 +3520,7 @@ func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlu
 		globals.stats.DoReadDirPlusUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	openHandle = lookupOpenHandleByFissionFH(readDirPlusIn.FH)
+	openHandle = lookupOpenHandle(readDirPlusIn.FH)
 	if nil == openHandle {
 		readDirPlusOut = nil
 		errno = syscall.EBADF

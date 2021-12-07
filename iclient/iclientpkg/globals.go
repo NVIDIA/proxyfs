@@ -113,7 +113,8 @@ type fileInodeFlusherStruct struct {
 type inodeStruct struct {
 	inodeNumber     uint64                                         //
 	dirty           bool                                           //
-	markedForDelete bool                                           // If true, remove from globalsStruct.inodeTable upon last dereference
+	openCount       uint64                                         //
+	markedForDelete bool                                           // If true, remove from globalsStruct.inodeTable once openCount == 0
 	leaseState      inodeLeaseStateType                            //
 	listElement     *list.Element                                  // Maintains position in globalsStruct.{shared|exclusive}LeaseLRU
 	heldList        *list.List                                     // List of granted inodeHeldLockStruct's
@@ -259,8 +260,7 @@ type globalsStruct struct {
 	readCacheLRU               *list.List                                  // LRU-ordered list of readCacheLineStruct.listElement's
 	inodeTable                 map[uint64]*inodeStruct                     //
 	inodePayloadCache          sortedmap.BPlusTreeCache                    //
-	openHandleMapByInodeNumber map[uint64]*openHandleStruct                // Key == openHandleStruct.inodeNumber
-	openHandleMapByFissionFH   map[uint64]*openHandleStruct                // Key == openHandleStruct.fissionFH
+	openHandleMap              map[uint64]*openHandleStruct                // Key == openHandleStruct.fissionFH
 	sharedLeaseLRU             *list.List                                  // LRU-ordered list of inodeStruct.listElement's in or transitioning to inodeLeaseStateSharedGranted
 	exclusiveLeaseLRU          *list.List                                  // LRU-ordered list of inodeStruct.listElement's in or transitioning to inodeLeaseStateExclusiveGranted
 	httpServer                 *http.Server                                //
@@ -524,8 +524,7 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 
 	globals.inodeTable = make(map[uint64]*inodeStruct)
 	globals.inodePayloadCache = sortedmap.NewBPlusTreeCache(globals.config.InodePayloadEvictLowLimit, globals.config.InodePayloadEvictHighLimit)
-	globals.openHandleMapByInodeNumber = make(map[uint64]*openHandleStruct)
-	globals.openHandleMapByFissionFH = make(map[uint64]*openHandleStruct)
+	globals.openHandleMap = make(map[uint64]*openHandleStruct)
 	globals.sharedLeaseLRU = list.New()
 	globals.exclusiveLeaseLRU = list.New()
 
@@ -593,8 +592,7 @@ func uninitializeGlobals() (err error) {
 
 	globals.inodeTable = nil
 	globals.inodePayloadCache = nil
-	globals.openHandleMapByInodeNumber = nil
-	globals.openHandleMapByFissionFH = nil
+	globals.openHandleMap = nil
 	globals.sharedLeaseLRU = nil
 	globals.exclusiveLeaseLRU = nil
 

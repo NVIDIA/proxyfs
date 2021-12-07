@@ -62,7 +62,7 @@ func performInodeLockRetryDelay() {
 		variance int64
 	)
 
-	variance = rand.Int63n(int64(globals.config.InodeLockRetryDelay) & int64(globals.config.InodeLockRetryDelayVariance) / int64(100))
+	variance = rand.Int63n(int64(globals.config.InodeLockRetryDelay) * int64(globals.config.InodeLockRetryDelayVariance) / int64(100))
 
 	if (variance % 2) == 0 {
 		delay = time.Duration(int64(globals.config.InodeLockRetryDelay) + variance)
@@ -111,6 +111,8 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		logFatalf("*inodeLockRequestStruct)addThisLock() called with .inodeNumber already present in .locksHeld map")
 	}
 
+	// First get inode in the proper state required for this inodeLockRequest
+
 	inode, ok = globals.inodeTable[inodeLockRequest.inodeNumber]
 	if ok {
 		switch inode.leaseState {
@@ -138,6 +140,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		inode = &inodeStruct{
 			inodeNumber:                              inodeLockRequest.inodeNumber,
 			dirty:                                    false,
+			openCount:                                0,
 			markedForDelete:                          false,
 			leaseState:                               inodeLeaseStateNone,
 			listElement:                              nil,
@@ -160,11 +163,138 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		globals.inodeTable[inodeLockRequest.inodeNumber] = inode
 	}
 
-	if inode.requestList.Len() != 0 {
-		// At lease one other inodeLockRequestStruct is blocked, so this one must either block or, to avoid deadlock, release other held locks and retry
+	if inodeLockRequest.exclusive {
+		if inode.leaseState == inodeLeaseStateExclusiveGranted {
+			// Attempt to grant exclusive inodeLockRequest
 
-		if len(inodeLockRequest.locksHeld) != 0 {
-			// We must avoid deadlock by releasing other held locks and return
+			if inode.heldList.Len() == 0 {
+				// We can now grant exclusive inodeLockRequest [Case 1]
+
+				inodeHeldLock = &inodeHeldLockStruct{
+					inode:            inode,
+					inodeLockRequest: inodeLockRequest,
+					exclusive:        true,
+				}
+
+				inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
+				inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+
+				globals.Unlock()
+
+				return
+			}
+
+			// Block exlusive inodeLockRequest unless .locksHeld is non-empty
+
+			if len(inodeLockRequest.locksHeld) == 0 {
+				// We must block exclusive inodeLockRequest [Case 1]
+
+				inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
+
+				inodeLockRequest.Add(1)
+
+				globals.Unlock()
+
+				inodeLockRequest.Wait()
+
+				return
+			} else {
+				// We must avoid deadlock for this exclusive inodeLockRequest with non-empty .locksHeld [Case 1]
+
+				globals.Unlock()
+
+				inodeLockRequest.unlockAll()
+
+				return
+			}
+		}
+	} else { // !inodeLockRequest.exclusive
+		if (inode.leaseState == inodeLeaseStateSharedGranted) || (inode.leaseState == inodeLeaseStateExclusiveGranted) {
+			// Attempt to grant shared inodeLockRequest
+
+			if inode.heldList.Len() == 0 {
+				// We can now grant shared inodeLockRequest [Case 1]
+
+				inodeHeldLock = &inodeHeldLockStruct{
+					inode:            inode,
+					inodeLockRequest: inodeLockRequest,
+					exclusive:        false,
+				}
+
+				inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
+				inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+
+				globals.Unlock()
+
+				return
+			}
+
+			if inode.requestList.Len() == 0 {
+				inodeHeldLock = inode.heldList.Front().Value.(*inodeHeldLockStruct)
+
+				if !inodeHeldLock.exclusive {
+					// We can now grant shared inodeLockRequest [Case 2]
+
+					inodeHeldLock = &inodeHeldLockStruct{
+						inode:            inode,
+						inodeLockRequest: inodeLockRequest,
+						exclusive:        false,
+					}
+
+					inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
+					inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+
+					globals.Unlock()
+
+					return
+				}
+			}
+
+			// Block shared inodeLockRequest unless .locksHeld is non-empty
+
+			if len(inodeLockRequest.locksHeld) == 0 {
+				// We must block shared inodeLockRequest
+
+				inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
+
+				inodeLockRequest.Add(1)
+
+				globals.Unlock()
+
+				inodeLockRequest.Wait()
+
+				return
+			} else {
+				// We must avoid deadlock for this shared inodeLockRequest with non-empty .locksHeld
+
+				globals.Unlock()
+
+				inodeLockRequest.unlockAll()
+
+				return
+			}
+		}
+	}
+
+	// If we reach here, inode was not in the proper state required for this inodeLockRequest
+
+	if (inode.leaseState != inodeLeaseStateNone) && (inode.leaseState != inodeLeaseStateSharedGranted) {
+		if len(inodeLockRequest.locksHeld) == 0 {
+			// We must block inodeLockRequest
+			//
+			// Ultimately, .leaseState will transition triggering the servicing of .requestList
+
+			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
+
+			inodeLockRequest.Add(1)
+
+			globals.Unlock()
+
+			inodeLockRequest.Wait()
+
+			return
+		} else {
+			// We must avoid deadlock for this inodeLockRequest with non-empty .locksHeld
 
 			globals.Unlock()
 
@@ -172,58 +302,20 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 			return
 		}
-
-		inodeLockRequest.Add(1)
-
-		inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-
-		globals.Unlock()
-
-		inodeLockRequest.Wait()
-
-		return
 	}
 
-	if inode.heldList.Len() != 0 {
-		if inodeLockRequest.exclusive {
-			// Lock is held, so this exclusive inodeLockRequestStruct must block
-
-			inodeLockRequest.Add(1)
-
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-
-			globals.Unlock()
-
-			inodeLockRequest.Wait()
-
-			return
-		}
-
-		inodeHeldLock, ok = inode.heldList.Front().Value.(*inodeHeldLockStruct)
-		if !ok {
-			logFatalf("inode.heldList.Front().Value.(*inodeHeldLockStruct) returned !ok")
-		}
-
-		if inodeHeldLock.exclusive {
-			// Lock is held exclusively, so this inodeLockRequestStruct must block
-
-			inodeLockRequest.Add(1)
-
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-
-			globals.Unlock()
-
-			inodeLockRequest.Wait()
-
-			return
-		}
-	}
+	// If we reach here, we are in one of three states:
+	//
+	//   inodeLockRequest.exclusive == true  && inode.leaseState == inodeLeaseStateNone
+	//   inodeLockRequest.exclusive == true  && inode.leaseState == inodeLeaseStateSharedGranted
+	//   inodeLockRequest.exclusive == false && inode.leaseState == inodeLeaseStateNone
 
 	if inodeLockRequest.exclusive {
-		switch inode.leaseState {
-		case inodeLeaseStateNone:
-			inodeLockRequest.listElement = inode.requestList.PushFront(inodeLockRequest)
+		if inode.leaseState == inodeLeaseStateNone {
+			// We need to issue a imgrpkg.LeaseRequestTypeExclusive
+
 			inode.leaseState = inodeLeaseStateExclusiveRequested
+
 			inode.listElement = globals.exclusiveLeaseLRU.PushBack(inode)
 
 			globals.Unlock()
@@ -248,12 +340,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 			inode.leaseState = inodeLeaseStateExclusiveGranted
 
-			if inode.requestList.Front() != inodeLockRequest.listElement {
-				logFatalf("inode.requestList.Front() != inodeLockRequest.listElement")
-			}
-
-			_ = inode.requestList.Remove(inodeLockRequest.listElement)
-			inodeLockRequest.listElement = nil
+			// We can now grant exclusive inodeLockRequest [Case 2]
 
 			inodeHeldLock = &inodeHeldLockStruct{
 				inode:            inode,
@@ -263,17 +350,35 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 			inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
 			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+		} else { // inode.leaseState == inodeLeaseStateSharedGranted
+			if inode.heldList.Len() != 0 {
+				if len(inodeLockRequest.locksHeld) == 0 {
+					// We must block exclusive inodeLockRequest [Case 2]
 
-			globals.Unlock()
-		case inodeLeaseStateSharedRequested:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateSharedGranted:
-			inodeLockRequest.listElement = inode.requestList.PushFront(inodeLockRequest)
+					inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
+
+					inodeLockRequest.Add(1)
+
+					globals.Unlock()
+
+					inodeLockRequest.Wait()
+
+					return
+				} else {
+					// We must avoid deadlock for this exclusive inodeLockRequest with non-empty .locksHeld [Case 2]
+
+					globals.Unlock()
+
+					inodeLockRequest.unlockAll()
+
+					return
+				}
+			}
+
+			// We need to issue a imgrpkg.LeaseRequestTypePromote
+
 			inode.leaseState = inodeLeaseStateSharedPromoting
+
 			_ = globals.sharedLeaseLRU.Remove(inode.listElement)
 			inode.listElement = globals.exclusiveLeaseLRU.PushBack(inode)
 
@@ -299,12 +404,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 			inode.leaseState = inodeLeaseStateExclusiveGranted
 
-			if inode.requestList.Front() != inodeLockRequest.listElement {
-				logFatalf("inode.requestList.Front() != inodeLockRequest.listElement")
-			}
-
-			_ = inode.requestList.Remove(inodeLockRequest.listElement)
-			inodeLockRequest.listElement = nil
+			// We can now grant exclusive inodeLockRequest [Case 3]
 
 			inodeHeldLock = &inodeHeldLockStruct{
 				inode:            inode,
@@ -314,201 +414,79 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 			inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
 			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
-
-			globals.Unlock()
-		case inodeLeaseStateSharedPromoting:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateSharedReleasing:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateSharedExpired:
-			// Our mount point has expired... so let owner of inodeLockRequestStruct clean-up
-			globals.Unlock()
-			inodeLockRequest.unlockAll()
-		case inodeLeaseStateExclusiveRequested:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateExclusiveGranted:
-			// We can immediately grant the exclusive inodeLockRequestStruct
-			inodeHeldLock = &inodeHeldLockStruct{
-				inode:            inode,
-				inodeLockRequest: inodeLockRequest,
-				exclusive:        true,
-			}
-			inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
-			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
-			globals.Unlock()
-		case inodeLeaseStateExclusiveDemoting:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateExclusiveReleasing:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateExclusiveExpired:
-			// Our mount point has expired... so let owner of inodeLockRequestStruct clean-up
-			globals.Unlock()
-			inodeLockRequest.unlockAll()
-		default:
-			logFatalf("switch inode.leaseState unexpected: %v", inode.leaseState)
 		}
-	} else { // !inodeLockRequest.exclusive
-		switch inode.leaseState {
-		case inodeLeaseStateNone:
-			inodeLockRequest.listElement = inode.requestList.PushFront(inodeLockRequest)
-			inode.leaseState = inodeLeaseStateSharedRequested
-			inode.listElement = globals.sharedLeaseLRU.PushBack(inode)
+	} else { // !inodeLockRequest.exclusive && inode.leaseState == inodeLeaseStateNone
+		// We need to issue a imgrpkg.LeaseRequestTypeShared
 
-			globals.Unlock()
+		inode.leaseState = inodeLeaseStateSharedRequested
 
-			leaseRequest = &imgrpkg.LeaseRequestStruct{
-				MountID:          globals.mountID,
-				InodeNumber:      inodeLockRequest.inodeNumber,
-				LeaseRequestType: imgrpkg.LeaseRequestTypeShared,
-			}
-			leaseResponse = &imgrpkg.LeaseResponseStruct{}
+		inode.listElement = globals.sharedLeaseLRU.PushBack(inode)
 
-			err = rpcLease(leaseRequest, leaseResponse)
-			if nil != err {
-				logFatal(err)
-			}
+		globals.Unlock()
 
-			if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypeShared {
-				logFatalf("TODO: for now, we don't handle a Lease Request actually failing")
-			}
+		leaseRequest = &imgrpkg.LeaseRequestStruct{
+			MountID:          globals.mountID,
+			InodeNumber:      inodeLockRequest.inodeNumber,
+			LeaseRequestType: imgrpkg.LeaseRequestTypeShared,
+		}
+		leaseResponse = &imgrpkg.LeaseResponseStruct{}
 
-			globals.Lock()
+		err = rpcLease(leaseRequest, leaseResponse)
+		if nil != err {
+			logFatal(err)
+		}
 
-			inode.leaseState = inodeLeaseStateSharedGranted
+		if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypeShared {
+			logFatalf("TODO: for now, we don't handle a Lease Request actually failing")
+		}
 
-			if inode.requestList.Front() != inodeLockRequest.listElement {
-				logFatalf("inode.requestList.Front() != inodeLockRequest.listElement")
-			}
+		globals.Lock()
 
-			_ = inode.requestList.Remove(inodeLockRequest.listElement)
-			inodeLockRequest.listElement = nil
+		inode.leaseState = inodeLeaseStateSharedGranted
 
-			inodeHeldLock = &inodeHeldLockStruct{
-				inode:            inode,
-				inodeLockRequest: inodeLockRequest,
-				exclusive:        false,
-			}
+		// We can now grant shared inodeLockRequest [Case 3]
 
-			inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
-			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+		inodeHeldLock = &inodeHeldLockStruct{
+			inode:            inode,
+			inodeLockRequest: inodeLockRequest,
+			exclusive:        false,
+		}
 
-		CheckRequestList:
+		inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
+		inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
 
-			if inode.requestList.Front() != nil {
-				blockedInodeLockRequest = inode.requestList.Front().Value.(*inodeLockRequestStruct)
+		// Check to see if there are any grantable blocked shared inodeLockRequest's
 
-				if !blockedInodeLockRequest.exclusive {
-					// We can also unblock blockedInodeLockRequest
+	CheckRequestList:
 
-					_ = inode.requestList.Remove(blockedInodeLockRequest.listElement)
-					blockedInodeLockRequest.listElement = nil
+		if inode.requestList.Front() != nil {
+			blockedInodeLockRequest = inode.requestList.Front().Value.(*inodeLockRequestStruct)
 
-					inodeHeldLock = &inodeHeldLockStruct{
-						inode:            inode,
-						inodeLockRequest: blockedInodeLockRequest,
-						exclusive:        false,
-					}
+			if !blockedInodeLockRequest.exclusive {
+				// We can now also grant blockedInodeLockRequest
 
-					inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
-					blockedInodeLockRequest.locksHeld[blockedInodeLockRequest.inodeNumber] = inodeHeldLock
+				_ = inode.requestList.Remove(blockedInodeLockRequest.listElement)
+				blockedInodeLockRequest.listElement = nil
 
-					blockedInodeLockRequest.Done()
-
-					// Now go back and check for more
-
-					goto CheckRequestList
+				inodeHeldLock = &inodeHeldLockStruct{
+					inode:            inode,
+					inodeLockRequest: blockedInodeLockRequest,
+					exclusive:        false,
 				}
-			}
 
-			globals.Unlock()
-		case inodeLeaseStateSharedRequested:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateSharedGranted:
-			// We can immediately grant the shared inodeLockRequestStruct
-			inodeHeldLock = &inodeHeldLockStruct{
-				inode:            inode,
-				inodeLockRequest: inodeLockRequest,
-				exclusive:        false,
+				inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
+				blockedInodeLockRequest.locksHeld[blockedInodeLockRequest.inodeNumber] = inodeHeldLock
+
+				blockedInodeLockRequest.Done()
+
+				// Now go back and check for more
+
+				goto CheckRequestList
 			}
-			inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
-			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
-			globals.Unlock()
-		case inodeLeaseStateSharedPromoting:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateSharedReleasing:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateSharedExpired:
-			// Our mount point has expired... so let owner of inodeLockRequestStruct clean-up
-			globals.Unlock()
-			inodeLockRequest.unlockAll()
-		case inodeLeaseStateExclusiveRequested:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateExclusiveGranted:
-			// We can immediately grant the shared inodeLockRequestStruct
-			inodeHeldLock = &inodeHeldLockStruct{
-				inode:            inode,
-				inodeLockRequest: inodeLockRequest,
-				exclusive:        false,
-			}
-			inodeHeldLock.listElement = inode.heldList.PushBack(inodeHeldLock)
-			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
-			globals.Unlock()
-		case inodeLeaseStateExclusiveDemoting:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateExclusiveReleasing:
-			// Let whatever entity receives imgrpkg.LeaseResponseType* complete this inodeLockRequestStruct
-			inodeLockRequest.Add(1)
-			inodeLockRequest.listElement = inode.requestList.PushBack(inodeLockRequest)
-			globals.Unlock()
-			inodeLockRequest.Wait()
-		case inodeLeaseStateExclusiveExpired:
-			// Our mount point has expired... so let owner of inodeLockRequestStruct clean-up
-			globals.Unlock()
-			inodeLockRequest.unlockAll()
-		default:
-			logFatalf("switch inode.leaseState unexpected: %v", inode.leaseState)
 		}
 	}
+
+	globals.Unlock()
 }
 
 // unlockAll is called to explicitly release all locks listed in the locksHeld map.

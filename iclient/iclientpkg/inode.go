@@ -339,9 +339,9 @@ func lookupInode(inodeNumber uint64) (inode *inodeStruct) {
 	return
 }
 
-// createOpenHandle allocates an openHandleStruct and inserts it into the globals openHandle
-// maps by both inodeNumber and fissionFH. Note that the fissionFlags* fields all default to
-// false. Callers are expected to modify as necessary.
+// createOpenHandle allocates an openHandleStruct and inserts it into the globals.openHandleMap.
+//
+// Note that the fissionFlags* fields all default to false. Callers are expected to modify as necessary.
 //
 func createOpenHandle(inodeNumber uint64) (openHandle *openHandleStruct) {
 	openHandle = &openHandleStruct{
@@ -354,8 +354,7 @@ func createOpenHandle(inodeNumber uint64) (openHandle *openHandleStruct) {
 
 	globals.Lock()
 
-	globals.openHandleMapByInodeNumber[openHandle.inodeNumber] = openHandle
-	globals.openHandleMapByFissionFH[openHandle.fissionFH] = openHandle
+	globals.openHandleMap[openHandle.fissionFH] = openHandle
 
 	globals.Unlock()
 
@@ -369,47 +368,24 @@ func (openHandle *openHandleStruct) destroy() {
 
 	globals.Lock()
 
-	_, ok = globals.openHandleMapByInodeNumber[openHandle.inodeNumber]
+	_, ok = globals.openHandleMap[openHandle.fissionFH]
 	if !ok {
-		logFatalf("globals.openHandleMapByInodeNumber[openHandle.inodeNumber] returned !ok")
+		logFatalf("globals.openHandleMap[openHandle.fissionFH] returned !ok")
 	}
 
-	_, ok = globals.openHandleMapByFissionFH[openHandle.fissionFH]
-	if !ok {
-		logFatalf("globals.openHandleMapByFissionFH[openHandle.fissionFH] returned !ok")
-	}
-
-	delete(globals.openHandleMapByInodeNumber, openHandle.inodeNumber)
-	delete(globals.openHandleMapByFissionFH, openHandle.fissionFH)
+	delete(globals.openHandleMap, openHandle.fissionFH)
 
 	globals.Unlock()
 }
 
-func lookupOpenHandleByInodeNumber(inodeNumber uint64) (openHandle *openHandleStruct) {
+func lookupOpenHandle(fissionFH uint64) (openHandle *openHandleStruct) {
 	var (
 		ok bool
 	)
 
 	globals.Lock()
 
-	openHandle, ok = globals.openHandleMapByInodeNumber[inodeNumber]
-	if !ok {
-		openHandle = nil
-	}
-
-	globals.Unlock()
-
-	return
-}
-
-func lookupOpenHandleByFissionFH(fissionFH uint64) (openHandle *openHandleStruct) {
-	var (
-		ok bool
-	)
-
-	globals.Lock()
-
-	openHandle, ok = globals.openHandleMapByFissionFH[fissionFH]
+	openHandle, ok = globals.openHandleMap[fissionFH]
 	if !ok {
 		openHandle = nil
 	}
