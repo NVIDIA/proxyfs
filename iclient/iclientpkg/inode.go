@@ -341,15 +341,16 @@ func lookupInode(inodeNumber uint64) (inode *inodeStruct) {
 
 // createOpenHandle allocates an openHandleStruct and inserts it into the globals.openHandleMap.
 //
-// Note that the fissionFlags* fields all default to false. Callers are expected to modify as necessary.
+// Note that fissionFlags{Read|Write} are forced to be TRUE per the behavior of Linux VFS
+// and/or fuse.ko choosing to mask these during Do{Create|Open|OpenDir}() upcalls.
 //
-func createOpenHandle(inodeNumber uint64) (openHandle *openHandleStruct) {
+func createOpenHandle(inodeNumber uint64, fissionFlagsAppend bool, fissionFlagsRead bool, fissionFlagsWrite bool) (openHandle *openHandleStruct) {
 	openHandle = &openHandleStruct{
 		inodeNumber:        inodeNumber,
 		fissionFH:          fetchNonce(),
-		fissionFlagsAppend: false, // To be filled in by caller
-		fissionFlagsRead:   false, // To be filled in by caller
-		fissionFlagsWrite:  false, // To be filled in by caller
+		fissionFlagsAppend: fissionFlagsAppend,
+		fissionFlagsRead:   true, // Should be fissionFlagsRead  but Linux VFS and/or fuse.ko masks these
+		fissionFlagsWrite:  true, // Should be fissionFlagsWrite but Linux VFS and/or fuse.ko masks these
 	}
 
 	globals.Lock()

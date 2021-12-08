@@ -1510,11 +1510,11 @@ Retry:
 		logFatal(err)
 	}
 
-	openHandle = createOpenHandle(inode.inodeNumber)
-
-	openHandle.fissionFlagsAppend = (openIn.Flags & syscall.O_APPEND) == syscall.O_APPEND
-	openHandle.fissionFlagsRead = ((openIn.Flags & syscall.O_ACCMODE) == syscall.O_RDONLY) || ((openIn.Flags & syscall.O_ACCMODE) == syscall.O_RDWR)
-	openHandle.fissionFlagsWrite = ((openIn.Flags & syscall.O_ACCMODE) == syscall.O_RDWR) || ((openIn.Flags & syscall.O_ACCMODE) == syscall.O_WRONLY)
+	openHandle = createOpenHandle(
+		inode.inodeNumber,
+		(openIn.Flags&syscall.O_APPEND) == syscall.O_APPEND,
+		((openIn.Flags&syscall.O_ACCMODE) == syscall.O_RDONLY) || ((openIn.Flags&syscall.O_ACCMODE) == syscall.O_RDWR),
+		((openIn.Flags&syscall.O_ACCMODE) == syscall.O_RDWR) || ((openIn.Flags&syscall.O_ACCMODE) == syscall.O_WRONLY))
 
 	openOut = &fission.OpenOut{
 		FH:        openHandle.fissionFH,
@@ -2757,11 +2757,7 @@ Retry:
 		logFatal(err)
 	}
 
-	openHandle = createOpenHandle(inode.inodeNumber)
-
-	openHandle.fissionFlagsAppend = false
-	openHandle.fissionFlagsRead = true
-	openHandle.fissionFlagsWrite = false
+	openHandle = createOpenHandle(inode.inodeNumber, false, true, false)
 
 	openDirOut = &fission.OpenDirOut{
 		FH:        openHandle.fissionFH,
@@ -3351,11 +3347,7 @@ Retry:
 		logFatal(err)
 	}
 
-	openHandle = createOpenHandle(fileInode.inodeNumber)
-
-	openHandle.fissionFlagsAppend = false
-	openHandle.fissionFlagsRead = false
-	openHandle.fissionFlagsWrite = true
+	openHandle = createOpenHandle(fileInode.inodeNumber, false, false, true)
 
 	createOut = &fission.CreateOut{
 		EntryOut: fission.EntryOut{
