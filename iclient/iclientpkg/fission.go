@@ -1537,6 +1537,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		extentMapEntryIndexV1Min                 int // First entry at or just before where readIn.Offset may reside
 		extentMapEntryKeyV1                      uint64
 		extentMapEntryKeyV1AsKey                 sortedmap.Key
+		extentMapEntrySkipSize                   uint64
 		extentMapEntryValueV1                    *ilayout.ExtentMapEntryValueV1Struct
 		extentMapEntryValueV1AsValue             sortedmap.Value
 		inode                                    *inodeStruct
@@ -1724,16 +1725,18 @@ Retry:
 			}
 		}
 
+		extentMapEntrySkipSize = curOffset - extentMapEntryKeyV1
+
 		extentMapEntryValueV1, ok = extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1Struct)
 		if !ok {
 			logFatalf("extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1) returned !ok")
 		}
 
-		if remainingSize <= extentMapEntryValueV1.Length {
+		if remainingSize <= (extentMapEntryValueV1.Length - extentMapEntrySkipSize) {
 			readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
 				Length:       remainingSize,
 				ObjectNumber: extentMapEntryValueV1.ObjectNumber,
-				ObjectOffset: extentMapEntryValueV1.ObjectOffset,
+				ObjectOffset: extentMapEntryValueV1.ObjectOffset + extentMapEntrySkipSize,
 			})
 
 			curOffset += remainingSize
@@ -1743,13 +1746,13 @@ Retry:
 		}
 
 		readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
-			Length:       extentMapEntryValueV1.Length,
+			Length:       extentMapEntryValueV1.Length - extentMapEntrySkipSize,
 			ObjectNumber: extentMapEntryValueV1.ObjectNumber,
-			ObjectOffset: extentMapEntryValueV1.ObjectOffset,
+			ObjectOffset: extentMapEntryValueV1.ObjectOffset + extentMapEntrySkipSize,
 		})
 
-		curOffset += extentMapEntryValueV1.Length
-		remainingSize -= extentMapEntryValueV1.Length
+		curOffset += extentMapEntryValueV1.Length - extentMapEntrySkipSize
+		remainingSize -= extentMapEntryValueV1.Length - extentMapEntrySkipSize
 	}
 
 	if remainingSize > 0 {
