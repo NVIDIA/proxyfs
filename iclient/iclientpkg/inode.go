@@ -1104,11 +1104,11 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 				length -= extentLengthToTrim
 			}
 		}
+
+		// Now advance index to refer to the next (or first) extent known to start at or to the right of the start of the unmap range (if any)
+
+		index++
 	}
-
-	// Now advance index to refer to the next (or first) extent known to start at or to the right of the start of the unmap range (if any)
-
-	index++
 
 	// Finally proceed deleting or trimming on the left the next extent (if any) until the unmap range is removed
 
