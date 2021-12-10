@@ -2078,10 +2078,7 @@ Retry:
 
 func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fission.StatFSOut, errno syscall.Errno) {
 	var (
-		err                  error
-		startTime            time.Time = time.Now()
-		volumeStatusRequest  *imgrpkg.VolumeStatusRequestStruct
-		volumeStatusResponse *imgrpkg.VolumeStatusResponseStruct
+		startTime time.Time = time.Now()
 	)
 
 	logTracef("==> DoStatFS(inHeader: %+v)", inHeader)
@@ -2093,22 +2090,12 @@ func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fis
 		globals.stats.DoStatFSUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	volumeStatusRequest = &imgrpkg.VolumeStatusRequestStruct{
-		MountID: globals.mountID,
-	}
-	volumeStatusResponse = &imgrpkg.VolumeStatusResponseStruct{}
-
-	err = rpcVolumeStatus(volumeStatusRequest, volumeStatusResponse)
-	if nil != err {
-		logFatal(err)
-	}
-
 	statFSOut = &fission.StatFSOut{
 		KStatFS: fission.KStatFS{
-			Blocks:  (volumeStatusResponse.ObjectSize + uint64(globals.config.FUSEBlockSize) - 1) / uint64(globals.config.FUSEBlockSize),
+			Blocks:  math.MaxUint64,
 			BFree:   math.MaxUint64,
 			BAvail:  math.MaxUint64,
-			Files:   volumeStatusResponse.NumInodes,
+			Files:   math.MaxUint64,
 			FFree:   math.MaxUint64,
 			BSize:   globals.config.FUSEBlockSize,
 			FRSize:  globals.config.FUSEBlockSize,
