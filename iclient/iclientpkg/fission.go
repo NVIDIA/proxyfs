@@ -1537,6 +1537,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		extentMapEntryKeyV1AsKey                 sortedmap.Key
 		extentMapEntryValueV1                    *ilayout.ExtentMapEntryValueV1Struct
 		extentMapEntryValueV1AsValue             sortedmap.Value
+		extentMapEntrySkipLength                 uint64
 		inode                                    *inodeStruct
 		inodeLockRequest                         *inodeLockRequestStruct
 		obtainExclusiveLock                      bool
@@ -1757,29 +1758,33 @@ Retry:
 
 			if remainingSize > 0 {
 				// In the case where we didn't already zero-fill the remainder of the readPlan above...
+				//
+				// Account for the portion of the extent to be skipped over
 
-				if remainingSize <= extentMapEntryValueV1.Length {
+				extentMapEntrySkipLength = curOffset - extentMapEntryKeyV1
+
+				if (extentMapEntrySkipLength + remainingSize) <= extentMapEntryValueV1.Length {
 					// Populate the remainder of the readPlan with the first remainingSize bytes of this extent
 
 					readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
 						Length:       remainingSize,
 						ObjectNumber: extentMapEntryValueV1.ObjectNumber,
-						ObjectOffset: extentMapEntryValueV1.ObjectOffset,
+						ObjectOffset: extentMapEntryValueV1.ObjectOffset + extentMapEntrySkipLength,
 					})
 
 					curOffset += remainingSize
 					remainingSize = 0
-				} else { // remainingSize > extentMapEntryValueV1.Length
+				} else { // (extentMapEntrySkipLength + remainingSize) > extentMapEntryValueV1.Length
 					// Populate the readPlan with this extent
 
 					readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
-						Length:       extentMapEntryValueV1.Length,
+						Length:       extentMapEntryValueV1.Length - extentMapEntrySkipLength,
 						ObjectNumber: extentMapEntryValueV1.ObjectNumber,
-						ObjectOffset: extentMapEntryValueV1.ObjectOffset,
+						ObjectOffset: extentMapEntryValueV1.ObjectOffset + extentMapEntrySkipLength,
 					})
 
-					curOffset += extentMapEntryValueV1.Length
-					remainingSize -= extentMapEntryValueV1.Length
+					curOffset += extentMapEntryValueV1.Length - extentMapEntrySkipLength
+					remainingSize -= extentMapEntryValueV1.Length - extentMapEntrySkipLength
 
 					extentMapEntryIndexV1++
 				}
