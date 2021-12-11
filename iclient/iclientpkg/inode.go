@@ -881,6 +881,7 @@ func (fileInode *inodeStruct) recordExtent(startingFileOffset uint64, length uin
 		extentMapEntryKeyV1AsKey     sortedmap.Key
 		extentMapEntryValueV1        *ilayout.ExtentMapEntryValueV1Struct
 		extentMapEntryValueV1AsValue sortedmap.Value
+		found                        bool
 		index                        int
 		layoutMapEntry               layoutMapEntryStruct
 		ok                           bool
@@ -903,9 +904,12 @@ func (fileInode *inodeStruct) recordExtent(startingFileOffset uint64, length uin
 	fileInode.superBlockInodeObjectSizeAdjustment += int64(length)
 	fileInode.superBlockInodeBytesReferencedAdjustment += int64(length)
 
-	index, _, err = fileInode.payload.BisectLeft(startingFileOffset)
+	index, found, err = fileInode.payload.BisectLeft(startingFileOffset)
 	if nil != err {
 		logFatalf("fileInode.payload.BisectLeft(startingFileOffset) failed: %v", err)
+	}
+	if found {
+		logFatalf("fileInode.payload.BisectLeft(startingFileOffset) should have returned !found")
 	}
 
 	extentMapEntryKeyV1AsKey, extentMapEntryValueV1AsValue, ok, err = fileInode.payload.GetByIndex(index)
@@ -1110,9 +1114,9 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 		index++
 	}
 
-	// Finally proceed deleting or trimming on the left the next extent (if any) until the unmap range is removed
+	// If we reach here, proceed deleting or trimming on the left the next extent (if any) until the unmap range is removed
 
-	for {
+	for length > 0 {
 		extentMapEntryKeyV1AsKey, extentMapEntryValueV1AsValue, ok, err = fileInode.payload.GetByIndex(index)
 		if nil != err {
 			logFatalf("fileInode.payload.GetByIndex(index) failed: %v", err)
@@ -1138,12 +1142,17 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 			logFatalf("fileInode.layoutMap[extentMapEntryValueV1.ObjectNumber] returned !ok")
 		}
 
+		// Might as well simplify the logic below by trimming the unmap range on the left up to extentMapEntryKeyV1
+
+		length -= extentMapEntryKeyV1 - startingFileOffset
+		startingFileOffset = extentMapEntryKeyV1
+
 		// This extent either is completely consumed by the unmap range or needs to be trimmed on the left
 
-		if (startingFileOffset + length) < (extentMapEntryKeyV1 + extentMapEntryValueV1.Length) {
+		if length < extentMapEntryValueV1.Length {
 			// This extent needs to be trimmed on the left
 
-			extentLengthToTrim = (extentMapEntryKeyV1 + extentMapEntryValueV1.Length) - (startingFileOffset + length)
+			extentLengthToTrim = length - (extentMapEntryKeyV1 - startingFileOffset)
 
 			ok, err = fileInode.payload.DeleteByIndex(index)
 			if nil != err {
@@ -1153,10 +1162,10 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 				logFatalf("fileInode.payload.DeleteByIndex() returned !ok")
 			}
 
-			extentMapEntryKeyV1 += extentLengthToTrim
+			extentMapEntryKeyV1 += length
 
-			extentMapEntryValueV1.Length -= extentLengthToTrim
-			extentMapEntryValueV1.ObjectOffset += extentLengthToTrim
+			extentMapEntryValueV1.Length -= length
+			extentMapEntryValueV1.ObjectOffset += length
 
 			ok, err = fileInode.payload.Put(extentMapEntryKeyV1, extentMapEntryValueV1)
 			if nil != err {
@@ -1205,16 +1214,7 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 			fileInode.superBlockInodeBytesReferencedAdjustment -= int64(extentMapEntryValueV1.Length)
 		}
 
-		length = (startingFileOffset + length) - (extentMapEntryKeyV1 + extentMapEntryValueV1.Length)
-
-		if length == 0 {
-			// Since we've now fully accounted for the unmap range, we are done
-
-			return
-		}
-
-		startingFileOffset = extentMapEntryKeyV1 + extentMapEntryValueV1.Length
-
-		// Now loop back to fetch the next existing extent
+		startingFileOffset += extentMapEntryValueV1.Length
+		length -= extentMapEntryValueV1.Length
 	}
 }

@@ -1533,11 +1533,8 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		curOffset                                uint64
 		err                                      error
 		extentMapEntryIndexV1                    int
-		extentMapEntryIndexV1Max                 int // Entry entry at or just after  where readIn.Offset+readIn.Size may reside
-		extentMapEntryIndexV1Min                 int // First entry at or just before where readIn.Offset may reside
 		extentMapEntryKeyV1                      uint64
 		extentMapEntryKeyV1AsKey                 sortedmap.Key
-		extentMapEntrySkipSize                   uint64
 		extentMapEntryValueV1                    *ilayout.ExtentMapEntryValueV1Struct
 		extentMapEntryValueV1AsValue             sortedmap.Value
 		inode                                    *inodeStruct
@@ -1648,18 +1645,28 @@ Retry:
 		logFatalf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
 
-	curOffset = readIn.Offset
-	if curOffset >= inode.inodeHeadV1.Size {
+	if readIn.Size == 0 {
 		inodeLockRequest.unlockAll()
 		readOut = &fission.ReadOut{
-			Data: make([]byte, 0, 0),
+			Data: make([]byte, 0),
 		}
 		errno = 0
 		return
 	}
 
-	remainingSize = uint64(readIn.Size)
-	if (curOffset + remainingSize) > inode.inodeHeadV1.Size {
+	curOffset = readIn.Offset
+	if curOffset >= inode.inodeHeadV1.Size {
+		inodeLockRequest.unlockAll()
+		readOut = &fission.ReadOut{
+			Data: make([]byte, 0),
+		}
+		errno = 0
+		return
+	}
+
+	if (curOffset + uint64(readIn.Size)) <= inode.inodeHeadV1.Size {
+		remainingSize = uint64(readIn.Size)
+	} else {
 		remainingSize = inode.inodeHeadV1.Size - curOffset
 	}
 
@@ -1674,35 +1681,113 @@ Retry:
 		}
 	}
 
-	extentMapEntryIndexV1Min, _, err = inode.payload.BisectLeft(curOffset)
+	extentMapEntryIndexV1, _, err = inode.payload.BisectLeft(curOffset)
 	if nil != err {
 		logFatal(err)
 	}
-
-	if extentMapEntryIndexV1Min < 0 {
-		extentMapEntryIndexV1Min = 0
+	if extentMapEntryIndexV1 < 0 {
+		// Correct for case where curOffset is to the left of the first extent
+		extentMapEntryIndexV1 = 0
 	}
 
-	extentMapEntryIndexV1Max, _, err = inode.payload.BisectLeft(readIn.Offset + remainingSize)
-	if nil != err {
-		logFatal(err)
-	}
+	readPlan = make([]*ilayout.ExtentMapEntryValueV1Struct, 0)
 
-	readPlan = make([]*ilayout.ExtentMapEntryValueV1Struct, 0, 2*(extentMapEntryIndexV1Max-extentMapEntryIndexV1Min))
-
-	for extentMapEntryIndexV1 = extentMapEntryIndexV1Min; extentMapEntryIndexV1 <= extentMapEntryIndexV1Max; extentMapEntryIndexV1++ {
-		extentMapEntryKeyV1AsKey, extentMapEntryValueV1AsValue, _, err = inode.payload.GetByIndex(extentMapEntryIndexV1)
+	for remainingSize > 0 {
+		extentMapEntryKeyV1AsKey, extentMapEntryValueV1AsValue, ok, err = inode.payload.GetByIndex(extentMapEntryIndexV1)
 		if nil != err {
 			logFatal(err)
 		}
 
-		extentMapEntryKeyV1, ok = extentMapEntryKeyV1AsKey.(uint64)
-		if !ok {
-			logFatalf("extentMapEntryKeyV1AsKey.(uint64) returned !ok")
-		}
+		if ok {
+			extentMapEntryKeyV1, ok = extentMapEntryKeyV1AsKey.(uint64)
+			if !ok {
+				logFatalf("extentMapEntryKeyV1AsKey.(uint64) returned !ok")
+			}
+			extentMapEntryValueV1, ok = extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1Struct)
+			if !ok {
+				logFatalf("extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1) returned !ok")
+			}
 
-		if curOffset < extentMapEntryKeyV1 {
-			if remainingSize < (extentMapEntryKeyV1 - curOffset) {
+			// At this point, curOffset could be <, ==, or > extentMapEntryKeyV1:
+			//
+			//   curOffset <  extentMapEntryKeyV1  might happen on the first loop iteration if the above BisectLeft()
+			//                                     call found no extent at or to the left of curOffset in which case
+			//                                     we then adjusted extentMapEntryKeyV1 from -1 to zero
+			//
+			//                                     it will also happen on subsequent loop iterations where there is
+			//                                     a gap between the last extent and this new one since we would only
+			//                                     have advanced curOffset to the offset just after that last extent
+			//
+			//   curOffset == extentMapEntryKeyV1  might happen on the first loop iteration if the above BisectLeft()
+			//                                     found an extent starting at exactly curOffset (found == true)
+			//
+			//                                     it will also happen on subsequent loop iterations where there is
+			//                                     no gap between the last extent and this new one since we would
+			//                                     have advanced curOffset to the offset just after that last extent
+			//
+			//   curOffset >  extentMapEntryKeyV1  might happen on the first loop iteration if the above BisectLeft()
+			//                                     did not find an extent starting at exactly curOffset (fount == false)
+			//                                     but returned the nearest extent starting to the left of curOffset
+
+			if curOffset < extentMapEntryKeyV1 {
+				if (curOffset + remainingSize) <= extentMapEntryKeyV1 {
+					// Zero-fill the remainder of the readPlan
+
+					readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
+						Length:       remainingSize,
+						ObjectNumber: 0,
+						ObjectOffset: 0,
+					})
+
+					curOffset += remainingSize
+					remainingSize = 0
+				} else { // (curOffset+remainingSize) > extentMapEntryKeyV1
+					// Zero-fill to advance to the start of this extent
+
+					readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
+						Length:       extentMapEntryKeyV1 - curOffset,
+						ObjectNumber: 0,
+						ObjectOffset: 0,
+					})
+
+					remainingSize -= extentMapEntryKeyV1 - curOffset
+					curOffset = extentMapEntryKeyV1
+				}
+			}
+
+			if remainingSize > 0 {
+				// In the case where we didn't already zero-fill the remainder of the readPlan above...
+
+				if remainingSize <= extentMapEntryValueV1.Length {
+					// Populate the remainder of the readPlan with the first remainingSize bytes of this extent
+
+					readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
+						Length:       remainingSize,
+						ObjectNumber: extentMapEntryValueV1.ObjectNumber,
+						ObjectOffset: extentMapEntryValueV1.ObjectOffset,
+					})
+
+					curOffset += remainingSize
+					remainingSize = 0
+				} else { // remainingSize > extentMapEntryValueV1.Length
+					// Populate the readPlan with this extent
+
+					readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
+						Length:       extentMapEntryValueV1.Length,
+						ObjectNumber: extentMapEntryValueV1.ObjectNumber,
+						ObjectOffset: extentMapEntryValueV1.ObjectOffset,
+					})
+
+					curOffset += extentMapEntryValueV1.Length
+					remainingSize -= extentMapEntryValueV1.Length
+
+					extentMapEntryIndexV1++
+				}
+			}
+		} else { // inode.payload.GetByIndex(extentMapEntryIndexV1) returned !ok
+			// Zero-fill the remainder of the readPlan
+
+			if (curOffset + remainingSize) < extentMapEntryKeyV1 {
 				readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
 					Length:       remainingSize,
 					ObjectNumber: 0,
@@ -1711,56 +1796,8 @@ Retry:
 
 				curOffset += remainingSize
 				remainingSize = 0
-
-				break
-			} else {
-				readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
-					Length:       extentMapEntryKeyV1 - curOffset,
-					ObjectNumber: 0,
-					ObjectOffset: 0,
-				})
-
-				remainingSize -= extentMapEntryKeyV1 - curOffset
-				curOffset = extentMapEntryKeyV1
 			}
 		}
-
-		extentMapEntrySkipSize = curOffset - extentMapEntryKeyV1
-
-		extentMapEntryValueV1, ok = extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1Struct)
-		if !ok {
-			logFatalf("extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1) returned !ok")
-		}
-
-		if remainingSize <= (extentMapEntryValueV1.Length - extentMapEntrySkipSize) {
-			readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
-				Length:       remainingSize,
-				ObjectNumber: extentMapEntryValueV1.ObjectNumber,
-				ObjectOffset: extentMapEntryValueV1.ObjectOffset + extentMapEntrySkipSize,
-			})
-
-			curOffset += remainingSize
-			remainingSize = 0
-
-			break
-		}
-
-		readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
-			Length:       extentMapEntryValueV1.Length - extentMapEntrySkipSize,
-			ObjectNumber: extentMapEntryValueV1.ObjectNumber,
-			ObjectOffset: extentMapEntryValueV1.ObjectOffset + extentMapEntrySkipSize,
-		})
-
-		curOffset += extentMapEntryValueV1.Length - extentMapEntrySkipSize
-		remainingSize -= extentMapEntryValueV1.Length - extentMapEntrySkipSize
-	}
-
-	if remainingSize > 0 {
-		readPlan = append(readPlan, &ilayout.ExtentMapEntryValueV1Struct{
-			Length:       remainingSize,
-			ObjectNumber: 0,
-			ObjectOffset: 0,
-		})
 	}
 
 	// Now process readPlan
@@ -2203,6 +2240,7 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 	var (
 		startTime time.Time = time.Now()
 	)
+	fmt.Printf("UNDO: got a DoFSync(inHeader: %+v, fSyncIn: %+v)\n", inHeader, fSyncIn)
 
 	logTracef("==> DoFSync(inHeader: %+v, fSyncIn: %+v)", inHeader, fSyncIn)
 	defer func() {
@@ -2568,6 +2606,7 @@ func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission
 		openHandle       *openHandleStruct
 		startTime        time.Time = time.Now()
 	)
+	fmt.Printf("UNDO: got a DoFlush(inHeader: %+v, flushIn: %+v)\n", inHeader, flushIn)
 
 	logTracef("==> DoFlush(inHeader: %+v, flushIn: %+v)", inHeader, flushIn)
 	defer func() {
