@@ -1553,6 +1553,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		readCacheLineWG                          *sync.WaitGroup
 		readPlan                                 []*ilayout.ExtentMapEntryValueV1Struct
 		readPlanEntry                            *ilayout.ExtentMapEntryValueV1Struct // If .ObjectNumber == 0, .ObjectOffset is ignored... .Length is the number of zero fill bytes
+		readPlanEntryIndex                       int                                  // UNDO
 		remainingSize                            uint64
 		startTime                                time.Time = time.Now()
 	)
@@ -1573,7 +1574,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		}
 	}()
 
-	obtainExclusiveLock = false
+	obtainExclusiveLock = true // UNDO: change it back to false
 
 Retry:
 	inodeLockRequest = newLockRequest()
@@ -1807,7 +1808,10 @@ Retry:
 
 	// Now process readPlan
 
-	for _, readPlanEntry = range readPlan {
+	fmt.Printf("UNDO: DoRead(inHeader: %+v, readIn: %+v) with len(readPlan): %v\n", inHeader, readIn, len(readPlan))
+	// for _, readPlanEntry = range readPlan {
+	for readPlanEntryIndex, readPlanEntry = range readPlan { // UNDO (swap with above)
+		fmt.Printf("UNDO: ... readPlanEntry[%v]: %+v\n", readPlanEntryIndex, readPlanEntry)
 		switch readPlanEntry.ObjectNumber {
 		case 0:
 			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length)...)
@@ -1815,12 +1819,14 @@ Retry:
 			// Note that if putObject is inactive, case 0: will have already matched readPlanEntry.ObjectNumber
 			readOut.Data = append(readOut.Data, inode.putObjectBuffer[readPlanEntry.ObjectOffset:(readPlanEntry.ObjectOffset+readPlanEntry.Length)]...)
 		default:
+			fmt.Printf("UNDO: - hit the \"not in inode.putObjectBuffer\" case\n")
 			for readPlanEntry.Length > 0 {
 				readCacheKey = readCacheKeyStruct{
 					objectNumber: readPlanEntry.ObjectNumber,
 					lineNumber:   readPlanEntry.ObjectOffset / globals.config.ReadCacheLineSize,
 				}
 				readCacheLineOffset = readPlanEntry.ObjectOffset - (readCacheKey.lineNumber * globals.config.ReadCacheLineSize)
+				fmt.Printf("UNDO: while readPlanEntry.Length (%v) > 0, readCacheKey: %+v readCacheLineOffset: %v\n", readPlanEntry.Length, readCacheKey, readCacheLineOffset)
 
 				globals.Lock()
 
@@ -1829,22 +1835,26 @@ Retry:
 				if ok {
 					// readCacheLine is in globals.readCacheMap but may be being filled
 
+					fmt.Printf("UNDO: readCache \"hit\"... but may be filling\n")
 					globals.readCacheLRU.MoveToBack(readCacheLine.listElement)
 
 					if readCacheLine.wg == nil {
 						// readCacheLine is already filled...
 
+						fmt.Printf("UNDO: readCache \"hit\"... line already filled\n")
 						readCacheLineBuf = readCacheLine.buf
 
 						globals.Unlock()
 					} else {
 						// readCacheLine is being filled... so just wait for it
 
+						fmt.Printf("UNDO: readCache \"hit\"... line being filled\n")
 						readCacheLineWG = readCacheLine.wg
 
 						globals.Unlock()
 
 						readCacheLineWG.Wait()
+						fmt.Printf("UNDO: readCache \"hit\"... line fill completed\n")
 
 						// If readCacheLine fill failed... we must exit
 
@@ -1853,15 +1863,18 @@ Retry:
 						globals.Unlock()
 
 						if nil == readCacheLineBuf {
+							fmt.Printf("UNDO: readCache \"hit\"... line fill failed\n")
 							inodeLockRequest.unlockAll()
 							readOut = nil
 							errno = syscall.EIO
 							return
 						}
+						fmt.Printf("UNDO: readCache \"hit\"... line fill succeeded\n")
 					}
 				} else {
 					// readCacheLine is absent from globals.readCacheMap... so put it there and fill it
 
+					fmt.Printf("UNDO: readCache \"miss\"...\n")
 					readCacheLineWG = &sync.WaitGroup{}
 
 					readCacheLine = &readCacheLineStruct{
@@ -1873,6 +1886,8 @@ Retry:
 					readCacheLine.wg.Add(1)
 
 					readCacheLine.listElement = globals.readCacheLRU.PushBack(readCacheLine)
+
+					globals.readCacheMap[readCacheKey] = readCacheLine
 
 					// Need to evict LRU'd readCacheLine if globals.config.ReadCacheLineCountMax is exceeded
 
@@ -1897,6 +1912,7 @@ Retry:
 					if nil != err {
 						// readCacheLine fill failed... so tell others and exit
 
+						fmt.Printf("UNDO: readCache \"miss\"...fill failed\n")
 						globals.Lock()
 
 						delete(globals.readCacheMap, readCacheKey)
@@ -1912,6 +1928,7 @@ Retry:
 						errno = syscall.EIO
 						return
 					}
+					fmt.Printf("UNDO: readCache \"miss\"...fill succeeded\n")
 
 					// readCacheLine fill succeeded... so tell others and continue
 
@@ -1930,6 +1947,7 @@ Retry:
 				if readCacheLineOffset >= uint64(len(readCacheLineBuf)) {
 					// readCacheLineBuf unexpectedly too short... we must exit
 
+					fmt.Printf("UNDO: readCache line unexpectedly too short\n")
 					inodeLockRequest.unlockAll()
 					readOut = nil
 					errno = syscall.EIO
@@ -1941,6 +1959,7 @@ Retry:
 				if readPlanEntry.Length > readCacheLineBufLengthAvailableToConsume {
 					// Consume tail of readCacheLineBuf starting at readCacheLineOffset and continue looping
 
+					fmt.Printf("UNDO: readCache line tail being consumed\n")
 					readOut.Data = append(readOut.Data, readCacheLineBuf[readCacheLineOffset:]...)
 
 					readPlanEntry.Length -= readCacheLineBufLengthAvailableToConsume
@@ -1948,6 +1967,7 @@ Retry:
 				} else {
 					// Consume only the portion of readCacheLineBuf needed and trigger loop exit
 
+					fmt.Printf("UNDO: readCache line chunk being consumed\n")
 					readOut.Data = append(readOut.Data, readCacheLineBuf[readCacheLineOffset:(readCacheLineOffset+readPlanEntry.Length)]...)
 
 					readPlanEntry.Length = 0
@@ -2070,6 +2090,7 @@ Retry:
 		// Pre-flush if this write would cause inode.putObjectBuffer to exceed globals.config.FileFlushTriggerSize
 
 		if (uint64(len(inode.putObjectBuffer)) + uint64(len(writeIn.Data))) > globals.config.FileFlushTriggerSize {
+			fmt.Printf("UNDO: We are triggering a size-based flush...\n")
 			flushInodesInSlice([]*inodeStruct{inode})
 
 			inode.dirty = true
@@ -2245,7 +2266,7 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 	var (
 		startTime time.Time = time.Now()
 	)
-	fmt.Printf("UNDO: got a DoFSync(inHeader: %+v, fSyncIn: %+v)\n", inHeader, fSyncIn)
+	// fmt.Printf("UNDO: got a DoFSync(inHeader: %+v, fSyncIn: %+v)\n", inHeader, fSyncIn)
 
 	logTracef("==> DoFSync(inHeader: %+v, fSyncIn: %+v)", inHeader, fSyncIn)
 	defer func() {
@@ -2611,7 +2632,7 @@ func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission
 		openHandle       *openHandleStruct
 		startTime        time.Time = time.Now()
 	)
-	fmt.Printf("UNDO: got a DoFlush(inHeader: %+v, flushIn: %+v)\n", inHeader, flushIn)
+	// fmt.Printf("UNDO: got a DoFlush(inHeader: %+v, flushIn: %+v)\n", inHeader, flushIn)
 
 	logTracef("==> DoFlush(inHeader: %+v, flushIn: %+v)", inHeader, flushIn)
 	defer func() {
