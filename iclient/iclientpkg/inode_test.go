@@ -5,9 +5,11 @@ package iclientpkg
 
 import (
 	"bytes"
-	"crypto/rand"
+	crand "crypto/rand"
 	"fmt"
+	"math"
 	"math/big"
+	mrand "math/rand"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -21,13 +23,14 @@ import (
 const (
 	testInodeStressDisplayUpdateInterval             = time.Duration(time.Second)
 	testInodeStressFileNamePrefix                    = "_inode_stress_"
-	testInodeStressFileSize                   uint64 = 1000000 // UNDO 1000000
-	testInodeStressMaxExtentSize              uint64 = 10000   // UNDO 10000
-	testInodeStressMinExtentSize              uint64 = 1       // UNDO
-	testInodeStressNumExtentWritesPerFile     uint64 = 1000    // UNDO 1000
-	testInodeStressNumExtentWritesPerFlush    uint64 = 50      // UNDO 50 // 0 means only perform Flush    function at the end
-	testInodeStressNumExtentWritesPerValidate uint64 = 100     // UNDO 100 // 0 means only perform Validate function at the end
-	testInodeStressNumFiles                   uint64 = 1       // UNDO 10
+	testInodeStressFileSize                   uint64 = 100000
+	testInodeStressMaxExtentSize              uint64 = 10000
+	testInodeStressMinExtentSize              uint64 = 1
+	testInodeStressNumExtentWritesPerFile     uint64 = 1000
+	testInodeStressNumExtentWritesPerFlush    uint64 = 0 // 0 means only perform Flush    function at the end
+	testInodeStressNumExtentWritesPerValidate uint64 = 0 // 0 means only perform Validate function at the end
+	testInodeStressNumFiles                   uint64 = 1
+	testInodeStressSeed                       int64  = 1 // if 0, use crypto/rand.Reader; else, use this seed + stresserIndex
 )
 
 type testInodeStressGlobalsStruct struct {
@@ -149,7 +152,8 @@ func testInodeStresser(stresserIndex uint64) {
 		errno                            syscall.Errno
 		extentIndex                      uint64
 		inHeader                         *fission.InHeader
-		mustBeLessThanBigIntPtr          *big.Int
+		mrandRand                        *mrand.Rand
+		mrandSource                      mrand.Source
 		numExtentWritesSinceLastFlush    uint64
 		numExtentWritesSinceLastValidate uint64
 		offset                           uint64
@@ -214,6 +218,27 @@ func testInodeStresser(stresserIndex uint64) {
 		runtime.Goexit()
 	}
 
+	// Construct this instance's pseudo-random sequence from appropriate seed
+
+	if testInodeStressSeed == 0 {
+		u64BigIntPtr, err = crand.Int(crand.Reader, big.NewInt(math.MaxInt64))
+		if err != nil {
+			testInodeStressGlobals.Lock()
+			testInodeStressGlobals.err = append(testInodeStressGlobals.err, err)
+			testInodeStressGlobals.Unlock()
+
+			testInodeStressGlobals.Done()
+
+			runtime.Goexit()
+		}
+
+		mrandSource = mrand.NewSource(u64BigIntPtr.Int64())
+	} else {
+		mrandSource = mrand.NewSource(testInodeStressSeed + int64(stresserIndex))
+	}
+
+	mrandRand = mrand.New(mrandSource)
+
 	// Perform extent writes
 
 	b = 0x00
@@ -223,35 +248,11 @@ func testInodeStresser(stresserIndex uint64) {
 	for extentIndex = 0; extentIndex < testInodeStressNumExtentWritesPerFile; extentIndex++ {
 		// Pick a size value such that testInodeStressMinExtentSize <= size <= testInodeStressMaxExtentSize
 
-		mustBeLessThanBigIntPtr = big.NewInt(int64(testInodeStressMaxExtentSize - testInodeStressMinExtentSize + 1))
-		u64BigIntPtr, err = rand.Int(rand.Reader, mustBeLessThanBigIntPtr)
-		if err != nil {
-			testInodeStressGlobals.Lock()
-			testInodeStressGlobals.err = append(testInodeStressGlobals.err, err)
-			testInodeStressGlobals.Unlock()
-
-			testInodeStressGlobals.Done()
-
-			runtime.Goexit()
-		}
-
-		size = uint32(testInodeStressMinExtentSize + u64BigIntPtr.Uint64())
+		size = uint32(mrandRand.Int63n(int64(testInodeStressMaxExtentSize - testInodeStressMinExtentSize + 1)))
 
 		// Pick an offset value such that 0 <= offset <= (testInodeStressFileSize - size)
 
-		mustBeLessThanBigIntPtr = big.NewInt(int64(testInodeStressFileSize) - int64(size))
-		u64BigIntPtr, err = rand.Int(rand.Reader, mustBeLessThanBigIntPtr)
-		if err != nil {
-			testInodeStressGlobals.Lock()
-			testInodeStressGlobals.err = append(testInodeStressGlobals.err, err)
-			testInodeStressGlobals.Unlock()
-
-			testInodeStressGlobals.Done()
-
-			runtime.Goexit()
-		}
-
-		offset = u64BigIntPtr.Uint64()
+		offset = uint64(mrandRand.Int63n(int64(testInodeStressFileSize) - int64(size)))
 
 		// Pick next b value (skipping 0x00 for as-yet-un-over-written bytes)
 
