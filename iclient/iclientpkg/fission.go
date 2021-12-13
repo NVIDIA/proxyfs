@@ -1893,7 +1893,7 @@ Retry:
 
 					readCacheLineBuf, err = objectGETRange(
 						readCacheLine.key.objectNumber,
-						readCacheLine.key.lineNumber&globals.config.ReadCacheLineSize,
+						readCacheLine.key.lineNumber*globals.config.ReadCacheLineSize,
 						globals.config.ReadCacheLineSize)
 
 					if nil != err {

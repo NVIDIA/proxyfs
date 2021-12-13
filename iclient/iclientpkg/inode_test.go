@@ -23,13 +23,13 @@ import (
 const (
 	testInodeStressDisplayUpdateInterval             = time.Duration(time.Second)
 	testInodeStressFileNamePrefix                    = "_inode_stress_"
-	testInodeStressFileSize                   uint64 = 100000
+	testInodeStressFileSize                   uint64 = 10000000
 	testInodeStressMaxExtentSize              uint64 = 10000
 	testInodeStressMinExtentSize              uint64 = 1
 	testInodeStressNumExtentWritesPerFile     uint64 = 1000
-	testInodeStressNumExtentWritesPerFlush    uint64 = 0 // 0 means only perform Flush    function at the end
-	testInodeStressNumExtentWritesPerValidate uint64 = 0 // 0 means only perform Validate function at the end
-	testInodeStressNumFiles                   uint64 = 1
+	testInodeStressNumExtentWritesPerFlush    uint64 = 50  // 0 means only perform Flush    function at the end
+	testInodeStressNumExtentWritesPerValidate uint64 = 100 // 0 means only perform Validate function at the end
+	testInodeStressNumFiles                   uint64 = 10
 	testInodeStressSeed                       int64  = 1 // if 0, use crypto/rand.Reader; else, use this seed + stresserIndex
 )
 
@@ -454,7 +454,6 @@ func (tISC *testInodeStresserContext) flush() (err error) {
 func (tISC *testInodeStresserContext) validate() (err error) {
 	var (
 		errno    syscall.Errno
-		i        int
 		inHeader *fission.InHeader
 		readIn   *fission.ReadIn
 		readOut  *fission.ReadOut
@@ -475,12 +474,6 @@ func (tISC *testInodeStresserContext) validate() (err error) {
 			err = nil
 		} else {
 			err = fmt.Errorf("Miscompare in fileName %s\n", tISC.fileName)
-			for i = range tISC.written {
-				if tISC.written[i] != readOut.Data[i] {
-					err = fmt.Errorf("First miscompare in %s at position %v", tISC.fileName, i)
-					return
-				}
-			}
 		}
 	} else {
 		err = fmt.Errorf("globals.DoRead(inHeader, readIn) returned errno: %v", errno)
