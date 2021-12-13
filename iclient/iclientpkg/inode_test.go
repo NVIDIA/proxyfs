@@ -19,15 +19,15 @@ import (
 )
 
 const (
-	testInodeStressDisplayUpdateInterval             = time.Duration(100 * time.Millisecond)
+	testInodeStressDisplayUpdateInterval             = time.Duration(time.Second)
 	testInodeStressFileNamePrefix                    = "_inode_stress_"
-	testInodeStressFileSize                   uint64 = 100000 // UNDO 1000000
-	testInodeStressMaxExtentSize              uint64 = 10000
+	testInodeStressFileSize                   uint64 = 100 // UNDO 1000000
+	testInodeStressMaxExtentSize              uint64 = 4   // UNDO 10000
 	testInodeStressMinExtentSize              uint64 = 1
-	testInodeStressNumExtentWritesPerFile     uint64 = 1000
-	testInodeStressNumExtentWritesPerFlush    uint64 = 50 // 0 means only perform Flush    function at the end
-	testInodeStressNumExtentWritesPerValidate uint64 = 50 // 0 means only perform Validate function at the end
-	testInodeStressNumFiles                   uint64 = 1
+	testInodeStressNumExtentWritesPerFile     uint64 = 100 // UNDO 1000
+	testInodeStressNumExtentWritesPerFlush    uint64 = 1   // UNDO 50 // 0 means only perform Flush    function at the end
+	testInodeStressNumExtentWritesPerValidate uint64 = 1   // UNDO 100 // 0 means only perform Validate function at the end
+	testInodeStressNumFiles                   uint64 = 1   // UNDO 10
 )
 
 type testInodeStressGlobalsStruct struct {

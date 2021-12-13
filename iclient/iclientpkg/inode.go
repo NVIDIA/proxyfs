@@ -1071,6 +1071,8 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 						logFatalf("fileInode.payload.Put() returned !ok")
 					}
 
+					// Update the layoutMapEntry... note that, since we only punched a hole in the extent, we know .bytesReferenced will remain > 0
+
 					layoutMapEntry.bytesReferenced -= length
 
 					fileInode.layoutMap[extentMapEntryValueV1.ObjectNumber] = layoutMapEntry
@@ -1096,6 +1098,8 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 					logFatalf("fileInode.payload.PatchByIndex() returned !ok")
 				}
 
+				// Update the layoutMapEntry... note that, since we only trimmed the extent, we know .bytesReferenced will remain > 0
+
 				layoutMapEntry.bytesReferenced -= extentLengthToTrim
 
 				fileInode.layoutMap[extentMapEntryValueV1.ObjectNumber] = layoutMapEntry
@@ -1114,7 +1118,7 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 		index++
 	}
 
-	// If we reach here, proceed deleting or trimming on the left the next extent (if any) until the unmap range is removed
+	// If we reach here, proceed deleting or trimming on the left the next extent(s) (if any) until the unmap range is removed
 
 	for length > 0 {
 		extentMapEntryKeyV1AsKey, extentMapEntryValueV1AsValue, ok, err = fileInode.payload.GetByIndex(index)
@@ -1175,6 +1179,8 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 				logFatalf("fileInode.payload.Put() returned !ok")
 			}
 
+			// Update the layoutMapEntry... note that, since we only trimmed the extent, we know .bytesReferenced will remain > 0
+
 			layoutMapEntry.bytesReferenced -= extentLengthToTrim
 
 			fileInode.layoutMap[extentMapEntryValueV1.ObjectNumber] = layoutMapEntry
@@ -1196,6 +1202,8 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 			logFatalf("fileInode.payload.DeleteByIndex() returned !ok")
 		}
 
+		// Update the layoutMapEntry... possibly deleting it if .bytesReferences reaches 0
+
 		layoutMapEntry.bytesReferenced -= extentMapEntryValueV1.Length
 
 		if layoutMapEntry.bytesReferenced == 0 {
@@ -1207,8 +1215,6 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 
 			fileInode.dereferencedObjectNumberArray = append(fileInode.dereferencedObjectNumberArray, extentMapEntryValueV1.ObjectNumber)
 		} else {
-			layoutMapEntry.bytesReferenced -= extentMapEntryValueV1.Length
-
 			fileInode.layoutMap[extentMapEntryValueV1.ObjectNumber] = layoutMapEntry
 
 			fileInode.superBlockInodeBytesReferencedAdjustment -= int64(extentMapEntryValueV1.Length)
