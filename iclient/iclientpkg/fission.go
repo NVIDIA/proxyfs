@@ -1547,6 +1547,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		readCacheLine                            *readCacheLineStruct
 		readCacheLineBuf                         []byte
 		readCacheLineBufLengthAvailableToConsume uint64
+		readCacheLineFillStartTime               time.Time
 		readCacheLineOffset                      uint64
 		readCacheLineToEvict                     *readCacheLineStruct
 		readCacheLineToEvictListElement          *list.Element
@@ -1813,6 +1814,7 @@ Retry:
 			readOut.Data = append(readOut.Data, make([]byte, readPlanEntry.Length)...)
 		case inode.putObjectNumber:
 			// Note that if putObject is inactive, case 0: will have already matched readPlanEntry.ObjectNumber
+			globals.stats.WriteBackCacheHits.Increment()
 			readOut.Data = append(readOut.Data, inode.putObjectBuffer[readPlanEntry.ObjectOffset:(readPlanEntry.ObjectOffset+readPlanEntry.Length)]...)
 		default:
 			for readPlanEntry.Length > 0 {
@@ -1828,6 +1830,8 @@ Retry:
 
 				if ok {
 					// readCacheLine is in globals.readCacheMap but may be being filled
+
+					globals.stats.ReadCacheHits.Increment()
 
 					globals.readCacheLRU.MoveToBack(readCacheLine.listElement)
 
@@ -1891,6 +1895,8 @@ Retry:
 
 					globals.Unlock()
 
+					readCacheLineFillStartTime = time.Now()
+
 					readCacheLineBuf, err = objectGETRange(
 						readCacheLine.key.objectNumber,
 						readCacheLine.key.lineNumber*globals.config.ReadCacheLineSize,
@@ -1914,6 +1920,8 @@ Retry:
 						errno = syscall.EIO
 						return
 					}
+
+					globals.stats.ReadCacheMissUsecs.Add(uint64(time.Since(readCacheLineFillStartTime) / time.Microsecond))
 
 					// readCacheLine fill succeeded... so tell others and continue
 
@@ -1966,14 +1974,15 @@ Retry:
 
 func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission.WriteIn) (writeOut *fission.WriteOut, errno syscall.Errno) {
 	var (
-		err              error
-		inode            *inodeStruct
-		inodeLockRequest *inodeLockRequestStruct
-		newSize          uint64
-		offset           uint64
-		oldSize          uint64
-		openHandle       *openHandleStruct
-		startTime        time.Time = time.Now()
+		err                           error
+		fileFlushSizeTriggerStartTime time.Time
+		inode                         *inodeStruct
+		inodeLockRequest              *inodeLockRequestStruct
+		newSize                       uint64
+		offset                        uint64
+		oldSize                       uint64
+		openHandle                    *openHandleStruct
+		startTime                     time.Time = time.Now()
 	)
 
 	logTracef("==> DoWrite(inHeader: %+v, writeIn: &{FH:%v Offset:%v Size:%v: WriteFlags:%v LockOwner:%v Flags:%v Padding:%v len(Data):%v})", inHeader, writeIn.FH, writeIn.Offset, writeIn.Size, writeIn.WriteFlags, writeIn.LockOwner, writeIn.Flags, writeIn.Padding, len(writeIn.Data))
@@ -2072,7 +2081,11 @@ Retry:
 		// Pre-flush if this write would cause inode.putObjectBuffer to exceed globals.config.FileFlushTriggerSize
 
 		if (uint64(len(inode.putObjectBuffer)) + uint64(len(writeIn.Data))) > globals.config.FileFlushTriggerSize {
+			fileFlushSizeTriggerStartTime = time.Now()
+
 			flushInodesInSlice([]*inodeStruct{inode})
+
+			globals.stats.FileFlushSizeTriggerUsecs.Add(uint64(time.Since(fileFlushSizeTriggerStartTime) / time.Microsecond))
 
 			inode.dirty = true
 

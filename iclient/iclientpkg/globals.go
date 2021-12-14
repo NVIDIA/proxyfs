@@ -232,6 +232,13 @@ type statsStruct struct {
 
 	DoReadBytes  bucketstats.BucketLog2Round // (*globalsStruct)DoRead()
 	DoWriteBytes bucketstats.BucketLog2Round // (*globalsStruct)DoWrite()
+
+	WriteBackCacheHits bucketstats.Total           // DoRead() readPlanEntry hit unflushed fileInode.putObjectBuffer
+	ReadCacheHits      bucketstats.Total           // DoRead() readPlanEntry hit readCacheLine already in memory
+	ReadCacheMissUsecs bucketstats.BucketLog2Round // DoRead() readPlanEntry hit readCacheLine needing to be fetched
+
+	FileFlushSizeTriggerUsecs     bucketstats.BucketLog2Round // FileFlushTriggerSize reached
+	FileFlushDurationTriggerUsecs bucketstats.BucketLog2Round // FileFlushTriggerDuration reached
 }
 
 type globalsStruct struct {

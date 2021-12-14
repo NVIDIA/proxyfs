@@ -670,7 +670,8 @@ func (fileInode *inodeStruct) launchFlusher() {
 
 func (fileFlusher *fileInodeFlusherStruct) gor() {
 	var (
-		inodeLockRequest *inodeLockRequestStruct
+		fileFlushDurationTriggerStartTime time.Time
+		inodeLockRequest                  *inodeLockRequestStruct
 	)
 
 	select {
@@ -699,7 +700,11 @@ func (fileFlusher *fileInodeFlusherStruct) gor() {
 			// We now know that fileFlusher.inode.dirty == true and
 			// that we need to flush "our" fileFlusher.putObjectNumber
 
+			fileFlushDurationTriggerStartTime = time.Now()
+
 			flushInodesInSlice([]*inodeStruct{fileFlusher.inode})
+
+			globals.stats.FileFlushDurationTriggerUsecs.Add(uint64(time.Since(fileFlushDurationTriggerStartTime) / time.Microsecond))
 		}
 
 		inodeLockRequest.unlockAll()
