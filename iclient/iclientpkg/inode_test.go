@@ -26,11 +26,11 @@ const (
 	testInodeStressFileSize                   uint64 = 10000000
 	testInodeStressMaxExtentSize              uint64 = 10000
 	testInodeStressMinExtentSize              uint64 = 1
-	testInodeStressNumExtentWritesPerFile     uint64 = 1000
+	testInodeStressNumExtentWritesPerFile     uint64 = 10000
 	testInodeStressNumExtentWritesPerFlush    uint64 = 50  // 0 means only perform Flush    function at the end
 	testInodeStressNumExtentWritesPerValidate uint64 = 100 // 0 means only perform Validate function at the end
 	testInodeStressNumFiles                   uint64 = 10
-	testInodeStressSeed                       int64  = 1 // if 0, use crypto/rand.Reader; else, use this seed + stresserIndex
+	testInodeStressSeed                       int64  = 0 // if 0, use crypto/rand.Reader; else, use this seed + stresserIndex
 )
 
 type testInodeStressGlobalsStruct struct {
@@ -248,7 +248,7 @@ func testInodeStresser(stresserIndex uint64) {
 	for extentIndex = 0; extentIndex < testInodeStressNumExtentWritesPerFile; extentIndex++ {
 		// Pick a size value such that testInodeStressMinExtentSize <= size <= testInodeStressMaxExtentSize
 
-		size = uint32(mrandRand.Int63n(int64(testInodeStressMaxExtentSize - testInodeStressMinExtentSize + 1)))
+		size = uint32(mrandRand.Int63n(int64(testInodeStressMaxExtentSize-testInodeStressMinExtentSize+1))) + uint32(testInodeStressMinExtentSize)
 
 		// Pick an offset value such that 0 <= offset <= (testInodeStressFileSize - size)
 
