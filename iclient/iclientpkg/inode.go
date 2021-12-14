@@ -1136,6 +1136,13 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 		if !ok {
 			logFatalf("extentMapEntryKeyV1AsKey.(uint64) returned !ok")
 		}
+
+		if extentMapEntryKeyV1 >= (startingFileOffset + length) {
+			// The remaining unmap range fits in the gap before the next extent begins so we are done
+
+			return
+		}
+
 		extentMapEntryValueV1, ok = extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1Struct)
 		if !ok {
 			logFatalf("extentMapEntryValueV1AsValue.(*ilayout.ExtentMapEntryValueV1Struct) returned !ok")
@@ -1202,11 +1209,11 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 			logFatalf("fileInode.payload.DeleteByIndex() returned !ok")
 		}
 
-		// Update the layoutMapEntry... possibly deleting it if .bytesReferences reaches 0
+		// Update the layoutMapEntry... possibly deleting it if .bytesReferences reaches 0 (and it's not the current putObject)
 
 		layoutMapEntry.bytesReferenced -= extentMapEntryValueV1.Length
 
-		if layoutMapEntry.bytesReferenced == 0 {
+		if (layoutMapEntry.bytesReferenced == 0) && (extentMapEntryValueV1.ObjectNumber != fileInode.putObjectNumber) {
 			delete(fileInode.layoutMap, extentMapEntryValueV1.ObjectNumber)
 
 			fileInode.superBlockInodeObjectCountAdjustment--
