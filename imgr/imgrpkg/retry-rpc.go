@@ -479,10 +479,11 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 
 func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *DeleteInodeTableEntryResponseStruct) (err error) {
 	var (
-		leaseRequest *leaseRequestStruct
-		mount        *mountStruct
-		ok           bool
-		startTime    time.Time = time.Now()
+		inodeOpenMapElement *inodeOpenMapElementStruct
+		leaseRequest        *leaseRequestStruct
+		mount               *mountStruct
+		ok                  bool
+		startTime           time.Time = time.Now()
 	)
 
 	defer func() {
@@ -511,14 +512,11 @@ func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRe
 		return
 	}
 
-	// TODO: Need to actually clean up the Inode... but for now, just remove it
-
-	ok, err = mount.volume.inodeTable.DeleteByKey(deleteInodeTableEntryRequest.InodeNumber)
-	if nil != err {
-		logFatalf("volume.inodeTable.DeleteByKey(n.InodeNumber) failed: %v", err)
-	}
-	if !ok {
-		logFatalf("volume.inodeTable.DeleteByKey(n.InodeNumber) returned !ok")
+	inodeOpenMapElement, ok = mount.volume.inodeOpenMap[deleteInodeTableEntryRequest.InodeNumber]
+	if ok {
+		inodeOpenMapElement.markedForDeletion = true
+	} else {
+		mount.volume.removeInodeWhileLocked(deleteInodeTableEntryRequest.InodeNumber)
 	}
 
 	globals.Unlock()
@@ -527,24 +525,24 @@ func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRe
 	return
 }
 
-// TODO - The thinking is that some "to-be-deleted-upon-last-close" logic will substitute
-// for the InodeTable entry... and that some background garbage collector will do the work.
-
 func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *AdjustInodeTableEntryOpenCountRequestStruct, adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct) (err error) {
 	var (
-		leaseRequest       *leaseRequestStruct
-		mount              *mountStruct
-		ok                 bool
-		newMountOpenCount  uint64
-		newVolumeOpenCount uint64
-		oldMountOpenCount  uint64
-		oldVolumeOpenCount uint64
-		startTime          time.Time = time.Now()
+		inodeOpenCount      uint64
+		inodeOpenMapElement *inodeOpenMapElementStruct
+		leaseRequest        *leaseRequestStruct
+		mount               *mountStruct
+		ok                  bool
+		startTime           time.Time = time.Now()
 	)
 
 	defer func() {
 		globals.stats.AdjustInodeTableEntryOpenCountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
+
+	if adjustInodeTableEntryOpenCountRequest.Adjustment == 0 {
+		err = fmt.Errorf("%s %016X %v", EBadOpenCountAdjustment, adjustInodeTableEntryOpenCountRequest.InodeNumber, adjustInodeTableEntryOpenCountRequest.Adjustment)
+		return
+	}
 
 	globals.Lock()
 
@@ -568,65 +566,66 @@ func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *Adjus
 		return
 	}
 
-	if adjustInodeTableEntryOpenCountRequest.Adjustment >= 0 {
-		oldMountOpenCount, ok = mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber]
-		if ok {
-			oldVolumeOpenCount, ok = mount.volume.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber]
-			if !ok {
-				logFatalf("mount.volumeinodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] returned !ok after mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] returned ok")
-			}
-		} else {
-			oldMountOpenCount = 0
-			oldVolumeOpenCount, ok = mount.volume.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber]
-			if !ok {
-				oldVolumeOpenCount = 0
-			}
+	inodeOpenCount, ok = mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber]
+	if ok {
+		if inodeOpenCount == 0 {
+			logFatalf("mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] returned 0")
 		}
-
-		if adjustInodeTableEntryOpenCountRequest.Adjustment == 0 {
-			newMountOpenCount = oldMountOpenCount
-			newVolumeOpenCount = oldVolumeOpenCount
-		} else {
-			newMountOpenCount = oldMountOpenCount + uint64(adjustInodeTableEntryOpenCountRequest.Adjustment)
-			newVolumeOpenCount = oldVolumeOpenCount + uint64(adjustInodeTableEntryOpenCountRequest.Adjustment)
-
-			mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] = newMountOpenCount
-			mount.volume.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] = newVolumeOpenCount
-		}
-	} else { // adjustInodeTableEntryOpenCountRequest.Adjustment < 0
-		oldMountOpenCount, ok = mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber]
-		if !ok || (oldMountOpenCount < uint64(-adjustInodeTableEntryOpenCountRequest.Adjustment)) {
+		if (adjustInodeTableEntryOpenCountRequest.Adjustment < 0) && (uint64(-adjustInodeTableEntryOpenCountRequest.Adjustment) > inodeOpenCount) {
 			globals.Unlock()
 			err = fmt.Errorf("%s %016X %v", EBadOpenCountAdjustment, adjustInodeTableEntryOpenCountRequest.InodeNumber, adjustInodeTableEntryOpenCountRequest.Adjustment)
 			return
 		}
-		oldVolumeOpenCount, ok = mount.volume.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber]
-		if !ok || (oldVolumeOpenCount < uint64(-adjustInodeTableEntryOpenCountRequest.Adjustment)) {
-			logFatalf("mount.volumeinodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] returned !ok || oldVolumeOpenCount < uint64(-adjustInodeTableEntryOpenCountRequest.Adjustment)")
+	} else {
+		if adjustInodeTableEntryOpenCountRequest.Adjustment < 0 {
+			globals.Unlock()
+			err = fmt.Errorf("%s %016X %v", EBadOpenCountAdjustment, adjustInodeTableEntryOpenCountRequest.InodeNumber, adjustInodeTableEntryOpenCountRequest.Adjustment)
+			return
 		}
+		inodeOpenCount = 0
+	}
 
-		newMountOpenCount = oldMountOpenCount - uint64(-adjustInodeTableEntryOpenCountRequest.Adjustment)
-		newVolumeOpenCount = oldVolumeOpenCount - uint64(-adjustInodeTableEntryOpenCountRequest.Adjustment)
+	inodeOpenMapElement, ok = mount.volume.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber]
+	if ok {
+		if inodeOpenMapElement.numMounts == 0 {
+			logFatalf("mount.volume.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] returned inodeOpenMapElement.numMounts == 0")
+		}
+	} else {
+		if inodeOpenCount != 0 {
+			logFatalf("inodeOpenCount can't be != 0 if inodeOpenMapElement is missing")
+		}
+		if adjustInodeTableEntryOpenCountRequest.Adjustment < 0 {
+			logFatalf("adjustInodeTableEntryOpenCountRequest.Adjustment can't be < 0 if inodeOpenMapElement is missing")
+		}
+		inodeOpenMapElement = &inodeOpenMapElementStruct{
+			numMounts:         0,
+			markedForDeletion: false,
+		}
+		mount.volume.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] = inodeOpenMapElement
+	}
 
-		if newMountOpenCount == 0 {
+	if adjustInodeTableEntryOpenCountRequest.Adjustment > 0 {
+		if inodeOpenCount == 0 {
+			mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] = uint64(adjustInodeTableEntryOpenCountRequest.Adjustment)
+			inodeOpenMapElement.numMounts++
+		}
+	} else { // adjustInodeTableEntryOpenCountRequest.Adjustment < 0 [we already know it is != 0]
+		inodeOpenCount -= uint64(-adjustInodeTableEntryOpenCountRequest.Adjustment)
+		if inodeOpenCount == 0 {
 			delete(mount.inodeOpenMap, adjustInodeTableEntryOpenCountRequest.InodeNumber)
-		} else {
-			mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] = newMountOpenCount
-		}
-
-		if newVolumeOpenCount == 0 {
-			delete(mount.volume.inodeOpenMap, adjustInodeTableEntryOpenCountRequest.InodeNumber)
-
-			// TODO: Check for pending delete... and, if so, actuially delete the inode
-		} else {
-			mount.volume.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] = newVolumeOpenCount
+			inodeOpenMapElement.numMounts--
+			if inodeOpenMapElement.numMounts == 0 {
+				delete(mount.volume.inodeOpenMap, adjustInodeTableEntryOpenCountRequest.InodeNumber)
+				if inodeOpenMapElement.markedForDeletion {
+					mount.volume.removeInodeWhileLocked(adjustInodeTableEntryOpenCountRequest.InodeNumber)
+				}
+			}
+		} else { // [adjusted] inodeOpenCount > 0
+			mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] = inodeOpenCount
 		}
 	}
 
 	globals.Unlock()
-
-	adjustInodeTableEntryOpenCountResponse.CurrentOpenCountThisMount = newMountOpenCount
-	adjustInodeTableEntryOpenCountResponse.CurrentOpenCountAllMounts = newVolumeOpenCount
 
 	err = nil
 	return

@@ -226,6 +226,11 @@ type inodeTableLayoutElementStruct struct {
 	bytesReferenced uint64 // matches ilayout.InodeTableLayoutEntryV1Struct.BytesReferenced
 }
 
+type inodeOpenMapElementStruct struct {
+	numMounts         uint64 // number of mountStruct's with a non-zero open count for this inode
+	markedForDeletion bool   // if true, when numMounts falls to zero, the inode will be removed from the inodeTable
+}
+
 type volumeStruct struct {
 	name                          string                                    //
 	storageURL                    string                                    //
@@ -247,7 +252,7 @@ type volumeStruct struct {
 	checkPointControlWG           sync.WaitGroup                            // checkPointDeamon() indicates it is done by calling .Done() on this WG
 	checkPointPutObjectNumber     uint64                                    //
 	checkPointPutObjectBuffer     *bytes.Buffer                             // if nil, no CheckPoint data to PUT has yet accumulated
-	inodeOpenMap                  map[uint64]uint64                         // key == inodeNumber; value == open count for all mountStruct's for this inodeNumber
+	inodeOpenMap                  map[uint64]*inodeOpenMapElementStruct     // key == inodeNumber
 	inodeLeaseMap                 map[uint64]*inodeLeaseStruct              // key == inodeLeaseStruct.inodeNumber
 	leaseHandlerWG                sync.WaitGroup                            // .Add(1) each inodeLease insertion into inodeLeaseMap
 	//                                                                         .Done() each inodeLease after it is removed from inodeLeaseMap

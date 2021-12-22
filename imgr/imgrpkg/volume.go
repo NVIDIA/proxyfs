@@ -630,7 +630,7 @@ func putVolume(name string, storageURL string, authToken string) (err error) {
 		checkPointControlChan:         nil,
 		checkPointPutObjectNumber:     0,
 		checkPointPutObjectBuffer:     nil,
-		inodeOpenMap:                  make(map[uint64]uint64),
+		inodeOpenMap:                  make(map[uint64]*inodeOpenMapElementStruct),
 		inodeLeaseMap:                 make(map[uint64]*inodeLeaseStruct),
 	}
 
@@ -761,10 +761,6 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 		})
 	}
 
-	// volume.superBlock.InodeObjectCount     is already set
-	// volume.superBlock.InodeObjectSize      is already set
-	// volume.superBlock.InodeBytesReferenced is already set
-
 	volume.superBlock.PendingDeleteObjectNumberArray = make([]uint64, 0, volume.activeDeleteObjectNumberList.Len()+volume.pendingDeleteObjectNumberList.Len())
 
 	deleteObjectNumberListElement = volume.activeDeleteObjectNumberList.Front()
@@ -832,6 +828,7 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 		err = fmt.Errorf("volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String)) returned !authOK")
 		return
 	}
+	// TODO: Somewhere near here I need to kick off the Object Delete logic...
 
 	globals.Unlock()
 
@@ -1155,4 +1152,21 @@ func (volume *volumeStruct) fetchNonceRangeWhileLocked() (nextNonce uint64, numN
 	}
 
 	return
+}
+
+func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
+	var (
+		err error
+		ok  bool
+	)
+
+	// TODO: Need to do the garbage collection/cleanup for the inode here...
+
+	ok, err = volume.inodeTable.DeleteByKey(inodeNumber)
+	if nil != err {
+		logFatalf("volume.inodeTable.DeleteByKey(inodeNumber: %016X) failed: %v", inodeNumber, err)
+	}
+	if !ok {
+		logFatalf("volume.inodeTable.DeleteByKey(inodeNumber: %016X) returned !ok", inodeNumber)
+	}
 }

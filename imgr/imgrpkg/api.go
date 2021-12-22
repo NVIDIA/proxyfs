@@ -402,10 +402,7 @@ type AdjustInodeTableEntryOpenCountRequestStruct struct {
 
 // AdjustInodeTableEntryOpenCountResponseStruct is the response object for AdjustInodeTableEntryOpenCount.
 //
-type AdjustInodeTableEntryOpenCountResponseStruct struct {
-	CurrentOpenCountThisMount uint64
-	CurrentOpenCountAllMounts uint64
-}
+type AdjustInodeTableEntryOpenCountResponseStruct struct{}
 
 // AdjustInodeTableEntryOpenCount requests the specified Inode's OpenCount be
 // adjusted. If the referenced InodeNumber is non-zero, a (Shared or Exclusive)
