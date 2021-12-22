@@ -1156,11 +1156,60 @@ func (volume *volumeStruct) fetchNonceRangeWhileLocked() (nextNonce uint64, numN
 
 func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
 	var (
-		err error
-		ok  bool
+		authOK                        bool
+		err                           error
+		inodeHeadLayoutEntryV1        ilayout.InodeHeadLayoutEntryV1Struct
+		inodeHeadObjectNumberInLayout bool
+		inodeHeadV1                   *ilayout.InodeHeadV1Struct
+		inodeHeadV1Buf                []byte
+		inodeTableEntryValue          ilayout.InodeTableEntryValueV1Struct
+		inodeTableEntryValueRaw       sortedmap.Value
+		ok                            bool
 	)
 
-	// TODO: Need to do the garbage collection/cleanup for the inode here...
+	inodeTableEntryValueRaw, ok, err = volume.inodeTable.GetByKey(inodeNumber)
+	if nil != err {
+		logFatalf("volume.inodeTable.GetByKey(inodeNumber) failed: %v", err)
+	}
+	if !ok {
+		logFatalf("volume.inodeTable.GetByKey(inodeNumber) returned !ok")
+	}
+
+	inodeTableEntryValue, ok = inodeTableEntryValueRaw.(ilayout.InodeTableEntryValueV1Struct)
+	if !ok {
+		logFatalf("inodeTableEntryValueRaw.(ilayout.InodeTableEntryValueV1Struct) returned !ok")
+	}
+
+	inodeHeadV1Buf, authOK, err = volume.swiftObjectGetTail(inodeTableEntryValue.InodeHeadObjectNumber, inodeTableEntryValue.InodeHeadLength)
+	if nil != err {
+		logFatalf("volume.swiftObjectGetTail(inodeTableEntryValue.InodeHeadObjectNumber, inodeTableEntryValue.InodeHeadObjectNumber) failed: %v", err)
+	}
+	if !authOK {
+		logFatalf("volume.swiftObjectGetTail(inodeTableEntryValue.InodeHeadObjectNumber, inodeTableEntryValue.InodeHeadObjectNumber) returned !authOK")
+	}
+
+	inodeHeadV1, err = ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf)
+	if nil != err {
+		logFatalf("ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf) failed: %v", err)
+	}
+
+	inodeHeadObjectNumberInLayout = false
+
+	for _, inodeHeadLayoutEntryV1 = range inodeHeadV1.Layout {
+		_ = volume.pendingDeleteObjectNumberList.PushBack(inodeHeadLayoutEntryV1.ObjectNumber)
+
+		volume.superBlock.InodeObjectCount--
+		volume.superBlock.InodeObjectSize -= inodeHeadLayoutEntryV1.ObjectSize
+		volume.superBlock.InodeBytesReferenced -= inodeHeadLayoutEntryV1.BytesReferenced
+
+		if inodeHeadLayoutEntryV1.ObjectNumber == inodeTableEntryValue.InodeHeadObjectNumber {
+			inodeHeadObjectNumberInLayout = true
+		}
+	}
+
+	if !inodeHeadObjectNumberInLayout {
+		_ = volume.pendingDeleteObjectNumberList.PushBack(inodeTableEntryValue.InodeHeadObjectNumber)
+	}
 
 	ok, err = volume.inodeTable.DeleteByKey(inodeNumber)
 	if nil != err {
