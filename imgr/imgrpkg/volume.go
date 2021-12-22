@@ -99,6 +99,8 @@ func deleteVolume(volumeName string) (err error) {
 		logFatalf("No support for deleting actively mounted volume \"%s\"", volumeName)
 	}
 
+	volumeAsStruct.activeDeleteObjectWG.Wait()
+
 	ok, err = globals.volumeMap.DeleteByKey(volumeAsStruct.name)
 	if nil != err {
 		logFatal(err)
@@ -828,12 +830,55 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 		err = fmt.Errorf("volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String)) returned !authOK")
 		return
 	}
-	// TODO: Somewhere near here I need to kick off the Object Delete logic...
+
+	for (uint32(volume.activeDeleteObjectNumberList.Len()) < globals.config.ParallelObjectDeletePerVolumeLimit) && (volume.pendingDeleteObjectNumberList.Len() > 0) {
+		deleteObjectNumberListElement = volume.pendingDeleteObjectNumberList.Front()
+		_ = volume.pendingDeleteObjectNumberList.Remove(deleteObjectNumberListElement)
+		objectNumber, ok = deleteObjectNumberListElement.Value.(uint64)
+		if !ok {
+			err = fmt.Errorf("deleteObjectNumberListElement.Value.(uint64) returned !ok")
+			logFatal(err)
+		}
+		deleteObjectNumberListElement = volume.activeDeleteObjectNumberList.PushBack(objectNumber)
+		volume.activeDeleteObjectWG.Add(1)
+		go volume.doObjectDelete(deleteObjectNumberListElement)
+	}
 
 	globals.Unlock()
 
 	err = nil
 	return
+}
+
+func (volume *volumeStruct) doObjectDelete(activeDeleteObjectNumberListElement *list.Element) {
+	var (
+		authOK       bool
+		err          error
+		objectNumber uint64
+		ok           bool
+	)
+
+	objectNumber, ok = activeDeleteObjectNumberListElement.Value.(uint64)
+	if !ok {
+		logFatalf("activeDeleteObjectNumberListElement.Value.(uint64) returned !ok")
+	}
+
+	authOK, err = volume.swiftObjectDelete(objectNumber)
+	if nil != err {
+		logFatalf("volume.swiftObjectDelete(objectNumber: %016X) failed: %v", objectNumber, err)
+	}
+
+	globals.Lock()
+
+	volume.activeDeleteObjectNumberList.Remove(activeDeleteObjectNumberListElement)
+
+	if !authOK {
+		volume.pendingDeleteObjectNumberList.PushBack(objectNumber)
+	}
+
+	globals.Unlock()
+
+	volume.activeDeleteObjectWG.Done()
 }
 
 func (volume *volumeStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {

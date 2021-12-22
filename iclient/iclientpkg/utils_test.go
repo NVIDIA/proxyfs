@@ -205,7 +205,7 @@ func testSetup(t *testing.T) {
 		"IMGR.SwiftTimeout=10m",
 		"IMGR.SwiftConnectionPoolSize=128",
 
-		"IMGR.ParallelObjectDeleteMax=10",
+		"IMGR.ParallelObjectDeletePerVolumeLimit=10",
 
 		"IMGR.InodeTableCacheEvictLowLimit=10000",
 		"IMGR.InodeTableCacheEvictHighLimit=10010",

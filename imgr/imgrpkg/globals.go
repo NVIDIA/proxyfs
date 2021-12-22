@@ -54,7 +54,7 @@ type configStruct struct {
 	SwiftTimeout            time.Duration
 	SwiftConnectionPoolSize uint32
 
-	ParallelObjectDeleteMax uint32
+	ParallelObjectDeletePerVolumeLimit uint32
 
 	InodeTableCacheEvictLowLimit  uint64
 	InodeTableCacheEvictHighLimit uint64
@@ -65,22 +65,6 @@ type configStruct struct {
 	LogFilePath  string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole bool
 	TraceEnabled bool
-}
-
-type chunkedPutContextStruct struct {
-	sync.WaitGroup                      // Used to await completion of performChunkedPut goroutine
-	containerName         string        //
-	objectName            string        //
-	buf                   []byte        //
-	chunkedPutListElement *list.Element // FIFO Element of fileInodeStruct.chunkedPutList
-	state                 uint8         // One of chunkedPutContextState{Open|Closing|Closed}
-	pos                   int           // ObjectOffset just after last sent chunk
-	sendChan              chan struct{} // Single element buffered chan to wake up *chunkedPutContextStruct.sendDaemon()
-	//                                            will be closed to indicate a flush is requested
-	wakeChan chan struct{} //                   Single element buffered chan to wake up *chunkedPutContextStruct.Read()
-	//                                            will be closed to indicate a flush is requested
-	inRead         bool //                      Set when in Read() as a hint to Close() to help Read() cleanly exit
-	flushRequested bool //                      Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
 }
 
 type statsStruct struct {
@@ -246,6 +230,7 @@ type volumeStruct struct {
 	inodeTableLayout              map[uint64]*inodeTableLayoutElementStruct // == nil if not currently mounted and/or checkpointing; key == objectNumber (matching ilayout.InodeTableLayoutEntryV1Struct.ObjectNumber)
 	nextNonce                     uint64                                    // next nonce in that checkpoint reserve
 	numNoncesReserved             uint64                                    // number of nonce's reserved for checkpointing
+	activeDeleteObjectWG          sync.WaitGroup                            // doObjectDelete() indicates it is done by calling .Done() on this WG
 	activeDeleteObjectNumberList  *list.List                                // list of objectNumber's to be deleted since last CheckPoint
 	pendingDeleteObjectNumberList *list.List                                // list of objectNumber's pending deletion after next CheckPoint
 	checkPointControlChan         chan chan error                           // send chan error to chan to request a CheckPoint; close it to terminate checkPointDaemon()
@@ -430,7 +415,7 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 
-	globals.config.ParallelObjectDeleteMax, err = confMap.FetchOptionValueUint32("IMGR", "ParallelObjectDeleteMax")
+	globals.config.ParallelObjectDeletePerVolumeLimit, err = confMap.FetchOptionValueUint32("IMGR", "ParallelObjectDeletePerVolumeLimit")
 	if nil != err {
 		logFatal(err)
 	}
@@ -516,7 +501,7 @@ func uninitializeGlobals() (err error) {
 	globals.config.SwiftTimeout = time.Duration(0)
 	globals.config.SwiftConnectionPoolSize = 0
 
-	globals.config.ParallelObjectDeleteMax = 0
+	globals.config.ParallelObjectDeletePerVolumeLimit = 0
 
 	globals.config.InodeTableCacheEvictLowLimit = 0
 	globals.config.InodeTableCacheEvictHighLimit = 0
