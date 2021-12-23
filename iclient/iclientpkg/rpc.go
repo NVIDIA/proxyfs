@@ -42,11 +42,10 @@ func startRPCHandler() (err error) {
 		return
 	}
 
-	customTransport = &http.Transport{ // Up-to-date as of Golang 1.11
+	customTransport = &http.Transport{ // Up-to-date as of Golang 1.17
 		Proxy:                  defaultTransport.Proxy,
 		DialContext:            defaultTransport.DialContext,
-		Dial:                   defaultTransport.Dial,
-		DialTLS:                defaultTransport.DialTLS,
+		DialTLSContext:         defaultTransport.DialTLSContext,
 		TLSClientConfig:        defaultTransport.TLSClientConfig,
 		TLSHandshakeTimeout:    globals.config.SwiftTimeout,
 		DisableKeepAlives:      false,
@@ -60,6 +59,8 @@ func startRPCHandler() (err error) {
 		TLSNextProto:           defaultTransport.TLSNextProto,
 		ProxyConnectHeader:     defaultTransport.ProxyConnectHeader,
 		MaxResponseHeaderBytes: defaultTransport.MaxResponseHeaderBytes,
+		WriteBufferSize:        0,
+		ReadBufferSize:         0,
 	}
 
 	globals.httpClient = &http.Client{

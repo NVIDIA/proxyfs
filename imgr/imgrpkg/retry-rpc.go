@@ -198,7 +198,7 @@ retryGenerateMountID:
 
 		volume.checkPointControlWG.Add(1)
 
-		go volume.checkPointDaemon(volume.checkPointControlChan)
+		go volume.checkPointDaemon()
 	}
 
 	globals.Unlock()

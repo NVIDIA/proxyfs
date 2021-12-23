@@ -8,7 +8,9 @@ import (
 	"container/list"
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NVIDIA/sortedmap"
@@ -27,6 +29,61 @@ func startVolumeManagement() (err error) {
 }
 
 func stopVolumeManagement() (err error) {
+	var (
+		checkPointControlWG      *sync.WaitGroup
+		checkPointControlWGSlice []*sync.WaitGroup
+		ok                       bool
+		volume                   *volumeStruct
+		volumeAsValue            sortedmap.Value
+		volumeMapIndex           int
+		volumeMapLen             int
+	)
+
+	// TODO: For now, let's just stop all of the CheckPoint activity
+
+	globals.Lock()
+
+	volumeMapLen, err = globals.volumeMap.Len()
+	if err != nil {
+		globals.Unlock()
+		return
+	}
+
+	checkPointControlWGSlice = make([]*sync.WaitGroup, 0, volumeMapLen)
+
+	for volumeMapIndex = 0; volumeMapIndex < volumeMapLen; volumeMapIndex++ {
+		_, volumeAsValue, ok, err = globals.volumeMap.GetByIndex(volumeMapIndex)
+		if err != nil {
+			globals.Unlock()
+			return
+		}
+		if !ok {
+			err = fmt.Errorf("globals.volumeMap.GetByIndex(volumeMapIndex: %v) (with volumeMapLen: %v) returned !ok", volumeMapIndex, volumeMapLen)
+			globals.Unlock()
+			return
+		}
+
+		volume, ok = volumeAsValue.(*volumeStruct)
+		if !ok {
+			err = fmt.Errorf("volumeAsValue.(*volumeStruct) returned !ok")
+			globals.Unlock()
+			return
+		}
+
+		if volume.checkPointControlChan != nil {
+			close(volume.checkPointControlChan)
+			checkPointControlWGSlice = append(checkPointControlWGSlice, &volume.checkPointControlWG)
+		}
+	}
+
+	globals.Unlock()
+
+	for _, checkPointControlWG = range checkPointControlWGSlice {
+		checkPointControlWG.Wait()
+	}
+
+	// TODO: For now, just clear out volume-related globals fields
+
 	globals.inodeTableCache = nil
 	globals.inodeLeaseLRU = nil
 	globals.volumeMap = nil
@@ -655,7 +712,7 @@ func putVolume(name string, storageURL string, authToken string) (err error) {
 	return
 }
 
-func (volume *volumeStruct) checkPointDaemon(checkPointControlChan chan chan error) {
+func (volume *volumeStruct) checkPointDaemon() {
 	var (
 		checkPointIntervalTimer *time.Timer
 		checkPointResponseChan  chan error
@@ -672,7 +729,7 @@ func (volume *volumeStruct) checkPointDaemon(checkPointControlChan chan chan err
 			if nil != err {
 				logWarnf("checkPointIntervalTimer-triggered doCheckPoint() failed: %v", err)
 			}
-		case checkPointResponseChan, more = <-checkPointControlChan:
+		case checkPointResponseChan, more = <-volume.checkPointControlChan:
 			if !checkPointIntervalTimer.Stop() {
 				<-checkPointIntervalTimer.C
 			}
@@ -685,7 +742,9 @@ func (volume *volumeStruct) checkPointDaemon(checkPointControlChan chan chan err
 
 				checkPointResponseChan <- err
 			} else {
+				volume.activeDeleteObjectWG.Wait()
 				volume.checkPointControlWG.Done()
+				runtime.Goexit()
 			}
 		}
 	}

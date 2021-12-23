@@ -23,15 +23,14 @@ func startSwiftClient() (err error) {
 
 	defaultTransport, ok = http.DefaultTransport.(*http.Transport)
 	if !ok {
-		err = fmt.Errorf("http.DefaultTransport.(*http.Transport) returned !ok\n")
+		err = fmt.Errorf("http.DefaultTransport.(*http.Transport) returned !ok")
 		return
 	}
 
-	customTransport = &http.Transport{ // Up-to-date as of Golang 1.11
+	customTransport = &http.Transport{ // Up-to-date as of Golang 1.17
 		Proxy:                  defaultTransport.Proxy,
 		DialContext:            defaultTransport.DialContext,
-		Dial:                   defaultTransport.Dial,
-		DialTLS:                defaultTransport.DialTLS,
+		DialTLSContext:         defaultTransport.DialTLSContext,
 		TLSClientConfig:        defaultTransport.TLSClientConfig,
 		TLSHandshakeTimeout:    globals.config.SwiftTimeout,
 		DisableKeepAlives:      false,
@@ -45,6 +44,8 @@ func startSwiftClient() (err error) {
 		TLSNextProto:           defaultTransport.TLSNextProto,
 		ProxyConnectHeader:     defaultTransport.ProxyConnectHeader,
 		MaxResponseHeaderBytes: defaultTransport.MaxResponseHeaderBytes,
+		WriteBufferSize:        0,
+		ReadBufferSize:         0,
 	}
 
 	globals.httpClient = &http.Client{
@@ -72,24 +73,24 @@ func swiftObjectDeleteOnce(objectURL string, authToken string) (authOK bool, err
 		return
 	}
 
-	if "" != authToken {
+	if authToken != "" {
 		httpRequest.Header["X-Auth-Token"] = []string{authToken}
 	}
 
 	httpResponse, err = globals.httpClient.Do(httpRequest)
 	if nil != err {
-		err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v\n", objectURL, err)
+		err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v", objectURL, err)
 		return
 	}
 
 	_, err = ioutil.ReadAll(httpResponse.Body)
 	if nil != err {
-		err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v\n", err)
+		err = fmt.Errorf("ioutil.ReadAll(httpResponse.Body) failed: %v", err)
 		return
 	}
 	err = httpResponse.Body.Close()
 	if nil != err {
-		err = fmt.Errorf("httpResponse.Body.Close() failed: %v\n", err)
+		err = fmt.Errorf("httpResponse.Body.Close() failed: %v", err)
 		return
 	}
 

@@ -247,7 +247,7 @@ func (dummy *globalsStruct) ServeHTTP(responseWriter http.ResponseWriter, reques
 			_ = request.Body.Close()
 			xAuthUser = request.Header.Get("X-Auth-User")
 			xAuthKey = request.Header.Get("X-Auth-Key")
-			if ("" == xAuthUser) || ("" == xAuthKey) {
+			if (xAuthUser == "") || (xAuthKey == "") {
 				responseWriter.WriteHeader(http.StatusUnauthorized)
 				return
 			}
