@@ -804,7 +804,7 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 			// After the current CheckPoint is posted, we can finally delete the last one's now comp[letely unreferenced Object
 
 			_ = volume.pendingDeleteObjectNumberList.PushBack(lastCheckPointObjectNumber)
-			volume.superBlock.PendingDeleteObjectNumberArray = append(volume.superBlock.PendingDeleteObjectNumberArray, objectNumber)
+			volume.superBlock.PendingDeleteObjectNumberArray = append(volume.superBlock.PendingDeleteObjectNumberArray, lastCheckPointObjectNumber)
 		}
 	}
 
@@ -897,10 +897,24 @@ func (volume *volumeStruct) doObjectDelete(activeDeleteObjectNumberListElement *
 	volume.activeDeleteObjectNumberList.Remove(activeDeleteObjectNumberListElement)
 
 	if !authOK {
-		volume.pendingDeleteObjectNumberList.PushBack(objectNumber)
+		_ = volume.pendingDeleteObjectNumberList.PushBack(objectNumber)
 	}
 
-	volume.dirty = true
+	// The last doObjectDelete() instance to complete, if ever reached, has the
+	// responsibility of determining if a new batch should be launched. A curious
+	// reverse-chicked-and-egg situation can arrise if the only reason for a subsequent
+	// CheckPoint is to update the at the time now empty PendingDeleteObjectNumberArray.
+	// Of course this would generate a new entry to delete the just previous CheckPoint.
+	// As such, we will only mark the volume dirty if the PendingDeleteObjectNumberArray
+	// has at least 2 entries.
+
+	if volume.activeDeleteObjectNumberList.Len() > 0 {
+		volume.dirty = true
+	} else {
+		if volume.pendingDeleteObjectNumberList.Len() >= 2 {
+			volume.dirty = true
+		}
+	}
 
 	globals.Unlock()
 
