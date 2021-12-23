@@ -221,9 +221,6 @@ func (volume *volumeStruct) swiftObjectDelete(objectNumber uint64) (authOK bool,
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
 		authOK, err = volume.swiftObjectDeleteOnce(objectURL)
 		if nil == err {
-			if !authOK {
-				err = fmt.Errorf("httpResponse.Status: http.StatusUnauthorized")
-			}
 			return
 		}
 
@@ -406,9 +403,6 @@ func (volume *volumeStruct) swiftObjectGet(objectNumber uint64) (buf []byte, aut
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
 		buf, authOK, err = volume.swiftObjectGetOnce(objectURL, "")
 		if nil == err {
-			if !authOK {
-				err = fmt.Errorf("httpResponse.Status: http.StatusUnauthorized")
-			}
 			return
 		}
 
@@ -489,9 +483,6 @@ func (volume *volumeStruct) swiftObjectGetRange(objectNumber uint64, objectOffse
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
 		buf, authOK, err = volume.swiftObjectGetOnce(objectURL, rangeHeaderValue)
 		if nil == err {
-			if !authOK {
-				err = fmt.Errorf("httpResponse.Status: http.StatusUnauthorized")
-			}
 			return
 		}
 
@@ -572,9 +563,6 @@ func (volume *volumeStruct) swiftObjectGetTail(objectNumber uint64, objectLength
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
 		buf, authOK, err = volume.swiftObjectGetOnce(objectURL, rangeHeaderValue)
 		if nil == err {
-			if !authOK {
-				err = fmt.Errorf("httpResponse.Status: http.StatusUnauthorized")
-			}
 			return
 		}
 
