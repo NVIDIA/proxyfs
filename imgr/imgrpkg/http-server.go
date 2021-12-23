@@ -410,7 +410,7 @@ func (inodeTableWrapper *httpServerInodeTableWrapperStruct) GetNode(objectNumber
 		authOK bool
 	)
 
-	nodeByteSlice, authOK, err = inodeTableWrapper.volume.swiftObjectGetRange(objectNumber, objectOffset, objectLength)
+	nodeByteSlice, authOK, err = inodeTableWrapper.volume.swiftObjectGetRange(true, objectNumber, objectOffset, objectLength)
 	if nil != err {
 		err = fmt.Errorf("volume.swiftObjectGetRange() failed: %v", err)
 		return
@@ -488,7 +488,7 @@ func (directoryWrapper *httpServerDirectoryWrapperStruct) GetNode(objectNumber u
 		authOK bool
 	)
 
-	nodeByteSlice, authOK, err = directoryWrapper.volume.swiftObjectGetRange(objectNumber, objectOffset, objectLength)
+	nodeByteSlice, authOK, err = directoryWrapper.volume.swiftObjectGetRange(true, objectNumber, objectOffset, objectLength)
 	if nil != err {
 		err = fmt.Errorf("volume.swiftObjectGetRange() failed: %v", err)
 		return
@@ -566,7 +566,7 @@ func (extentMapWrapper *httpServerExtentMapWrapperStruct) GetNode(objectNumber u
 		authOK bool
 	)
 
-	nodeByteSlice, authOK, err = extentMapWrapper.volume.swiftObjectGetRange(objectNumber, objectOffset, objectLength)
+	nodeByteSlice, authOK, err = extentMapWrapper.volume.swiftObjectGetRange(true, objectNumber, objectOffset, objectLength)
 	if nil != err {
 		err = fmt.Errorf("volume.swiftObjectGetRange() failed: %v", err)
 		return
@@ -784,7 +784,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				volumeAsStruct.authToken = requestAuthToken
 			}
 
-			checkPointV1, err = volumeAsStruct.fetchCheckPoint()
+			checkPointV1, err = volumeAsStruct.fetchCheckPointWhileLocked()
 			if nil != err {
 				volumeAsStruct.authToken = volumeAuthToken
 				globals.Unlock()
@@ -792,7 +792,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				return
 			}
 
-			superBlockV1, err = volumeAsStruct.fetchSuperBlock(checkPointV1.SuperBlockObjectNumber, checkPointV1.SuperBlockLength)
+			superBlockV1, err = volumeAsStruct.fetchSuperBlockWhileLocked(checkPointV1.SuperBlockObjectNumber, checkPointV1.SuperBlockLength)
 			if nil != err {
 				volumeAsStruct.authToken = volumeAuthToken
 				globals.Unlock()
@@ -948,7 +948,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 						volumeAsStruct.authToken = requestAuthToken
 					}
 
-					checkPointV1, err = volumeAsStruct.fetchCheckPoint()
+					checkPointV1, err = volumeAsStruct.fetchCheckPointWhileLocked()
 					if nil != err {
 						volumeAsStruct.authToken = volumeAuthToken
 						globals.Unlock()
@@ -956,7 +956,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 						return
 					}
 
-					superBlockV1, err = volumeAsStruct.fetchSuperBlock(checkPointV1.SuperBlockObjectNumber, checkPointV1.SuperBlockLength)
+					superBlockV1, err = volumeAsStruct.fetchSuperBlockWhileLocked(checkPointV1.SuperBlockObjectNumber, checkPointV1.SuperBlockLength)
 					if nil != err {
 						volumeAsStruct.authToken = volumeAuthToken
 						globals.Unlock()
@@ -996,7 +996,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 						logFatalf("inodeTableEntryValueV1AsValue.(*ilayout.InodeTableEntryValueV1Struct) returned !ok")
 					}
 
-					inodeHeadV1, err = volumeAsStruct.fetchInodeHead(inodeTableEntryValueV1.InodeHeadObjectNumber, inodeTableEntryValueV1.InodeHeadLength)
+					inodeHeadV1, err = volumeAsStruct.fetchInodeHeadWhileLocked(inodeTableEntryValueV1.InodeHeadObjectNumber, inodeTableEntryValueV1.InodeHeadLength)
 					if nil != err {
 						volumeAsStruct.authToken = volumeAuthToken
 						globals.Unlock()

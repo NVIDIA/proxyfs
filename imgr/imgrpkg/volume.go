@@ -878,14 +878,14 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 	volume.checkPoint.SuperBlockObjectNumber = volume.checkPointObjectNumber
 	volume.checkPoint.SuperBlockLength = uint64(len(superBlockV1Buf))
 
-	authOK, err = volume.swiftObjectPut(volume.checkPointObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes()))
+	authOK, err = volume.swiftObjectPut(true, volume.checkPointObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes()))
 	if nil != err {
-		err = fmt.Errorf("volume.swiftObjectPut(volume.checkPointObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes())) failed: %v", err)
+		err = fmt.Errorf("volume.swiftObjectPut(locked==true, volume.checkPointObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes())) failed: %v", err)
 		logFatal(err)
 	}
 	if !authOK {
 		globals.Unlock()
-		err = fmt.Errorf("volume.swiftObjectPut(volume.checkPointObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes())) returned !authOK")
+		err = fmt.Errorf("volume.swiftObjectPut(locked==true, volume.checkPointObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes())) returned !authOK")
 		return
 	}
 
@@ -897,14 +897,14 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 		logFatal(err)
 	}
 
-	authOK, err = volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String))
+	authOK, err = volume.swiftObjectPut(true, ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String))
 	if nil != err {
-		err = fmt.Errorf("volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String)) failed: %v", err)
+		err = fmt.Errorf("volume.swiftObjectPut(locked==true, ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String)) failed: %v", err)
 		logFatal(err)
 	}
 	if !authOK {
 		globals.Unlock()
-		err = fmt.Errorf("volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String)) returned !authOK")
+		err = fmt.Errorf("volume.swiftObjectPut(locked==true, ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String)) returned !authOK")
 		return
 	}
 
@@ -944,14 +944,25 @@ func (volume *volumeStruct) doObjectDelete(activeDeleteObjectNumberListElement *
 		logFatalf("activeDeleteObjectNumberListElement.Value.(uint64) returned !ok")
 	}
 
-	globals.Unlock()
+	// FLIP: Here is the top limit of the swapped code
 
-	authOK, err = volume.swiftObjectDelete(objectNumber)
+	// globals.Unlock()
+
+	// authOK, err = volume.swiftObjectDelete(false, objectNumber)
+	// if nil != err {
+	// 	logFatalf("volume.swiftObjectDelete(locked: false, objectNumber: %016X) failed: %v", objectNumber, err)
+	// }
+
+	// globals.Lock()
+
+	// FLIP: flip below to the above (i.e. locked: false use)
+
+	authOK, err = volume.swiftObjectDelete(true, objectNumber)
 	if nil != err {
-		logFatalf("volume.swiftObjectDelete(objectNumber: %016X) failed: %v", objectNumber, err)
+		logFatalf("volume.swiftObjectDelete(locked: true, objectNumber: %016X) failed: %v", objectNumber, err)
 	}
 
-	globals.Lock()
+	// FLIP: Here is the bottom limit of the swapped code
 
 	volume.activeDeleteObjectNumberList.Remove(activeDeleteObjectNumberListElement)
 
@@ -1021,12 +1032,12 @@ func (volume *volumeStruct) GetNode(objectNumber uint64, objectOffset uint64, ob
 		authOK bool
 	)
 
-	nodeByteSlice, authOK, err = volume.swiftObjectGetRange(objectNumber, objectOffset, objectLength)
+	nodeByteSlice, authOK, err = volume.swiftObjectGetRange(true, objectNumber, objectOffset, objectLength)
 	if nil != err {
-		err = fmt.Errorf("volume.swiftObjectGetRange(objectNumber==0x%016X, objectOffset==0x%016X, objectLength==0x%016X) failed: %v", objectNumber, objectOffset, objectLength, err)
+		err = fmt.Errorf("volume.swiftObjectGetRange(locked==true, objectNumber==0x%016X, objectOffset==0x%016X, objectLength==0x%016X) failed: %v", objectNumber, objectOffset, objectLength, err)
 		logError(err)
 	} else if !authOK {
-		err = fmt.Errorf("volume.swiftObjectGetRange(objectNumber==0x%016X, objectOffset==0x%016X, objectLength==0x%016X) returned !authOK", objectNumber, objectOffset, objectLength)
+		err = fmt.Errorf("volume.swiftObjectGetRange(locked==true, objectNumber==0x%016X, objectOffset==0x%016X, objectLength==0x%016X) returned !authOK", objectNumber, objectOffset, objectLength)
 		logWarn(err)
 	}
 
@@ -1180,13 +1191,13 @@ func (volume *volumeStruct) UnpackValue(payloadData []byte) (value sortedmap.Val
 	return
 }
 
-func (volume *volumeStruct) fetchCheckPoint() (checkPointV1 *ilayout.CheckPointV1Struct, err error) {
+func (volume *volumeStruct) fetchCheckPointWhileLocked() (checkPointV1 *ilayout.CheckPointV1Struct, err error) {
 	var (
 		authOK          bool
 		checkPointV1Buf []byte
 	)
 
-	checkPointV1Buf, authOK, err = volume.swiftObjectGet(ilayout.CheckPointObjectNumber)
+	checkPointV1Buf, authOK, err = volume.swiftObjectGet(true, ilayout.CheckPointObjectNumber)
 	if nil != err {
 		err = fmt.Errorf("volume.swiftObjectGet() failed: %v", err)
 		return
@@ -1201,13 +1212,13 @@ func (volume *volumeStruct) fetchCheckPoint() (checkPointV1 *ilayout.CheckPointV
 	return
 }
 
-func (volume *volumeStruct) fetchSuperBlock(superBlockObjectNumber uint64, superBlockLength uint64) (superBlockV1 *ilayout.SuperBlockV1Struct, err error) {
+func (volume *volumeStruct) fetchSuperBlockWhileLocked(superBlockObjectNumber uint64, superBlockLength uint64) (superBlockV1 *ilayout.SuperBlockV1Struct, err error) {
 	var (
 		authOK          bool
 		superBlockV1Buf []byte
 	)
 
-	superBlockV1Buf, authOK, err = volume.swiftObjectGetTail(superBlockObjectNumber, superBlockLength)
+	superBlockV1Buf, authOK, err = volume.swiftObjectGetTail(true, superBlockObjectNumber, superBlockLength)
 	if nil != err {
 		err = fmt.Errorf("volume.swiftObjectGetTail() failed: %v", err)
 		return
@@ -1222,13 +1233,13 @@ func (volume *volumeStruct) fetchSuperBlock(superBlockObjectNumber uint64, super
 	return
 }
 
-func (volume *volumeStruct) fetchInodeHead(inodeHeadObjectNumber uint64, inodeHeadLength uint64) (inodeHeadV1 *ilayout.InodeHeadV1Struct, err error) {
+func (volume *volumeStruct) fetchInodeHeadWhileLocked(inodeHeadObjectNumber uint64, inodeHeadLength uint64) (inodeHeadV1 *ilayout.InodeHeadV1Struct, err error) {
 	var (
 		authOK         bool
 		inodeHeadV1Buf []byte
 	)
 
-	inodeHeadV1Buf, authOK, err = volume.swiftObjectGetTail(inodeHeadObjectNumber, inodeHeadLength)
+	inodeHeadV1Buf, authOK, err = volume.swiftObjectGetTail(true, inodeHeadObjectNumber, inodeHeadLength)
 	if nil != err {
 		err = fmt.Errorf("volume.swiftObjectGetTail() failed: %v", err)
 		return
@@ -1282,19 +1293,19 @@ func (volume *volumeStruct) fetchNonceRangeWhileLocked() (nextNonce uint64, numN
 		logFatalf("nonceUpdatedCheckPoint.MarshalCheckPointV1() failed: %v", err)
 	}
 
-	authOK, err = volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString))
+	authOK, err = volume.swiftObjectPut(true, ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString))
 	if nil == err {
 		if authOK {
 			volume.checkPoint = nonceUpdatedCheckPoint
 		} else {
 			nextNonce = 0
 			numNoncesFetched = 0
-			err = fmt.Errorf("volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString)) returned !authOK")
+			err = fmt.Errorf("volume.swiftObjectPut(locked==true, ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString)) returned !authOK")
 		}
 	} else {
 		nextNonce = 0
 		numNoncesFetched = 0
-		err = fmt.Errorf("volume.swiftObjectPut(ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString)) failed: %v", err)
+		err = fmt.Errorf("volume.swiftObjectPut(locked==true, ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString)) failed: %v", err)
 	}
 
 	return
@@ -1326,12 +1337,12 @@ func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
 		logFatalf("inodeTableEntryValueRaw.(ilayout.InodeTableEntryValueV1Struct) returned !ok")
 	}
 
-	inodeHeadV1Buf, authOK, err = volume.swiftObjectGetTail(inodeTableEntryValue.InodeHeadObjectNumber, inodeTableEntryValue.InodeHeadLength)
+	inodeHeadV1Buf, authOK, err = volume.swiftObjectGetTail(true, inodeTableEntryValue.InodeHeadObjectNumber, inodeTableEntryValue.InodeHeadLength)
 	if nil != err {
-		logFatalf("volume.swiftObjectGetTail(inodeTableEntryValue.InodeHeadObjectNumber, inodeTableEntryValue.InodeHeadObjectNumber) failed: %v", err)
+		logFatalf("volume.swiftObjectGetTail(locked==true, inodeTableEntryValue.InodeHeadObjectNumber, inodeTableEntryValue.InodeHeadObjectNumber) failed: %v", err)
 	}
 	if !authOK {
-		logFatalf("volume.swiftObjectGetTail(inodeTableEntryValue.InodeHeadObjectNumber, inodeTableEntryValue.InodeHeadObjectNumber) returned !authOK")
+		logFatalf("volume.swiftObjectGetTail(locked==true, inodeTableEntryValue.InodeHeadObjectNumber, inodeTableEntryValue.InodeHeadObjectNumber) returned !authOK")
 	}
 
 	inodeHeadV1, err = ilayout.UnmarshalInodeHeadV1(inodeHeadV1Buf)

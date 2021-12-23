@@ -107,13 +107,16 @@ func swiftObjectDeleteOnce(objectURL string, authToken string) (authOK bool, err
 	return
 }
 
-func (volume *volumeStruct) swiftObjectDeleteOnce(objectURL string) (authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectDeleteOnce(locked bool, objectURL string) (authOK bool, err error) {
 	var (
 		mount            *mountStruct
 		mountListElement *list.Element
 		ok               bool
 		toRetryMountList *list.List
 	)
+	if !locked {
+		logFatalf("FLIP: (&volumeStruct).swiftObjectDeleteOnce(locked == false,) not yet supported")
+	}
 
 	toRetryMountList = list.New()
 
@@ -203,7 +206,7 @@ func swiftObjectDelete(storageURL string, authToken string, objectNumber uint64)
 	return
 }
 
-func (volume *volumeStruct) swiftObjectDelete(objectNumber uint64) (authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectDelete(locked bool, objectNumber uint64) (authOK bool, err error) {
 	var (
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
@@ -220,7 +223,7 @@ func (volume *volumeStruct) swiftObjectDelete(objectNumber uint64) (authOK bool,
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		authOK, err = volume.swiftObjectDeleteOnce(objectURL)
+		authOK, err = volume.swiftObjectDeleteOnce(locked, objectURL)
 		if nil == err {
 			return
 		}
@@ -289,13 +292,16 @@ func swiftObjectGetOnce(objectURL string, authToken string, rangeHeaderValue str
 	return
 }
 
-func (volume *volumeStruct) swiftObjectGetOnce(objectURL string, rangeHeaderValue string) (buf []byte, authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectGetOnce(locked bool, objectURL string, rangeHeaderValue string) (buf []byte, authOK bool, err error) {
 	var (
 		mount            *mountStruct
 		mountListElement *list.Element
 		ok               bool
 		toRetryMountList *list.List
 	)
+	if !locked {
+		logFatalf("FLIP: (&volumeStruct).swiftObjectGetOnce(locked == false,,) not yet supported")
+	}
 
 	toRetryMountList = list.New()
 
@@ -385,7 +391,7 @@ func swiftObjectGet(storageURL string, authToken string, objectNumber uint64) (b
 	return
 }
 
-func (volume *volumeStruct) swiftObjectGet(objectNumber uint64) (buf []byte, authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectGet(locked bool, objectNumber uint64) (buf []byte, authOK bool, err error) {
 	var (
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
@@ -402,7 +408,7 @@ func (volume *volumeStruct) swiftObjectGet(objectNumber uint64) (buf []byte, aut
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		buf, authOK, err = volume.swiftObjectGetOnce(objectURL, "")
+		buf, authOK, err = volume.swiftObjectGetOnce(locked, objectURL, "")
 		if nil == err {
 			return
 		}
@@ -462,7 +468,7 @@ func swiftObjectGetRange(storageURL string, authToken string, objectNumber uint6
 	return
 }
 
-func (volume *volumeStruct) swiftObjectGetRange(objectNumber uint64, objectOffset uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectGetRange(locked bool, objectNumber uint64, objectOffset uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
 	var (
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
@@ -482,7 +488,7 @@ func (volume *volumeStruct) swiftObjectGetRange(objectNumber uint64, objectOffse
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		buf, authOK, err = volume.swiftObjectGetOnce(objectURL, rangeHeaderValue)
+		buf, authOK, err = volume.swiftObjectGetOnce(locked, objectURL, rangeHeaderValue)
 		if nil == err {
 			return
 		}
@@ -542,7 +548,7 @@ func swiftObjectGetTail(storageURL string, authToken string, objectNumber uint64
 	return
 }
 
-func (volume *volumeStruct) swiftObjectGetTail(objectNumber uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectGetTail(locked bool, objectNumber uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
 	var (
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
@@ -562,7 +568,7 @@ func (volume *volumeStruct) swiftObjectGetTail(objectNumber uint64, objectLength
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		buf, authOK, err = volume.swiftObjectGetOnce(objectURL, rangeHeaderValue)
+		buf, authOK, err = volume.swiftObjectGetOnce(locked, objectURL, rangeHeaderValue)
 		if nil == err {
 			return
 		}
@@ -630,13 +636,16 @@ func swiftObjectPutOnce(objectURL string, authToken string, body io.ReadSeeker) 
 	return
 }
 
-func (volume *volumeStruct) swiftObjectPutOnce(objectURL string, body io.ReadSeeker) (authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectPutOnce(locked bool, objectURL string, body io.ReadSeeker) (authOK bool, err error) {
 	var (
 		mount            *mountStruct
 		mountListElement *list.Element
 		ok               bool
 		toRetryMountList *list.List
 	)
+	if !locked {
+		logFatalf("FLIP: (&volumeStruct).swiftObjectPutOnce(locked == false,,) not yet supported")
+	}
 
 	toRetryMountList = list.New()
 
@@ -726,7 +735,7 @@ func swiftObjectPut(storageURL string, authToken string, objectNumber uint64, bo
 	return
 }
 
-func (volume *volumeStruct) swiftObjectPut(objectNumber uint64, body io.ReadSeeker) (authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectPut(locked bool, objectNumber uint64, body io.ReadSeeker) (authOK bool, err error) {
 	var (
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
@@ -743,7 +752,7 @@ func (volume *volumeStruct) swiftObjectPut(objectNumber uint64, body io.ReadSeek
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		authOK, err = volume.swiftObjectPutOnce(objectURL, body)
+		authOK, err = volume.swiftObjectPutOnce(locked, objectURL, body)
 		if nil == err {
 			if authOK {
 				return
