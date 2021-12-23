@@ -11,7 +11,7 @@ replace google.golang.org/grpc => google.golang.org/grpc v1.26.0
 require (
 	bazil.org/fuse v0.0.0-20200524192727-fb710f7dfd05
 	github.com/NVIDIA/cstruct v0.0.0-20210817223100-441a06a021c8
-	github.com/NVIDIA/fission v0.0.0-20211107202641-3e344bcb438b
+	github.com/NVIDIA/fission v0.0.0-20211223045359-ebc0c4203e7b
 	github.com/NVIDIA/sortedmap v0.0.0-20210902154213-c8c741ed94c5
 	github.com/ansel1/merry v1.6.1
 	github.com/creachadair/cityhash v0.1.0
