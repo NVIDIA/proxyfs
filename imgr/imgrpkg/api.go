@@ -47,7 +47,7 @@
 //  SwiftTimeout:                         10m
 //  SwiftConnectionPoolSize:              128
 //
-//  ParallelObjectDeletePerVolumeLimit:   10
+//  ParallelObjectDeletePerVolumeLimit:   100
 //
 //  InodeTableCacheEvictLowLimit:         10000
 //  InodeTableCacheEvictHighLimit:        10010
