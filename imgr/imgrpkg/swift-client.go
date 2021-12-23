@@ -129,7 +129,7 @@ func (volume *volumeStruct) swiftObjectDeleteOnce(objectURL string) (authOK bool
 		authOK, err = swiftObjectDeleteOnce(objectURL, mount.authToken)
 		if nil == err {
 			if authOK {
-				volume.healthyMountList.PushBackList(toRetryMountList)
+				volume.appendToHealthyMountList(toRetryMountList)
 				mount.listElement = volume.healthyMountList.PushBack(mount)
 				return
 			} else {
@@ -147,7 +147,7 @@ func (volume *volumeStruct) swiftObjectDeleteOnce(objectURL string) (authOK bool
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {
-		volume.healthyMountList.PushBackList(toRetryMountList)
+		volume.appendToHealthyMountList(toRetryMountList)
 
 		if volume.authToken != "" {
 			authOK, err = swiftObjectDeleteOnce(objectURL, volume.authToken)
@@ -311,7 +311,7 @@ func (volume *volumeStruct) swiftObjectGetOnce(objectURL string, rangeHeaderValu
 		buf, authOK, err = swiftObjectGetOnce(objectURL, mount.authToken, rangeHeaderValue)
 		if nil == err {
 			if authOK {
-				volume.healthyMountList.PushBackList(toRetryMountList)
+				volume.appendToHealthyMountList(toRetryMountList)
 				mount.listElement = volume.healthyMountList.PushBack(mount)
 				return
 			} else {
@@ -329,7 +329,7 @@ func (volume *volumeStruct) swiftObjectGetOnce(objectURL string, rangeHeaderValu
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {
-		volume.healthyMountList.PushBackList(toRetryMountList)
+		volume.appendToHealthyMountList(toRetryMountList)
 
 		if volume.authToken != "" {
 			buf, authOK, err = swiftObjectGetOnce(objectURL, volume.authToken, rangeHeaderValue)
@@ -652,7 +652,7 @@ func (volume *volumeStruct) swiftObjectPutOnce(objectURL string, body io.ReadSee
 		authOK, err = swiftObjectPutOnce(objectURL, mount.authToken, body)
 		if nil == err {
 			if authOK {
-				volume.healthyMountList.PushBackList(toRetryMountList)
+				volume.appendToHealthyMountList(toRetryMountList)
 				mount.listElement = volume.healthyMountList.PushBack(mount)
 				return
 			} else {
@@ -670,7 +670,7 @@ func (volume *volumeStruct) swiftObjectPutOnce(objectURL string, body io.ReadSee
 		authOK = false // Auth failed,
 		err = nil      //   but we will still indicate the func succeeded
 	} else {
-		volume.healthyMountList.PushBackList(toRetryMountList)
+		volume.appendToHealthyMountList(toRetryMountList)
 
 		if volume.authToken != "" {
 			authOK, err = swiftObjectPutOnce(objectURL, volume.authToken, body)
@@ -763,4 +763,28 @@ func (volume *volumeStruct) swiftObjectPut(objectNumber uint64, body io.ReadSeek
 	}
 
 	return
+}
+
+func (volume *volumeStruct) appendToHealthyMountList(toRetryMountList *list.List) {
+	var (
+		mount            *mountStruct
+		mountListElement *list.Element
+		ok               bool
+	)
+
+	for {
+		mountListElement = toRetryMountList.Front()
+		if mountListElement == nil {
+			return
+		}
+
+		_ = toRetryMountList.Remove(mountListElement)
+
+		mount, ok = mountListElement.Value.(*mountStruct)
+		if !ok {
+			logFatalf("mountListElement.Value.(*mountStruct) returned !ok")
+		}
+
+		mount.listElement = volume.healthyMountList.PushBack(mount)
+	}
 }
