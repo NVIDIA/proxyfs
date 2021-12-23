@@ -6,16 +6,19 @@ package imgrpkg
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 )
 
 func logFatal(err error) {
 	logf("FATAL", "%v", err)
+	logStack()
 	os.Exit(1)
 }
 
 func logFatalf(format string, args ...interface{}) {
 	logf("FATAL", format, args...)
+	logStack()
 	os.Exit(1)
 }
 
@@ -53,6 +56,24 @@ func logTracef(format string, args ...interface{}) {
 	if globals.config.TraceEnabled {
 		logf("TRACE", format, args...)
 	}
+}
+
+func logStack() {
+	const (
+		runtimeStackBufSize = 65536
+	)
+
+	var (
+		runtimeStackBuf     []byte
+		runtimeStackBufUsed int
+		runtimeStackString  string
+	)
+
+	runtimeStackBuf = make([]byte, runtimeStackBufSize)
+	runtimeStackBufUsed = runtime.Stack(runtimeStackBuf, true)
+	runtimeStackString = string(runtimeStackBuf[:runtimeStackBufUsed])
+
+	logf("STACK", "\n%s", runtimeStackString)
 }
 
 func logf(level string, format string, args ...interface{}) {
