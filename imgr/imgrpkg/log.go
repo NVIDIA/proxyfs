@@ -89,10 +89,10 @@ func logf(level string, format string, args ...interface{}) {
 
 	logMsg = fmt.Sprintf(enhancedFormat, enhancedArgs[:]...)
 
-	if nil == globals.logFile {
-		if "" != globals.config.LogFilePath {
+	if globals.logFile == nil {
+		if globals.config.LogFilePath != "" {
 			globals.logFile, err = os.OpenFile(globals.config.LogFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
-			if nil == err {
+			if err == nil {
 				_, _ = globals.logFile.WriteString(logMsg + "\n")
 			} else {
 				globals.logFile = nil
@@ -102,12 +102,12 @@ func logf(level string, format string, args ...interface{}) {
 		globals.logFile.WriteString(logMsg + "\n")
 	}
 	if globals.config.LogToConsole {
-		fmt.Fprintln(os.Stderr, logMsg)
+		fmt.Println(logMsg)
 	}
 }
 
 func logSIGHUP() {
-	if nil != globals.logFile {
+	if globals.logFile != nil {
 		_ = globals.logFile.Close()
 		globals.logFile = nil
 	}
