@@ -24,6 +24,7 @@ goplugindirs = \
 gobindirs = \
 	icert \
 	iclient \
+	idestroy \
 	imgr \
 	iswift
 
