@@ -36,7 +36,13 @@ generatedfiles := \
 
 all: version fmt pre-generate generate build test
 
-ci: version fmt pre-generate generate build test cover
+# Due to etcd breaking go modules when running make cover,
+#   we will, for the time being, disable the make cover step
+#   in make ci :-(
+#
+# ci: version fmt pre-generate generate build test cover
+
+ci: all
 
 minimal: version pre-generate generate build
 
