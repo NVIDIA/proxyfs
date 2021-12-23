@@ -217,6 +217,7 @@ type inodeOpenMapElementStruct struct {
 
 type volumeStruct struct {
 	name                          string                                    //
+	dirty                         bool                                      //
 	storageURL                    string                                    //
 	authToken                     string                                    // if != "" & healthyMountList is empty, this AuthToken will be used; cleared on auth failure
 	mountMap                      map[string]*mountStruct                   // key == mountStruct.mountID
@@ -235,7 +236,7 @@ type volumeStruct struct {
 	pendingDeleteObjectNumberList *list.List                                // list of objectNumber's pending deletion after next CheckPoint
 	checkPointControlChan         chan chan error                           // send chan error to chan to request a CheckPoint; close it to terminate checkPointDaemon()
 	checkPointControlWG           sync.WaitGroup                            // checkPointDeamon() indicates it is done by calling .Done() on this WG
-	checkPointPutObjectNumber     uint64                                    //
+	checkPointObjectNumber        uint64                                    // if non-zero, contains ObjectNumber of the current or last CheckPoint
 	checkPointPutObjectBuffer     *bytes.Buffer                             // if nil, no CheckPoint data to PUT has yet accumulated
 	inodeOpenMap                  map[uint64]*inodeOpenMapElementStruct     // key == inodeNumber
 	inodeLeaseMap                 map[uint64]*inodeLeaseStruct              // key == inodeLeaseStruct.inodeNumber

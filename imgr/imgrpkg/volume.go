@@ -614,6 +614,7 @@ func putVolume(name string, storageURL string, authToken string) (err error) {
 
 	volume = &volumeStruct{
 		name:                          name,
+		dirty:                         false,
 		storageURL:                    storageURL,
 		authToken:                     authToken,
 		mountMap:                      make(map[string]*mountStruct),
@@ -630,7 +631,7 @@ func putVolume(name string, storageURL string, authToken string) (err error) {
 		activeDeleteObjectNumberList:  list.New(),
 		pendingDeleteObjectNumberList: list.New(),
 		checkPointControlChan:         nil,
-		checkPointPutObjectNumber:     0,
+		checkPointObjectNumber:        0,
 		checkPointPutObjectBuffer:     nil,
 		inodeOpenMap:                  make(map[uint64]*inodeOpenMapElementStruct),
 		inodeLeaseMap:                 make(map[uint64]*inodeLeaseStruct),
@@ -692,17 +693,19 @@ func (volume *volumeStruct) checkPointDaemon(checkPointControlChan chan chan err
 
 func (volume *volumeStruct) doCheckPoint() (err error) {
 	var (
-		authOK                        bool
-		checkPointV1String            string
-		deleteObjectNumberListElement *list.Element
-		inodeTableLayoutElement       *inodeTableLayoutElementStruct
-		inodeTableRootObjectLength    uint64
-		inodeTableRootObjectNumber    uint64
-		inodeTableRootObjectOffset    uint64
-		objectNumber                  uint64
-		ok                            bool
-		startTime                     time.Time = time.Now()
-		superBlockV1Buf               []byte
+		authOK                         bool
+		checkPointV1String             string
+		deleteObjectNumberListElement  *list.Element
+		inodeTableLayoutElement        *inodeTableLayoutElementStruct
+		inodeTableRootObjectLength     uint64
+		inodeTableRootObjectNumber     uint64
+		inodeTableRootObjectOffset     uint64
+		lastCheckPointObjectNumber     uint64
+		lastCheckPointObjectNumberSeen bool
+		objectNumber                   uint64
+		ok                             bool
+		startTime                      time.Time = time.Now()
+		superBlockV1Buf                []byte
 	)
 
 	defer func() {
@@ -710,6 +713,12 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 	}()
 
 	globals.Lock()
+
+	if !volume.dirty {
+		globals.Unlock()
+		err = nil
+		return
+	}
 
 	for volume.numNoncesReserved == 0 {
 		volume.nextNonce, volume.numNoncesReserved, err = volume.fetchNonceRangeWhileLocked()
@@ -720,7 +729,9 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 		}
 	}
 
-	volume.checkPointPutObjectNumber = volume.nextNonce
+	lastCheckPointObjectNumber = volume.checkPointObjectNumber
+	volume.checkPointObjectNumber = volume.nextNonce
+	volume.checkPointPutObjectBuffer = &bytes.Buffer{}
 
 	volume.nextNonce++
 	volume.numNoncesReserved--
@@ -729,16 +740,6 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 	if nil != err {
 		globals.Unlock()
 		err = fmt.Errorf("volume.inodeTable.Flush(false) failed: %v", err)
-		return
-	}
-
-	if nil == volume.checkPointPutObjectBuffer {
-		// No need to create a new CheckPoint since nothing changed since the last one
-		volume.checkPointPutObjectNumber = 0
-		volume.nextNonce--
-		volume.numNoncesReserved++
-		globals.Unlock()
-		err = nil
 		return
 	}
 
@@ -765,6 +766,8 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 
 	volume.superBlock.PendingDeleteObjectNumberArray = make([]uint64, 0, volume.activeDeleteObjectNumberList.Len()+volume.pendingDeleteObjectNumberList.Len())
 
+	lastCheckPointObjectNumberSeen = false
+
 	deleteObjectNumberListElement = volume.activeDeleteObjectNumberList.Front()
 
 	for nil != deleteObjectNumberListElement {
@@ -774,6 +777,9 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 			logFatal(err)
 		}
 		volume.superBlock.PendingDeleteObjectNumberArray = append(volume.superBlock.PendingDeleteObjectNumberArray, objectNumber)
+		if objectNumber == lastCheckPointObjectNumber {
+			lastCheckPointObjectNumberSeen = true
+		}
 		deleteObjectNumberListElement = deleteObjectNumberListElement.Next()
 	}
 
@@ -786,7 +792,20 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 			logFatal(err)
 		}
 		volume.superBlock.PendingDeleteObjectNumberArray = append(volume.superBlock.PendingDeleteObjectNumberArray, objectNumber)
+		if objectNumber == lastCheckPointObjectNumber {
+			lastCheckPointObjectNumberSeen = true
+		}
 		deleteObjectNumberListElement = deleteObjectNumberListElement.Next()
+	}
+
+	if !lastCheckPointObjectNumberSeen {
+		_, ok = volume.inodeTableLayout[lastCheckPointObjectNumber]
+		if !ok {
+			// After the current CheckPoint is posted, we can finally delete the last one's now comp[letely unreferenced Object
+
+			_ = volume.pendingDeleteObjectNumberList.PushBack(lastCheckPointObjectNumber)
+			volume.superBlock.PendingDeleteObjectNumberArray = append(volume.superBlock.PendingDeleteObjectNumberArray, objectNumber)
+		}
 	}
 
 	superBlockV1Buf, err = volume.superBlock.MarshalSuperBlockV1()
@@ -797,21 +816,20 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 
 	_, _ = volume.checkPointPutObjectBuffer.Write(superBlockV1Buf)
 
-	volume.checkPoint.SuperBlockObjectNumber = volume.checkPointPutObjectNumber
+	volume.checkPoint.SuperBlockObjectNumber = volume.checkPointObjectNumber
 	volume.checkPoint.SuperBlockLength = uint64(len(superBlockV1Buf))
 
-	authOK, err = volume.swiftObjectPut(volume.checkPointPutObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes()))
+	authOK, err = volume.swiftObjectPut(volume.checkPointObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes()))
 	if nil != err {
-		err = fmt.Errorf("volume.swiftObjectPut(volume.checkPointPutObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes())) failed: %v", err)
+		err = fmt.Errorf("volume.swiftObjectPut(volume.checkPointObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes())) failed: %v", err)
 		logFatal(err)
 	}
 	if !authOK {
 		globals.Unlock()
-		err = fmt.Errorf("volume.swiftObjectPut(volume.checkPointPutObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes())) returned !authOK")
+		err = fmt.Errorf("volume.swiftObjectPut(volume.checkPointObjectNumber, bytes.NewReader(volume.checkPointPutObjectBuffer.Bytes())) returned !authOK")
 		return
 	}
 
-	volume.checkPointPutObjectNumber = 0
 	volume.checkPointPutObjectBuffer = nil
 
 	checkPointV1String, err = volume.checkPoint.MarshalCheckPointV1()
@@ -844,6 +862,8 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 		go volume.doObjectDelete(deleteObjectNumberListElement)
 	}
 
+	volume.dirty = false
+
 	globals.Unlock()
 
 	err = nil
@@ -858,10 +878,14 @@ func (volume *volumeStruct) doObjectDelete(activeDeleteObjectNumberListElement *
 		ok           bool
 	)
 
+	globals.Lock()
+
 	objectNumber, ok = activeDeleteObjectNumberListElement.Value.(uint64)
 	if !ok {
 		logFatalf("activeDeleteObjectNumberListElement.Value.(uint64) returned !ok")
 	}
+
+	globals.Unlock()
 
 	authOK, err = volume.swiftObjectDelete(objectNumber)
 	if nil != err {
@@ -875,6 +899,8 @@ func (volume *volumeStruct) doObjectDelete(activeDeleteObjectNumberListElement *
 	if !authOK {
 		volume.pendingDeleteObjectNumberList.PushBack(objectNumber)
 	}
+
+	volume.dirty = true
 
 	globals.Unlock()
 
@@ -940,32 +966,29 @@ func (volume *volumeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, 
 		ok                      bool
 	)
 
-	if volume.checkPointPutObjectNumber == 0 {
-		err = fmt.Errorf("(*volumeStruct)PutNode() called with volume.checkPointPutObjectNumber == 0")
+	if volume.checkPointObjectNumber == 0 {
+		err = fmt.Errorf("(*volumeStruct)PutNode() called with volume.checkPointObjectNumber == 0")
+		logFatal(err)
+	}
+	if volume.checkPointPutObjectBuffer == nil {
+		err = fmt.Errorf("(*volumeStruct)PutNode() called with volume.checkPointPutObjectBuffer == nil")
 		logFatal(err)
 	}
 
-	if nil == volume.checkPointPutObjectBuffer {
-		volume.checkPointPutObjectBuffer = &bytes.Buffer{}
-
+	inodeTableLayoutElement, ok = volume.inodeTableLayout[volume.checkPointObjectNumber]
+	if ok {
+		inodeTableLayoutElement.objectSize += uint64(len(nodeByteSlice))
+		inodeTableLayoutElement.bytesReferenced += uint64(len(nodeByteSlice))
+	} else {
 		inodeTableLayoutElement = &inodeTableLayoutElementStruct{
 			objectSize:      uint64(len(nodeByteSlice)),
 			bytesReferenced: uint64(len(nodeByteSlice)),
 		}
 
-		volume.inodeTableLayout[volume.checkPointPutObjectNumber] = inodeTableLayoutElement
-	} else {
-		inodeTableLayoutElement, ok = volume.inodeTableLayout[volume.checkPointPutObjectNumber]
-		if !ok {
-			err = fmt.Errorf("volume.inodeTableLayout[volume.checkPointPutObjectNumber] returned !ok")
-			return
-		}
-
-		inodeTableLayoutElement.objectSize += uint64(uint64(len(nodeByteSlice)))
-		inodeTableLayoutElement.bytesReferenced += uint64(uint64(len(nodeByteSlice)))
+		volume.inodeTableLayout[volume.checkPointObjectNumber] = inodeTableLayoutElement
 	}
 
-	objectNumber = volume.checkPointPutObjectNumber
+	objectNumber = volume.checkPointObjectNumber
 	objectOffset = uint64(volume.checkPointPutObjectBuffer.Len())
 	_, _ = volume.checkPointPutObjectBuffer.Write(nodeByteSlice)
 
@@ -994,7 +1017,12 @@ func (volume *volumeStruct) DiscardNode(objectNumber uint64, objectOffset uint64
 
 	if inodeTableLayoutElement.bytesReferenced == 0 {
 		delete(volume.inodeTableLayout, objectNumber)
-		volume.superBlock.PendingDeleteObjectNumberArray = append(volume.superBlock.PendingDeleteObjectNumberArray, objectNumber)
+
+		// We avoid scheduling the Object for deletion here if it contains the last CheckPoint
+
+		if objectNumber != volume.checkPointObjectNumber {
+			_ = volume.pendingDeleteObjectNumberList.PushBack(objectNumber)
+		}
 	}
 
 	err = nil

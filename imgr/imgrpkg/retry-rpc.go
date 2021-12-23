@@ -194,6 +194,8 @@ retryGenerateMountID:
 
 		volume.checkPointControlChan = make(chan chan error)
 
+		volume.checkPointObjectNumber = lastCheckPoint.SuperBlockObjectNumber
+
 		volume.checkPointControlWG.Add(1)
 
 		go volume.checkPointDaemon(volume.checkPointControlChan)
@@ -470,6 +472,8 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 	for _, dereferencedObjectNumber = range putInodeTableEntriesRequest.DereferencedObjectNumberArray {
 		_ = volume.pendingDeleteObjectNumberList.PushBack(dereferencedObjectNumber)
 	}
+
+	volume.dirty = true
 
 	globals.Unlock()
 
