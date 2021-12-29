@@ -1,9 +1,0 @@
-#!/bin/bash
-
-# Copyright (c) 2015-2021, NVIDIA CORPORATION.
-# SPDX-License-Identifier: Apache-2.0
-
-cd /vagrant/src/github.com/NVIDIA/proxyfs/pfs_middleware
-sudo python setup.py develop
-cd /vagrant/src/github.com/NVIDIA/proxyfs/meta_middleware
-sudo python setup.py develop
