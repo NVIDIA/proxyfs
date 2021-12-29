@@ -157,11 +157,12 @@ retryGenerateMountID:
 		authTokenExpired:       false,
 		authToken:              mountRequest.AuthToken,
 		lastAuthTime:           startTime,
+		mountListMembership:    onHealthyMountList,
 		inodeOpenMap:           make(map[uint64]uint64),
 	}
 
 	volume.mountMap[mountIDAsString] = mount
-	mount.listElement = volume.healthyMountList.PushBack(mount)
+	mount.mountListElement = volume.healthyMountList.PushBack(mount)
 	globals.mountMap[mountIDAsString] = mount
 
 	if nil == volume.checkPointControlChan {
@@ -233,18 +234,44 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 
 	_, err = swiftObjectGet(mount.volume.storageURL, mount.authToken, ilayout.CheckPointObjectNumber)
 	if nil == err {
-		if mount.leasesExpired {
-			mount.volume.leasesExpiredMountList.MoveToBack(mount.listElement)
-		} else {
-			if mount.authTokenExpired {
-				_ = mount.volume.authTokenExpiredMountList.Remove(mount.listElement)
-				mount.listElement = mount.volume.healthyMountList.PushBack(mount)
+		mount.authTokenExpired = false
+
+		switch mount.mountListMembership {
+		case onHealthyMountList:
+			mount.volume.healthyMountList.MoveToBack(mount.mountListElement)
+		case onLeasesExpiredMountList:
+			mount.volume.leasesExpiredMountList.MoveToBack(mount.mountListElement)
+		case onAuthTokenExpiredMountList:
+			_ = mount.volume.authTokenExpiredMountList.Remove(mount.mountListElement)
+			if mount.leasesExpired {
+				mount.mountListElement = mount.volume.leasesExpiredMountList.PushBack(mount)
+				mount.mountListMembership = onLeasesExpiredMountList
 			} else {
-				mount.volume.healthyMountList.MoveToBack(mount.listElement)
+				mount.mountListElement = mount.volume.healthyMountList.PushBack(mount)
+				mount.mountListMembership = onHealthyMountList
 			}
+		default:
+			logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
 		}
 	} else {
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, renewMountRequest.AuthToken)
+
+		mount.authTokenExpired = true
+
+		switch mount.mountListMembership {
+		case onHealthyMountList:
+			_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
+			mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+			mount.mountListMembership = onAuthTokenExpiredMountList
+		case onLeasesExpiredMountList:
+			_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
+			mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+			mount.mountListMembership = onAuthTokenExpiredMountList
+		case onAuthTokenExpiredMountList:
+			mount.volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
+		default:
+			logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
+		}
 	}
 
 	globals.Unlock()

@@ -944,25 +944,14 @@ func (volume *volumeStruct) doObjectDelete(activeDeleteObjectNumberListElement *
 		logFatalf("activeDeleteObjectNumberListElement.Value.(uint64) returned !ok")
 	}
 
-	// FLIP: Here is the top limit of the swapped code
+	globals.Unlock()
 
-	// globals.Unlock()
-
-	// authOK, err = volume.swiftObjectDelete(false, objectNumber)
-	// if nil != err {
-	// 	logFatalf("volume.swiftObjectDelete(locked: false, objectNumber: %016X) failed: %v", objectNumber, err)
-	// }
-
-	// globals.Lock()
-
-	// FLIP: flip below to the above (i.e. locked: false use)
-
-	authOK, err = volume.swiftObjectDelete(true, objectNumber)
+	authOK, err = volume.swiftObjectDelete(false, objectNumber)
 	if nil != err {
-		logFatalf("volume.swiftObjectDelete(locked: true, objectNumber: %016X) failed: %v", objectNumber, err)
+		logFatalf("volume.swiftObjectDelete(locked: false, objectNumber: %016X) failed: %v", objectNumber, err)
 	}
 
-	// FLIP: Here is the bottom limit of the swapped code
+	globals.Lock()
 
 	volume.activeDeleteObjectNumberList.Remove(activeDeleteObjectNumberListElement)
 

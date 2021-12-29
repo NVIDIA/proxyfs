@@ -107,64 +107,86 @@ func swiftObjectDeleteOnce(objectURL string, authToken string) (authOK bool, err
 	return
 }
 
-func (volume *volumeStruct) swiftObjectDeleteOnce(locked bool, objectURL string) (authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectDeleteOnce(alreadyLocked bool, objectURL string) (authOK bool, err error) {
 	var (
-		mount            *mountStruct
-		mountListElement *list.Element
-		ok               bool
-		toRetryMountList *list.List
+		authToken            string
+		mount                *mountStruct
+		mountListElement     *list.Element
+		ok                   bool
+		usingVolumeAuthToken bool
 	)
-	if !locked {
-		logFatalf("FLIP: (&volumeStruct).swiftObjectDeleteOnce(locked == false,) not yet supported")
-	}
 
-	toRetryMountList = list.New()
+	if !alreadyLocked {
+		globals.Lock()
+	}
 
 	mountListElement = volume.healthyMountList.Front()
 
-	for nil != mountListElement {
-		_ = volume.healthyMountList.Remove(mountListElement)
+	if mountListElement == nil {
+		if volume.authToken == "" {
+			if !alreadyLocked {
+				globals.Unlock()
+			}
+			authOK = false // Auth failed,
+			err = nil      //   but we still indicate the func succeeded
+			return
+		}
 
+		authToken = volume.authToken
+		usingVolumeAuthToken = true
+	} else {
 		mount, ok = mountListElement.Value.(*mountStruct)
 		if !ok {
 			logFatalf("mountListElement.Value.(*mountStruct) returned !ok")
 		}
 
-		authOK, err = swiftObjectDeleteOnce(objectURL, mount.authToken)
-		if nil == err {
-			if authOK {
-				volume.appendToHealthyMountList(toRetryMountList)
-				mount.listElement = volume.healthyMountList.PushBack(mount)
-				return
-			} else {
-				mount.authTokenExpired = true
-				mount.listElement = volume.authTokenExpiredMountList.PushBack(mount)
-			}
-		} else {
-			mount.listElement = toRetryMountList.PushBack(mount)
-		}
+		// We know that mount.mountListMembership == onHealthyMountList
 
-		mountListElement = volume.healthyMountList.Front()
+		volume.healthyMountList.MoveToBack(mount.mountListElement)
+
+		authToken = mount.authToken
+		usingVolumeAuthToken = true
 	}
 
-	if (toRetryMountList.Len() == 0) && (volume.authToken == "") {
-		authOK = false // Auth failed,
-		err = nil      //   but we will still indicate the func succeeded
-	} else {
-		volume.appendToHealthyMountList(toRetryMountList)
+	if !alreadyLocked {
+		globals.Unlock()
+	}
 
-		if volume.authToken != "" {
-			authOK, err = swiftObjectDeleteOnce(objectURL, volume.authToken)
-			if (nil == err) && !authOK {
-				logWarnf("swiftObjectDeleteOnce(,volume.authToken) !authOK for volume %s...clearing volume.authToken", volume.name)
-				volume.authToken = ""
+	authOK, err = swiftObjectDeleteOnce(objectURL, authToken)
+	if err == nil {
+		if !authOK {
+			if !alreadyLocked {
+				globals.Lock()
 			}
 
-			return
-		}
+			if usingVolumeAuthToken {
+				logWarnf("swiftObjectDeleteOnce(,volume.authToken) returned !authOK for volume %s...clearing volume.authToken", volume.name)
+				volume.authToken = ""
+			} else {
+				mount.authTokenExpired = true
 
-		authOK = true
-		err = fmt.Errorf("authToken list not empty - retry possible")
+				// It's possible that mount has "moved" from volume.healthyMountList
+
+				switch mount.mountListMembership {
+				case onHealthyMountList:
+					_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
+					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+					mount.mountListMembership = onAuthTokenExpiredMountList
+				case onLeasesExpiredMountList:
+					_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
+					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+					mount.mountListMembership = onAuthTokenExpiredMountList
+				case onAuthTokenExpiredMountList:
+					volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
+				default:
+					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
+				}
+			}
+
+			if !alreadyLocked {
+				globals.Unlock()
+			}
+		}
 	}
 
 	return
@@ -206,7 +228,7 @@ func swiftObjectDelete(storageURL string, authToken string, objectNumber uint64)
 	return
 }
 
-func (volume *volumeStruct) swiftObjectDelete(locked bool, objectNumber uint64) (authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectDelete(alreadyLocked bool, objectNumber uint64) (authOK bool, err error) {
 	var (
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
@@ -223,7 +245,7 @@ func (volume *volumeStruct) swiftObjectDelete(locked bool, objectNumber uint64) 
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		authOK, err = volume.swiftObjectDeleteOnce(locked, objectURL)
+		authOK, err = volume.swiftObjectDeleteOnce(alreadyLocked, objectURL)
 		if nil == err {
 			return
 		}
@@ -292,64 +314,86 @@ func swiftObjectGetOnce(objectURL string, authToken string, rangeHeaderValue str
 	return
 }
 
-func (volume *volumeStruct) swiftObjectGetOnce(locked bool, objectURL string, rangeHeaderValue string) (buf []byte, authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectGetOnce(alreadyLocked bool, objectURL string, rangeHeaderValue string) (buf []byte, authOK bool, err error) {
 	var (
-		mount            *mountStruct
-		mountListElement *list.Element
-		ok               bool
-		toRetryMountList *list.List
+		authToken            string
+		mount                *mountStruct
+		mountListElement     *list.Element
+		ok                   bool
+		usingVolumeAuthToken bool
 	)
-	if !locked {
-		logFatalf("FLIP: (&volumeStruct).swiftObjectGetOnce(locked == false,,) not yet supported")
-	}
 
-	toRetryMountList = list.New()
+	if !alreadyLocked {
+		globals.Lock()
+	}
 
 	mountListElement = volume.healthyMountList.Front()
 
-	for nil != mountListElement {
-		_ = volume.healthyMountList.Remove(mountListElement)
+	if mountListElement == nil {
+		if volume.authToken == "" {
+			if !alreadyLocked {
+				globals.Unlock()
+			}
+			authOK = false // Auth failed,
+			err = nil      //   but we still indicate the func succeeded
+			return
+		}
 
+		authToken = volume.authToken
+		usingVolumeAuthToken = true
+	} else {
 		mount, ok = mountListElement.Value.(*mountStruct)
 		if !ok {
 			logFatalf("mountListElement.Value.(*mountStruct) returned !ok")
 		}
 
-		buf, authOK, err = swiftObjectGetOnce(objectURL, mount.authToken, rangeHeaderValue)
-		if nil == err {
-			if authOK {
-				volume.appendToHealthyMountList(toRetryMountList)
-				mount.listElement = volume.healthyMountList.PushBack(mount)
-				return
-			} else {
-				mount.authTokenExpired = true
-				mount.listElement = volume.authTokenExpiredMountList.PushBack(mount)
-			}
-		} else {
-			mount.listElement = toRetryMountList.PushBack(mount)
-		}
+		// We know that mount.mountListMembership == onHealthyMountList
 
-		mountListElement = volume.healthyMountList.Front()
+		volume.healthyMountList.MoveToBack(mount.mountListElement)
+
+		authToken = mount.authToken
+		usingVolumeAuthToken = true
 	}
 
-	if (toRetryMountList.Len() == 0) && (volume.authToken == "") {
-		authOK = false // Auth failed,
-		err = nil      //   but we will still indicate the func succeeded
-	} else {
-		volume.appendToHealthyMountList(toRetryMountList)
+	if !alreadyLocked {
+		globals.Unlock()
+	}
 
-		if volume.authToken != "" {
-			buf, authOK, err = swiftObjectGetOnce(objectURL, volume.authToken, rangeHeaderValue)
-			if (nil == err) && !authOK {
-				logWarnf("swiftObjectGetOnce(,volume.authToken,) !authOK for volume %s...clearing volume.authToken", volume.name)
-				volume.authToken = ""
+	buf, authOK, err = swiftObjectGetOnce(objectURL, authToken, rangeHeaderValue)
+	if err == nil {
+		if !authOK {
+			if !alreadyLocked {
+				globals.Lock()
 			}
 
-			return
-		}
+			if usingVolumeAuthToken {
+				logWarnf("swiftObjectGetOnce(,volume.authToken,) returned !authOK for volume %s...clearing volume.authToken", volume.name)
+				volume.authToken = ""
+			} else {
+				mount.authTokenExpired = true
 
-		authOK = true
-		err = fmt.Errorf("authToken list not empty - retry possible")
+				// It's possible that mount has "moved" from volume.healthyMountList
+
+				switch mount.mountListMembership {
+				case onHealthyMountList:
+					_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
+					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+					mount.mountListMembership = onAuthTokenExpiredMountList
+				case onLeasesExpiredMountList:
+					_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
+					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+					mount.mountListMembership = onAuthTokenExpiredMountList
+				case onAuthTokenExpiredMountList:
+					volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
+				default:
+					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
+				}
+			}
+
+			if !alreadyLocked {
+				globals.Unlock()
+			}
+		}
 	}
 
 	return
@@ -391,7 +435,7 @@ func swiftObjectGet(storageURL string, authToken string, objectNumber uint64) (b
 	return
 }
 
-func (volume *volumeStruct) swiftObjectGet(locked bool, objectNumber uint64) (buf []byte, authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectGet(alreadyLocked bool, objectNumber uint64) (buf []byte, authOK bool, err error) {
 	var (
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
@@ -408,7 +452,7 @@ func (volume *volumeStruct) swiftObjectGet(locked bool, objectNumber uint64) (bu
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		buf, authOK, err = volume.swiftObjectGetOnce(locked, objectURL, "")
+		buf, authOK, err = volume.swiftObjectGetOnce(alreadyLocked, objectURL, "")
 		if nil == err {
 			return
 		}
@@ -468,7 +512,7 @@ func swiftObjectGetRange(storageURL string, authToken string, objectNumber uint6
 	return
 }
 
-func (volume *volumeStruct) swiftObjectGetRange(locked bool, objectNumber uint64, objectOffset uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectGetRange(alreadyLocked bool, objectNumber uint64, objectOffset uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
 	var (
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
@@ -488,7 +532,7 @@ func (volume *volumeStruct) swiftObjectGetRange(locked bool, objectNumber uint64
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		buf, authOK, err = volume.swiftObjectGetOnce(locked, objectURL, rangeHeaderValue)
+		buf, authOK, err = volume.swiftObjectGetOnce(alreadyLocked, objectURL, rangeHeaderValue)
 		if nil == err {
 			return
 		}
@@ -548,7 +592,7 @@ func swiftObjectGetTail(storageURL string, authToken string, objectNumber uint64
 	return
 }
 
-func (volume *volumeStruct) swiftObjectGetTail(locked bool, objectNumber uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectGetTail(alreadyLocked bool, objectNumber uint64, objectLength uint64) (buf []byte, authOK bool, err error) {
 	var (
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
@@ -568,7 +612,7 @@ func (volume *volumeStruct) swiftObjectGetTail(locked bool, objectNumber uint64,
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		buf, authOK, err = volume.swiftObjectGetOnce(locked, objectURL, rangeHeaderValue)
+		buf, authOK, err = volume.swiftObjectGetOnce(alreadyLocked, objectURL, rangeHeaderValue)
 		if nil == err {
 			return
 		}
@@ -636,64 +680,86 @@ func swiftObjectPutOnce(objectURL string, authToken string, body io.ReadSeeker) 
 	return
 }
 
-func (volume *volumeStruct) swiftObjectPutOnce(locked bool, objectURL string, body io.ReadSeeker) (authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectPutOnce(alreadyLocked bool, objectURL string, body io.ReadSeeker) (authOK bool, err error) {
 	var (
-		mount            *mountStruct
-		mountListElement *list.Element
-		ok               bool
-		toRetryMountList *list.List
+		authToken            string
+		mount                *mountStruct
+		mountListElement     *list.Element
+		ok                   bool
+		usingVolumeAuthToken bool
 	)
-	if !locked {
-		logFatalf("FLIP: (&volumeStruct).swiftObjectPutOnce(locked == false,,) not yet supported")
-	}
 
-	toRetryMountList = list.New()
+	if !alreadyLocked {
+		globals.Lock()
+	}
 
 	mountListElement = volume.healthyMountList.Front()
 
-	for nil != mountListElement {
-		_ = volume.healthyMountList.Remove(mountListElement)
+	if mountListElement == nil {
+		if volume.authToken == "" {
+			if !alreadyLocked {
+				globals.Unlock()
+			}
+			authOK = false // Auth failed,
+			err = nil      //   but we still indicate the func succeeded
+			return
+		}
 
+		authToken = volume.authToken
+		usingVolumeAuthToken = true
+	} else {
 		mount, ok = mountListElement.Value.(*mountStruct)
 		if !ok {
 			logFatalf("mountListElement.Value.(*mountStruct) returned !ok")
 		}
 
-		authOK, err = swiftObjectPutOnce(objectURL, mount.authToken, body)
-		if nil == err {
-			if authOK {
-				volume.appendToHealthyMountList(toRetryMountList)
-				mount.listElement = volume.healthyMountList.PushBack(mount)
-				return
-			} else {
-				mount.authTokenExpired = true
-				mount.listElement = volume.authTokenExpiredMountList.PushBack(mount)
-			}
-		} else {
-			mount.listElement = toRetryMountList.PushBack(mount)
-		}
+		// We know that mount.mountListMembership == onHealthyMountList
 
-		mountListElement = volume.healthyMountList.Front()
+		volume.healthyMountList.MoveToBack(mount.mountListElement)
+
+		authToken = mount.authToken
+		usingVolumeAuthToken = true
 	}
 
-	if (toRetryMountList.Len() == 0) && (volume.authToken == "") {
-		authOK = false // Auth failed,
-		err = nil      //   but we will still indicate the func succeeded
-	} else {
-		volume.appendToHealthyMountList(toRetryMountList)
+	if !alreadyLocked {
+		globals.Unlock()
+	}
 
-		if volume.authToken != "" {
-			authOK, err = swiftObjectPutOnce(objectURL, volume.authToken, body)
-			if (nil == err) && !authOK {
-				logWarnf("swiftObjectPutOnce(,volume.authToken,) !authOK for volume %s...clearing volume.authToken", volume.name)
-				volume.authToken = ""
+	authOK, err = swiftObjectPutOnce(objectURL, authToken, body)
+	if err == nil {
+		if !authOK {
+			if !alreadyLocked {
+				globals.Lock()
 			}
 
-			return
-		}
+			if usingVolumeAuthToken {
+				logWarnf("swiftObjectPutOnce(,volume.authToken,) returned !authOK for volume %s...clearing volume.authToken", volume.name)
+				volume.authToken = ""
+			} else {
+				mount.authTokenExpired = true
 
-		authOK = true
-		err = fmt.Errorf("authToken list not empty - retry possible")
+				// It's possible that mount has "moved" from volume.healthyMountList
+
+				switch mount.mountListMembership {
+				case onHealthyMountList:
+					_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
+					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+					mount.mountListMembership = onAuthTokenExpiredMountList
+				case onLeasesExpiredMountList:
+					_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
+					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+					mount.mountListMembership = onAuthTokenExpiredMountList
+				case onAuthTokenExpiredMountList:
+					volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
+				default:
+					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
+				}
+			}
+
+			if !alreadyLocked {
+				globals.Unlock()
+			}
+		}
 	}
 
 	return
@@ -735,7 +801,7 @@ func swiftObjectPut(storageURL string, authToken string, objectNumber uint64, bo
 	return
 }
 
-func (volume *volumeStruct) swiftObjectPut(locked bool, objectNumber uint64, body io.ReadSeeker) (authOK bool, err error) {
+func (volume *volumeStruct) swiftObjectPut(alreadyLocked bool, objectNumber uint64, body io.ReadSeeker) (authOK bool, err error) {
 	var (
 		nextSwiftRetryDelay time.Duration
 		numSwiftRetries     uint32
@@ -752,7 +818,7 @@ func (volume *volumeStruct) swiftObjectPut(locked bool, objectNumber uint64, bod
 	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
 
 	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		authOK, err = volume.swiftObjectPutOnce(locked, objectURL, body)
+		authOK, err = volume.swiftObjectPutOnce(alreadyLocked, objectURL, body)
 		if nil == err {
 			if authOK {
 				return
@@ -773,28 +839,4 @@ func (volume *volumeStruct) swiftObjectPut(locked bool, objectNumber uint64, bod
 	}
 
 	return
-}
-
-func (volume *volumeStruct) appendToHealthyMountList(toRetryMountList *list.List) {
-	var (
-		mount            *mountStruct
-		mountListElement *list.Element
-		ok               bool
-	)
-
-	for {
-		mountListElement = toRetryMountList.Front()
-		if mountListElement == nil {
-			return
-		}
-
-		_ = toRetryMountList.Remove(mountListElement)
-
-		mount, ok = mountListElement.Value.(*mountStruct)
-		if !ok {
-			logFatalf("mountListElement.Value.(*mountStruct) returned !ok")
-		}
-
-		mount.listElement = volume.healthyMountList.PushBack(mount)
-	}
 }

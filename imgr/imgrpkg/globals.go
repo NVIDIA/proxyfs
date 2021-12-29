@@ -190,8 +190,19 @@ type inodeLeaseStruct struct {
 	interruptTimer *time.Timer // if .C != nil, timing when to issue next Interrupt... or expire a Lease
 }
 
+// on*MountList indicates which volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList the mountStruct is on
+//
+// Note that both of mountStruct.{leases|authToken}Expired may be true simultaneously.
+// In this case, mountStruct.mountListMembership should be == onAuthTokenExpiredMountList.
+
+const (
+	onHealthyMountList          = uint8(iota) // if mountStruct.mountListElement is on volumeStruct.healthyMountList
+	onLeasesExpiredMountList                  // if mountStruct.mountListElement is on volumeStruct.leasesExpiredMountList
+	onAuthTokenExpiredMountList               // if mountStruct.mountListElement is on volumeStruct.authTokenExpiredMountList
+	onNoMountList                             // if mountStruct.mountListElement is not an any of volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList
+)
+
 type mountStruct struct {
-	//                                                       reentrancy covered by volumeStruct's sync.RWMutex
 	volume                 *volumeStruct                  // volume.{R|}Lock() also protects each mountStruct
 	mountID                string                         //
 	retryRPCClientID       uint64                         //
@@ -201,7 +212,8 @@ type mountStruct struct {
 	authTokenExpired       bool                           // if true, authToken has been rejected... needing a renewMount() to update
 	authToken              string                         //
 	lastAuthTime           time.Time                      // used to periodically check TTL of authToken
-	listElement            *list.Element                  // LRU element on either volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList
+	mountListElement       *list.Element                  // LRU element on either volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList
+	mountListMembership    uint8                          // == one of on{No|healthy|leasesExpired|authTokenExpired}MountList
 	inodeOpenMap           map[uint64]uint64              // key == inodeNumber; value == open count for this mountStruct for this inodeNumber
 }
 
