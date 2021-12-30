@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/NVIDIA/proxyfs/blunder"
+	"golang.org/x/sys/unix"
 )
 
 // PerfPingServer is a struct with pointer receivers implementing RpcPerfPing*()
@@ -21,13 +21,6 @@ type PerfPingReq struct {
 // PerfPingReply is the response object for RpcPerfPing*()
 type PerfPingReply struct {
 	Message string
-}
-
-// Simple ping for performance testing the RPC layer
-func perfEncodeErrno(e *error) {
-	if *e != nil {
-		*e = fmt.Errorf("errno: %d", blunder.Errno(*e))
-	}
 }
 
 // RpcTestPing simply does a len on the message path and returns the result
@@ -53,8 +46,7 @@ func (s *PerfPingServer) RpcPerfPingLarge(in *PerfPingReq, reply *PerfPingReply)
 
 // RpcPerfPingWithError returns an error
 func (s *PerfPingServer) RpcPerfPingWithError(in *PerfPingReq, reply *PerfPingReply) (err error) {
-	err = blunder.AddError(err, blunder.NotFoundError)
-	perfEncodeErrno(&err)
+	err = fmt.Errorf("errno: %v", unix.EIO)
 	reply.Message = fmt.Sprintf("pong %d bytes", len(in.Message))
 	return err
 }

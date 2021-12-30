@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/NVIDIA/proxyfs/blunder"
+	"golang.org/x/sys/unix"
 )
 
 // TestPingServer is a struct with pointer receivers implementing RpcTestPing*()
@@ -21,13 +21,6 @@ type TestPingReq struct {
 // TestPingReply is the response object for RpcTestPing*()
 type TestPingReply struct {
 	Message string
-}
-
-// Simple ping for testing the RPC layer
-func testEncodeErrno(e *error) {
-	if *e != nil {
-		*e = fmt.Errorf("errno: %d", blunder.Errno(*e))
-	}
 }
 
 // RpcTestPing simply does a len on the message path and returns the result
@@ -53,8 +46,7 @@ func (s *TestPingServer) RpcTestPingLarge(in *TestPingReq, reply *TestPingReply)
 
 // RpcTestPingWithError returns an error
 func (s *TestPingServer) RpcTestPingWithError(in *TestPingReq, reply *TestPingReply) (err error) {
-	err = blunder.AddError(err, blunder.NotFoundError)
-	testEncodeErrno(&err)
+	err = fmt.Errorf("errno: %v", unix.EIO)
 	reply.Message = fmt.Sprintf("pong %d bytes", len(in.Message))
 	return err
 }
@@ -68,8 +60,7 @@ func (s *TestPingServer) RpcTestPingWithClientID(clientID uint64, in *TestPingRe
 // RpcTestPingWithInvalidClientID is not a valid RPC
 // Note: Currently unused
 func (s *TestPingServer) RpcTestPingWithInvalidClientID(clientID int, in *TestPingReq, reply *TestPingReply) (err error) {
-	err = blunder.AddError(err, blunder.NotFoundError)
-	testEncodeErrno(&err)
+	err = fmt.Errorf("errno: %v", unix.EIO)
 	reply.Message = fmt.Sprintf("client ID: %v pong %d bytes", clientID, len(in.Message))
 	return err
 }
