@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// Copyright (c) 2015-2022, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
 package imgrpkg
@@ -79,7 +79,7 @@ func swiftObjectDeleteOnce(objectURL string, authToken string) (authOK bool, err
 
 	httpResponse, err = globals.httpClient.Do(httpRequest)
 	if nil != err {
-		err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v", objectURL, err)
+		err = fmt.Errorf("globals.httpClient.Do(DELETE %s) failed: %v", objectURL, err)
 		return
 	}
 
@@ -286,7 +286,7 @@ func swiftObjectGetOnce(objectURL string, authToken string, rangeHeaderValue str
 
 	httpResponse, err = globals.httpClient.Do(httpRequest)
 	if nil != err {
-		err = fmt.Errorf("globals.httpClient.Do(HEAD %s) failed: %v", objectURL, err)
+		err = fmt.Errorf("globals.httpClient.Do(GET %s) failed: %v", objectURL, err)
 		return
 	}
 

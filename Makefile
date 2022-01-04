@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# Copyright (c) 2015-2022, NVIDIA CORPORATION.
 # SPDX-License-Identifier: Apache-2.0
 
 gopregeneratedirs = \
@@ -14,6 +14,7 @@ gopkgdirs = \
 	utils \
 	version \
 	icert/icertpkg \
+	ickpt/ickptpkg \
 	iclient/iclientpkg \
 	imgr/imgrpkg \
 	iswift/iswiftpkg
@@ -23,6 +24,7 @@ goplugindirs = \
 
 gobindirs = \
 	icert \
+	ickpt \
 	iclient \
 	idestroy \
 	imgr \
