@@ -24,14 +24,17 @@
 //
 // Note that due to reliance on the X-Storage-Url HTTP Header to specify which
 // particular ilayout.CheckPointV*Struct is being referenced, the Path portion
-// of an HTTP Request is not used (and should simply be "/"). As such, this API
-// makes no attempt to appear RESTful. That said, some common HTTP Methods are used:
+// of an HTTP Request is not used to describe the ProxyFS Volume referenced.
+// Instead, the Path portion will be used as a TransactionID for the two-phase
+// operations of deleting and setting/updating a ProxyFS Volume's CheckPoint.
+// The Path should simply be empty for all other operations.
 //
 //  DELETE /
 //
 // Following a successful GET of the X-Storage-Url specifying the X-Auth-Token
 // received, the local ilayout.CheckPointV*Struct value retained for that X-Storage-Url
-// will be marked for deletion committed via a corresponding POST.
+// will be marked for deletion committed via a corresponding POST. The linkage between
+// DELETE and POST requests is that they must share a common Path value.
 //
 //  GET /
 //
@@ -47,13 +50,16 @@
 //  POST /
 //
 // Following a successful GET of the X-Storage-Url specifying the X-Auth-Token
-// received, the prior as-yet uncommitted DELETE or PUT will be committed.
+// received, the prior as-yet uncommitted DELETE or PUT will be committed. In
+// order to align this POST with the uncommitted DELETE or PUT, their Path values
+// must match.
 //
 //  PUT /
 //
 // Following a successful GET of the X-Storage-Url specifying the X-Auth-Token
 // received, the local ilayout.CheckPointV*Struct value for that X-Storage-Url
-// will be set or updated according to the PUT Body.
+// will be set or updated according to the PUT Body. The linkage between PUT
+// and POST requests is that they must share a common Path value.
 //
 // To configure an ickptpkg instance, Start() is called passing, as the sole
 // argument, a package conf ConfMap. Here is a sample .conf file:
@@ -65,11 +71,9 @@
 //  KeyFilePath:                          #   - or -
 //  CACertFilePath:                       #  TLS: if all of {Cert|Key|CACert}FilePath are present
 //  DataBasePath:            /tmp/ickptDB # Implicitly created if if non-existent
-//  SwiftRetryDelay:         100ms
-//  SwiftRetryExpBackoff:    2
-//  SwiftRetryLimit:         4
 //  SwiftTimeout:            10m
 //  SwiftConnectionPoolSize: 128
+//  TransactionTimeout:      10s
 //
 package ickptpkg
 

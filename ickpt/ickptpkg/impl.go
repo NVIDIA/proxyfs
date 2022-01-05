@@ -32,21 +32,29 @@ type configStruct struct {
 	KeyFilePath             string
 	CACertFilePath          string
 	DataBasePath            string
-	SwiftRetryDelay         time.Duration
-	SwiftRetryExpBackoff    float64
-	SwiftRetryLimit         uint32
 	SwiftTimeout            time.Duration
 	SwiftConnectionPoolSize uint32
+	TransactionTimeout      time.Duration
+}
+
+type canonicalStorageUrlTransactionStruct struct {
+	canonicalStorageUrl string
+	path                string
+	isPut               bool
+	startTime           time.Time
+	listElement         *list.Element
 }
 
 type globalsStruct struct {
 	sync.Mutex
 	sync.WaitGroup
-	config                       configStruct
-	servingTLS                   bool
-	httpClient                   *http.Client // used both in startService() and to talk to Swift
-	httpServer                   *http.Server
-	canonicalStorageUrlWGListMap map[string]*list.List // key == locked canonicalStorageUrl; value == list of sync.WaitGroup's
+	config                             configStruct
+	servingTLS                         bool
+	httpClient                         *http.Client //          used both in startService() and to talk to Swift
+	httpServer                         *http.Server
+	canonicalStorageUrlWGListMap       map[string]*list.List                            // key == locked canonicalStorageUrl; value == list of sync.WaitGroup's
+	canonicalStorageUrlTransactionMap  map[string]*canonicalStorageUrlTransactionStruct // key == canonicalStorageUrl
+	canonicalStorageUrlTransactionList *list.List                                       // *canonicalStorageUrlTranactionStruct LRU
 }
 
 var globals globalsStruct
@@ -168,23 +176,16 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.config.SwiftRetryDelay, err = confMap.FetchOptionValueDuration("ICKPT", "SwiftRetryDelay")
-	if err != nil {
-		return
-	}
-	globals.config.SwiftRetryExpBackoff, err = confMap.FetchOptionValueFloat64("ICKPT", "SwiftRetryExpBackoff")
-	if err != nil {
-		return
-	}
-	globals.config.SwiftRetryLimit, err = confMap.FetchOptionValueUint32("ICKPT", "SwiftRetryLimit")
-	if err != nil {
-		return
-	}
 	globals.config.SwiftTimeout, err = confMap.FetchOptionValueDuration("ICKPT", "SwiftTimeout")
 	if err != nil {
 		return
 	}
 	globals.config.SwiftConnectionPoolSize, err = confMap.FetchOptionValueUint32("ICKPT", "SwiftConnectionPoolSize")
+	if err != nil {
+		return
+	}
+
+	globals.config.TransactionTimeout, err = confMap.FetchOptionValueDuration("ICKPT", "TransactionTimeout")
 	if err != nil {
 		return
 	}
@@ -223,6 +224,9 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 
 	globals.canonicalStorageUrlWGListMap = make(map[string]*list.List)
 
+	globals.canonicalStorageUrlTransactionMap = make(map[string]*canonicalStorageUrlTransactionStruct)
+	globals.canonicalStorageUrlTransactionList = list.New()
+
 	err = nil
 	return
 }
@@ -233,15 +237,16 @@ func uninitializeGlobals() {
 	globals.config.CertFilePath = ""
 	globals.config.KeyFilePath = ""
 	globals.config.DataBasePath = ""
-	globals.config.SwiftRetryDelay = time.Duration(0)
-	globals.config.SwiftRetryExpBackoff = 0.0
-	globals.config.SwiftRetryLimit = 0
 	globals.config.SwiftTimeout = time.Duration(0)
 	globals.config.SwiftConnectionPoolSize = 0
+	globals.config.TransactionTimeout = time.Duration(0)
 
 	globals.httpClient = nil
 
 	globals.canonicalStorageUrlWGListMap = nil
+
+	globals.canonicalStorageUrlTransactionMap = nil
+	globals.canonicalStorageUrlTransactionList = nil
 }
 
 func startService() (err error) {
@@ -363,7 +368,41 @@ func (dummy *globalsStruct) ServeHTTP(responseWriter http.ResponseWriter, reques
 	}
 }
 
-func canonicalStorageUrl(request *http.Request) (key string) {
+func swallowBody(request *http.Request) {
+	var (
+		err error
+	)
+
+	_, err = ioutil.ReadAll(request.Body)
+	if err != nil {
+		panic(fmt.Errorf("ioutil.ReadAll(request.Body) failed: %v", err))
+	}
+
+	err = request.Body.Close()
+	if err != nil {
+		panic(fmt.Errorf("request.Body.Close() failed: %v", err))
+	}
+}
+
+func readBody(request *http.Request) (body []byte) {
+	var (
+		err error
+	)
+
+	body, err = ioutil.ReadAll(request.Body)
+	if err != nil {
+		panic(fmt.Errorf("ioutil.ReadAll(request.Body) failed: %v", err))
+	}
+
+	err = request.Body.Close()
+	if err != nil {
+		panic(fmt.Errorf("request.Body.Close() failed: %v", err))
+	}
+
+	return
+}
+
+func fetchCanonicalStorageUrl(request *http.Request) (key string) {
 	var (
 		xStorageUrl       string
 		xStorageUrlScheme string
@@ -448,7 +487,112 @@ func unlockCanonicalStorageUrl(canonicalStorageUrl string) {
 	globals.Unlock()
 }
 
-func swiftObjectGetOnce(objectURL string, authToken string) (buf []byte, err error) {
+func pruneCanonicalStorageUrlTransactionListWhileLocked() {
+	var (
+		canonicalStorageUrlTransaction *canonicalStorageUrlTransactionStruct
+		err                            error
+		listElement                    *list.Element
+		ok                             bool
+	)
+
+	for {
+		listElement = globals.canonicalStorageUrlTransactionList.Front()
+		if globals.canonicalStorageUrlTransactionList.Front() == nil {
+			break
+		}
+
+		canonicalStorageUrlTransaction, ok = listElement.Value.(*canonicalStorageUrlTransactionStruct)
+		if !ok {
+			panic(fmt.Errorf("listElement.Value.(*canonicalStorageUrlTransactionStruct) returned !ok"))
+		}
+
+		if time.Since(canonicalStorageUrlTransaction.startTime) < globals.config.TransactionTimeout {
+			break
+		}
+
+		_, ok = globals.canonicalStorageUrlWGListMap[canonicalStorageUrlTransaction.canonicalStorageUrl]
+		if ok {
+			// In case it isn't "us" holding the canonicalStorageUrl lock, let's just exit
+
+			break
+		}
+
+		if canonicalStorageUrlTransaction.isPut {
+			err = os.Remove(globals.config.DataBasePath + "/" + canonicalStorageUrlTransaction.canonicalStorageUrl + "_next")
+			if err != nil {
+				panic(fmt.Errorf("os.Remove(globals.config.DataBasePath + \"/\" + canonicalStorageUrl + \"_next\") failed: %v", err))
+			}
+		}
+
+		delete(globals.canonicalStorageUrlTransactionMap, canonicalStorageUrlTransaction.canonicalStorageUrl)
+		globals.canonicalStorageUrlTransactionList.Remove(listElement)
+	}
+}
+
+func beginCanonicalStorageUrlTransaction(canonicalStorageUrl string, path string, isPut bool) {
+	var (
+		canonicalStorageUrlTransaction *canonicalStorageUrlTransactionStruct
+		err                            error
+		ok                             bool
+	)
+
+	globals.Lock()
+
+	pruneCanonicalStorageUrlTransactionListWhileLocked()
+
+	canonicalStorageUrlTransaction, ok = globals.canonicalStorageUrlTransactionMap[canonicalStorageUrl]
+	if ok {
+		if canonicalStorageUrlTransaction.isPut {
+			err = os.Remove(globals.config.DataBasePath + "/" + canonicalStorageUrl + "_next")
+			if err != nil {
+				panic(fmt.Errorf("os.Remove(globals.config.DataBasePath + \"/\" + canonicalStorageUrl + \"_next\") failed: %v", err))
+			}
+		}
+
+		canonicalStorageUrlTransaction.path = path
+		canonicalStorageUrlTransaction.isPut = isPut
+		canonicalStorageUrlTransaction.startTime = time.Now()
+		globals.canonicalStorageUrlTransactionList.MoveToBack(canonicalStorageUrlTransaction.listElement)
+	} else {
+		canonicalStorageUrlTransaction = &canonicalStorageUrlTransactionStruct{
+			canonicalStorageUrl: canonicalStorageUrl,
+			path:                path,
+			isPut:               isPut,
+			startTime:           time.Now(),
+		}
+
+		globals.canonicalStorageUrlTransactionMap[canonicalStorageUrl] = canonicalStorageUrlTransaction
+		canonicalStorageUrlTransaction.listElement = globals.canonicalStorageUrlTransactionList.PushBack(canonicalStorageUrlTransaction)
+	}
+
+	globals.Unlock()
+}
+
+func fetchCanonicalStorageUrlTransaction(canonicalStorageUrl string) (canonicalStorageUrlTransaction *canonicalStorageUrlTransactionStruct, ok bool) {
+	globals.Lock()
+
+	canonicalStorageUrlTransaction, ok = globals.canonicalStorageUrlTransactionMap[canonicalStorageUrl]
+	if !ok {
+		panic(fmt.Errorf("globals.canonicalStorageUrlTransactionMap[canonicalStorageUrl] returned !ok"))
+	}
+
+	globals.Unlock()
+
+	return
+}
+
+func (canonicalStorageUrlTransaction *canonicalStorageUrlTransactionStruct) end() {
+	globals.Lock()
+
+	delete(globals.canonicalStorageUrlTransactionMap, canonicalStorageUrlTransaction.canonicalStorageUrl)
+	_ = globals.canonicalStorageUrlTransactionList.Remove(canonicalStorageUrlTransaction.listElement)
+
+	pruneCanonicalStorageUrlTransactionListWhileLocked()
+
+	globals.Unlock()
+}
+
+func swiftObjectGet(objectURL string, authToken string) (buf []byte, httpStatusCode int, err error) {
 	var (
 		httpRequest  *http.Request
 		httpResponse *http.Response
@@ -480,60 +624,198 @@ func swiftObjectGetOnce(objectURL string, authToken string) (buf []byte, err err
 		return
 	}
 
-	if (httpResponse.StatusCode >= 200) && (httpResponse.StatusCode <= 299) {
-		err = nil
-	} else {
-		err = fmt.Errorf("httpResponse.Status: %s", httpResponse.Status)
-	}
+	httpStatusCode = httpResponse.StatusCode
+	err = nil
 
-	return
-}
-
-func swiftObjectGet(objectURL string, authToken string) (buf []byte, err error) {
-	var (
-		nextSwiftRetryDelay time.Duration
-		numSwiftRetries     uint32
-	)
-
-	nextSwiftRetryDelay = globals.config.SwiftRetryDelay
-
-	for numSwiftRetries = 0; numSwiftRetries <= globals.config.SwiftRetryLimit; numSwiftRetries++ {
-		buf, err = swiftObjectGetOnce(objectURL, authToken)
-		if err == nil {
-			return
-		}
-
-		time.Sleep(nextSwiftRetryDelay)
-
-		nextSwiftRetryDelay = time.Duration(float64(nextSwiftRetryDelay) * globals.config.SwiftRetryExpBackoff)
-	}
-
-	err = fmt.Errorf("globals.config.SwiftRetryLimit exceeded")
 	return
 }
 
 func doDELETE(responseWriter http.ResponseWriter, request *http.Request) {
-	// TODO
+	var (
+		canonicalStorageUrl string
+		err                 error
+		httpStatusCode      int
+	)
+
+	swallowBody(request)
+
+	canonicalStorageUrl = fetchCanonicalStorageUrl(request)
+	if canonicalStorageUrl == "" {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	lockCanonicalStorageUrl(canonicalStorageUrl)
+
+	_, httpStatusCode, err = swiftObjectGet(request.Header.Get("X-Storage-Url"), request.Header.Get("X-Auth-Token"))
+	if (err != nil) || (httpStatusCode < 200) || (httpStatusCode > 299) {
+		unlockCanonicalStorageUrl(canonicalStorageUrl)
+		if err != nil {
+			httpStatusCode = http.StatusInternalServerError
+		}
+		responseWriter.WriteHeader(httpStatusCode)
+		return
+	}
+
+	beginCanonicalStorageUrlTransaction(canonicalStorageUrl, request.URL.Path, false)
+
+	_ = os.Remove(globals.config.DataBasePath + "/" + canonicalStorageUrl + "_next")
+
+	unlockCanonicalStorageUrl(canonicalStorageUrl)
+
+	responseWriter.WriteHeader(http.StatusNoContent)
 }
 
 func doGET(responseWriter http.ResponseWriter, request *http.Request) {
-	// TODO
-	canonicalStorageUrl := canonicalStorageUrl(request)
-	fmt.Printf("UNDO: canonicalStorageUrl: %s\n", canonicalStorageUrl)
-	if canonicalStorageUrl != "" {
-		lockCanonicalStorageUrl(canonicalStorageUrl)
+	var (
+		canonicalStorageUrl string
+		err                 error
+		fileBody            []byte
+		httpStatusCode      int
+		objectBody          []byte
+	)
+
+	swallowBody(request)
+
+	canonicalStorageUrl = fetchCanonicalStorageUrl(request)
+	if canonicalStorageUrl == "" {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	lockCanonicalStorageUrl(canonicalStorageUrl)
+
+	objectBody, httpStatusCode, err = swiftObjectGet(request.Header.Get("X-Storage-Url"), request.Header.Get("X-Auth-Token"))
+	if (err != nil) || (httpStatusCode < 200) || (httpStatusCode > 299) {
 		unlockCanonicalStorageUrl(canonicalStorageUrl)
+		if err != nil {
+			httpStatusCode = http.StatusInternalServerError
+		}
+		responseWriter.WriteHeader(httpStatusCode)
+		return
+	}
+
+	fileBody, err = os.ReadFile(globals.config.DataBasePath + "/" + canonicalStorageUrl)
+
+	unlockCanonicalStorageUrl(canonicalStorageUrl)
+
+	responseWriter.WriteHeader(http.StatusOK)
+
+	if err == nil {
+		_, err = responseWriter.Write(fileBody)
+		if err != nil {
+			panic(fmt.Errorf("responseWriter.Write(fileBody) failed: %v", err))
+		}
+	} else {
+		_, err = responseWriter.Write(objectBody)
+		if err != nil {
+			panic(fmt.Errorf("responseWriter.Write(objectBody) failed: %v", err))
+		}
 	}
 }
 
 func doHEAD(responseWriter http.ResponseWriter, request *http.Request) {
+	swallowBody(request)
+
 	responseWriter.WriteHeader(http.StatusNoContent)
 }
 
 func doPOST(responseWriter http.ResponseWriter, request *http.Request) {
-	// TODO
+	var (
+		canonicalStorageUrl            string
+		canonicalStorageUrlTransaction *canonicalStorageUrlTransactionStruct
+		err                            error
+		httpStatusCode                 int
+		ok                             bool
+	)
+
+	swallowBody(request)
+
+	canonicalStorageUrl = fetchCanonicalStorageUrl(request)
+	if canonicalStorageUrl == "" {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	lockCanonicalStorageUrl(canonicalStorageUrl)
+
+	_, httpStatusCode, err = swiftObjectGet(request.Header.Get("X-Storage-Url"), request.Header.Get("X-Auth-Token"))
+	if (err != nil) || (httpStatusCode < 200) || (httpStatusCode > 299) {
+		unlockCanonicalStorageUrl(canonicalStorageUrl)
+		if err != nil {
+			httpStatusCode = http.StatusInternalServerError
+		}
+		responseWriter.WriteHeader(httpStatusCode)
+		return
+	}
+
+	canonicalStorageUrlTransaction, ok = fetchCanonicalStorageUrlTransaction(canonicalStorageUrl)
+	if !ok {
+		unlockCanonicalStorageUrl(canonicalStorageUrl)
+		responseWriter.WriteHeader(http.StatusGone)
+		return
+	}
+	if canonicalStorageUrlTransaction.path != request.URL.Path {
+		unlockCanonicalStorageUrl(canonicalStorageUrl)
+		responseWriter.WriteHeader(http.StatusGone)
+		return
+	}
+
+	if canonicalStorageUrlTransaction.isPut {
+		err = os.Rename(globals.config.DataBasePath+"/"+canonicalStorageUrl+"_next", globals.config.DataBasePath+"/"+canonicalStorageUrl)
+		if err != nil {
+			panic(fmt.Errorf("os.Rename(globals.config.DataBasePath+\"/\"+canonicalStorageUrl+\"_next\", globals.config.DataBasePath+\"/\"+canonicalStorageUrl) failed: %v", err))
+		}
+	} else {
+		err = os.Remove(globals.config.DataBasePath + "/" + canonicalStorageUrl)
+		if err != nil {
+			panic(fmt.Errorf("os.Remove(globals.config.DataBasePath+\"/\"+canonicalStorageUrl) failed: %v", err))
+		}
+	}
+
+	canonicalStorageUrlTransaction.end()
+
+	unlockCanonicalStorageUrl(canonicalStorageUrl)
+
+	responseWriter.WriteHeader(http.StatusOK)
 }
 
 func doPUT(responseWriter http.ResponseWriter, request *http.Request) {
-	// TODO
+	var (
+		body                []byte
+		canonicalStorageUrl string
+		err                 error
+		httpStatusCode      int
+	)
+
+	body = readBody(request)
+
+	canonicalStorageUrl = fetchCanonicalStorageUrl(request)
+	if canonicalStorageUrl == "" {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	lockCanonicalStorageUrl(canonicalStorageUrl)
+
+	_, httpStatusCode, err = swiftObjectGet(request.Header.Get("X-Storage-Url"), request.Header.Get("X-Auth-Token"))
+	if (err != nil) || (httpStatusCode < 200) || (httpStatusCode > 299) {
+		unlockCanonicalStorageUrl(canonicalStorageUrl)
+		if err != nil {
+			httpStatusCode = http.StatusInternalServerError
+		}
+		responseWriter.WriteHeader(httpStatusCode)
+		return
+	}
+
+	beginCanonicalStorageUrlTransaction(canonicalStorageUrl, request.URL.Path, true)
+
+	err = os.WriteFile(globals.config.DataBasePath+"/"+canonicalStorageUrl+"_next", body, 0666)
+	if err != nil {
+		panic(fmt.Errorf("os.WriteFile(globals.config.DataBasePath + \"/\" + canonicalStorageUrl + \"_next\", body, 0666) failed: %v", err))
+	}
+
+	unlockCanonicalStorageUrl(canonicalStorageUrl)
+
+	responseWriter.WriteHeader(http.StatusNoContent)
 }
