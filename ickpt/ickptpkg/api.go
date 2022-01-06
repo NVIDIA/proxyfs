@@ -65,7 +65,7 @@
 // argument, a package conf ConfMap. Here is a sample .conf file:
 //
 //  [ICKPT]
-//  IPAddr:                  127.0.0.1
+//  IPAddr:                  ickpt
 //  Port:                    33123        # TCP or TLS as determined by:
 //  CertFilePath:                         #  TCP: if all of {Cert|Key|CACert}FilePath are missing or empty
 //  KeyFilePath:                          #   - or -

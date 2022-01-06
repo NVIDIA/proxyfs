@@ -1,14 +1,18 @@
+# Copyright (c) 2015-2022, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 # To build the `development` service
 #
-#   docker compose build
+#   docker compose build [--build-arg GolangVersion=<X.YY.Z>] [--build-arg MakeTarget={|all|ci|minimal}]
 #
 #   Notes:
+#     --build-arg Key=Value settings passed on to Dockerfile
 #     Images built will be named "proxyfs_<service>:latest"
 #     Use docker tag SOURCE_IMAGE[:TAG] TARGET_IMAGE[:TAG] to create an alias
 #
 # To run the resultant application:
 #
-#   docker compose up [-d|--detach] {dev|imgr|iclient}
+#   docker compose up [-d|--detach] {dev|ickpt|imgr|iclient}
 #
 #   Notes:
 #     -d|--detach:
@@ -20,10 +24,11 @@
 #          a) stop application with ^C
 #          b) containers are left in "exited" state upon application down
 #     dev:     tells docker compose to only bring up dev     service (w/ dependencies)
+#     ickpt:   tells docker compose to only bring up ickpt   service (w/ dependencies)
 #     imgr:    tells docker compose to only bring up imgr    service (w/ dependencies)
 #     iclient: tells docker compose to only bring up iclient service (w/ dependencies)
-#     Precisely one of {dev|imgr|iclient} must be specied... default (all) will conflict
-#     If no service is specified, services dev and imgr published ports will collide
+#     Precisely one of {dev|ickpt|imgr|iclient} must be specied...
+#       If no service is specified, dev published ports will collide with other services
 #     Containers launched have been named the same as their corresponding service name
 #
 # To stop the resultant application:
@@ -43,32 +48,24 @@ services:
         published: 8080
         protocol: tcp
         mode: host
-  etcd:
-    image: bitnami/etcd:3.5.0
-    container_name: proxyfs_etcd
-    expose:
-      - 2379                                  # etcdctl --endpoints=etcd:2379
-    ports:
-      - target: 2379
-        published: 2379                       # etcdctl [--endpoints=localhost:2379]
-        protocol: tcp
-        mode: host
-    environment:
-      - ALLOW_NONE_AUTHENTICATION=yes
   dev:
     build:
       context: .
       target: dev
     container_name: proxyfs_dev
     depends_on:
-      - etcd
       - swift
     privileged: true
     expose:
+      - 33123                                 # ICKPT.Port
       - 32356                                 # IMGR.RetryRPCPort
       - 15346                                 # IMGR.HTTPServerPort
       - 15347                                 # ICLIENT.HTTPServerPort
     ports:
+      - target: 33123
+        published: 33123
+        protocol: tcp
+        mode: host
       - target: 32356
         published: 32356
         protocol: tcp
@@ -86,14 +83,30 @@ services:
         source: .
         target: /src
     command: ["sleep", "infinity"]
+  ickpt:
+    build:
+      context: .
+      target: deploy
+    container_name: proxyfs_ickpt
+    depends_on:
+      - swift
+    privileged: true
+    expose:
+      - 33123                                 # ICKPT.Port
+    ports:
+      - target: 33123
+        published: 33123
+        protocol: tcp
+        mode: host
+    command: ["./ickpt", "ickpt.conf"]
   imgr:
     build:
       context: .
-      target: imgr
+      target: deploy
     container_name: proxyfs_imgr
     depends_on:
       - swift
-      - etcd
+      - ickpt
     expose:
       - 32356                                 # IMGR.RetryRPCPort
       - 15346                                 # IMGR.HTTPServerPort
@@ -110,7 +123,7 @@ services:
   iclient:
     build:
       context: .
-      target: iclient
+      target: deploy
     container_name: proxyfs_iclient
     depends_on:
       - swift

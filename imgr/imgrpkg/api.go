@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// Copyright (c) 2015-2022, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
 // Package imgrpkg implements the server side Inode Management for ProxyFS volumes.
@@ -15,8 +15,8 @@
 // argument, a package conf ConfMap. Here is a sample .conf file:
 //
 //  [IMGR]
-//  PublicIPAddr:                         127.0.0.1
-//  PrivateIPAddr:                        127.0.0.1
+//  PublicIPAddr:                         imgr
+//  PrivateIPAddr:                        imgr
 //  RetryRPCPort:                         32356
 //  HTTPServerPort:                       15346
 //

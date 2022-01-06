@@ -1,7 +1,10 @@
+# Copyright (c) 2015-2022, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 # To build this image:
 #
 #   docker build                                      \
-#          --target {base|dev|build|imgr|iclient}     \
+#          --target {base|dev|build|deploy}           \
 #          [--build-arg GolangVersion=<X.YY.Z>]       \
 #          [--build-arg MakeTarget={|all|ci|minimal}] \
 #          [-t <repository>[:<tag>]]                  .
@@ -17,12 +20,12 @@
 #       1) clones the context dir at /clone
 #       2) performs a make clean to clear out non-source-controlled artifacts
 #       3) performs a make $MakeTarget
-#     --target imgr:
-#       1) builds an image containing imgr (assuming --target build built imgr)
-#       2) creates TLS cert/key files (both CA and node)
-#     --target iclient:
-#       1) builds an image containing iclient (assuming --target build built iclient)
-#       2) copies CA cert from imgr           (assuming --target build built icert)
+#     --target deploy:
+#       1) provides a minimal image containing ickpt, imgr, and iclient
+#       2) also includes the icert tool useful for the following steps
+#       3) creates TLS cert/key files for RootCA
+#       4) creates TLS cert/key files for ickpt
+#       5) creates TLS cert/key files for imgr
 #     --build-arg GolangVersion:
 #       1) identifies Golang version
 #       2) default specified in ARG GolangVersion line in --target base
@@ -64,7 +67,8 @@ RUN apk add --no-cache libc6-compat
 
 FROM base as dev
 ARG GolangVersion=1.17.5
-RUN apk add --no-cache bind-tools    \
+RUN apk add --no-cache               \
+                       bind-tools    \
                        curl          \
                        fuse          \
                        gcc           \
@@ -100,18 +104,19 @@ WORKDIR /clone
 RUN make clean
 RUN make $MakeTarget
 
-FROM base as imgr
-COPY --from=build /clone/icert/icert ./
-RUN ./icert -ca -ed25519 -caCert caCert.pem -caKey caKey.pem -commonName RootCA -ttl 3560
-RUN ./icert -ed25519 -caCert caCert.pem -caKey caKey.pem -commonName imgr -ttl 3560 -cert cert.pem -key key.pem -dns imgr
-COPY --from=build /clone/imgr/imgr      ./
-COPY --from=build /clone/imgr/imgr.conf ./
-
-FROM imgr as iclient
-RUN rm icert caKey.pem cert.pem key.pem imgr imgr.conf
-RUN apk add --no-cache fuse
+FROM base as deploy
+RUN apk add --no-cache      \
+                       curl \
+                       fuse
+COPY --from=build /clone/iauth/iauth-swift/iauth-swift.so ./
+COPY --from=build /clone/ickpt/ickpt                      ./
+COPY --from=build /clone/ickpt/ickpt.conf                 ./
+COPY --from=build /clone/icert/icert                      ./
 COPY --from=build /clone/iclient/iclient                  ./
 COPY --from=build /clone/iclient/iclient.conf             ./
 COPY --from=build /clone/iclient/iclient.sh               ./
-COPY --from=build /clone/iauth/iauth-swift/iauth-swift.so ./
-RUN apk add --no-cache curl
+COPY --from=build /clone/imgr/imgr                        ./
+COPY --from=build /clone/imgr/imgr.conf                   ./
+RUN ./icert -ca -ed25519 -caCert ca_cert.pem -caKey ca_key.pem -commonName RootCA -ttl 3560
+RUN ./icert     -ed25519 -caCert ca_cert.pem -caKey ca_key.pem -commonName ickpt  -ttl 3560 -cert ickpt_cert.pem -key ickpt_key.pem -dns ickpt
+RUN ./icert     -ed25519 -caCert ca_cert.pem -caKey ca_key.pem -commonName imgr   -ttl 3560 -cert imgr_cert.pem  -key imgr_key.pem  -dns imgr
