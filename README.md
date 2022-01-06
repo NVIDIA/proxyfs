@@ -37,6 +37,7 @@ or the [ProxyFS Slack group](https://proxyfs.slack.com), which you can join thro
 * [Host shell] docker compose build
 * [Host shell] docker compose up -d dev
 * [dev  shell] make
+* [dev  shell] make test
 
 ## License
 

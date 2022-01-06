@@ -31,7 +31,7 @@
 #       2) default specified in ARG GolangVersion line in --target base
 #     --build-arg MakeTarget:
 #       1) identifies Makefile target(s) to build (following make clean)
-#       2) defaults to blank (equivalent to "all")
+#       2) defaults to blank (equivalent to "minimal")
 #       3) only used in --target build
 #     -t:
 #       1) provides a name REPOSITORY:TAG for the built image

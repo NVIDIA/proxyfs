@@ -36,13 +36,13 @@ godirpathsforci = $(addprefix github.com/NVIDIA/proxyfs/,$(godirsforci))
 generatedfiles := \
 	coverage.coverprofile
 
-all: version fmt pre-generate generate build test
+minimal: pre-generate generate build
 
-ci: version fmt pre-generate generate build test cover
+all: fmt minimal test
 
-minimal: version pre-generate generate build
+ci: all cover
 
-.PHONY: all bench build ci clean cover fmt generate minimal pre-generate test version
+.PHONY: all bench build ci clean cover fmt generate minimal pre-generate test
 
 bench:
 	@set -e; \
@@ -137,6 +137,3 @@ test:
 	for godir in $(gobindirs); do \
 		$(MAKE) --no-print-directory -C $$godir test; \
 	done; \
-
-version:
-	@go version
