@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// Copyright (c) 2015-2022, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
 package imgrpkg
@@ -26,6 +26,10 @@ type configStruct struct {
 	PublicIPAddr   string
 	RetryRPCPort   uint16 // To be served only on PublicIPAddr  via TLS
 	HTTPServerPort uint16 // To be served only on PrivateIPAddr via TCP
+
+	CheckPointIPAddrs        []string
+	CheckPointPort           uint16
+	CheckPointCACertFilePath string
 
 	RetryRPCTTLCompleted    time.Duration
 	RetryRPCAckTrim         time.Duration
@@ -307,6 +311,56 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 
+	err = confMap.VerifyOptionIsMissing("IMGR", "CheckPointIPAddrs")
+	if nil == err {
+		globals.config.CheckPointIPAddrs = nil
+	} else {
+		err = confMap.VerifyOptionValueIsEmpty("IMGR", "CheckPointIPAddrs")
+		if nil == err {
+			globals.config.CheckPointIPAddrs = nil
+		} else {
+			globals.config.CheckPointIPAddrs, err = confMap.FetchOptionValueStringSlice("IMGR", "CheckPointIPAddrs")
+			if nil != err {
+				logFatal(err)
+			}
+		}
+	}
+	if nil == globals.config.CheckPointIPAddrs {
+		err = confMap.VerifyOptionIsMissing("IMGR", "CheckPointPort")
+		if nil == err {
+			globals.config.CheckPointPort = 0
+		} else {
+			err = confMap.VerifyOptionValueIsEmpty("IMGR", "CheckPointPort")
+			if nil == err {
+				globals.config.CheckPointPort = 0
+			} else {
+				globals.config.CheckPointPort, err = confMap.FetchOptionValueUint16("IMGR", "CheckPointPort")
+				if nil != err {
+					logFatal(err)
+				}
+			}
+		}
+	} else {
+		globals.config.CheckPointPort, err = confMap.FetchOptionValueUint16("IMGR", "CheckPointPort")
+		if nil != err {
+			logFatal(err)
+		}
+	}
+	err = confMap.VerifyOptionIsMissing("IMGR", "CheckPointCACertFilePath")
+	if nil == err {
+		globals.config.CheckPointCACertFilePath = ""
+	} else {
+		err = confMap.VerifyOptionValueIsEmpty("IMGR", "CheckPointCACertFilePath")
+		if nil == err {
+			globals.config.CheckPointCACertFilePath = ""
+		} else {
+			globals.config.CheckPointCACertFilePath, err = confMap.FetchOptionValueString("IMGR", "CheckPointCACertFilePath")
+			if nil != err {
+				logFatal(err)
+			}
+		}
+	}
+
 	globals.config.RetryRPCTTLCompleted, err = confMap.FetchOptionValueDuration("IMGR", "RetryRPCTTLCompleted")
 	if nil != err {
 		logFatal(err)
@@ -486,6 +540,10 @@ func uninitializeGlobals() (err error) {
 	globals.config.PublicIPAddr = ""
 	globals.config.RetryRPCPort = 0
 	globals.config.HTTPServerPort = 0
+
+	globals.config.CheckPointIPAddrs = nil
+	globals.config.CheckPointPort = 0
+	globals.config.CheckPointCACertFilePath = ""
 
 	globals.config.RetryRPCTTLCompleted = time.Duration(0)
 	globals.config.RetryRPCAckTrim = time.Duration(0)

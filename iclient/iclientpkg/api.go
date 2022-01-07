@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// Copyright (c) 2015-2022, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
 // Package icllientpkg implements a client to package imgrpkg for the purpose
@@ -31,7 +31,7 @@
 //  RetryRPCPort:                     32356
 //  RetryRPCDeadlineIO:               60s
 //  RetryRPCKeepAlivePeriod:          60s
-//  RetryRPCCACertFilePath:                    # Defaults to /dev/null
+//  RetryRPCCACertFilePath:                    # Defaults to /dev/null disabling TLS
 //  MaxSharedLeases:                  500
 //  MaxExclusiveLeases:               100      # Caps pending FileFlush data at 1GiB (with FileFlushTriggerSize of 10MiB)
 //  InodePayloadEvictLowLimit:        100000

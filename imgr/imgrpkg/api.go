@@ -20,6 +20,10 @@
 //  RetryRPCPort:                         32356
 //  HTTPServerPort:                       15346
 //
+//  CheckPointIPAddrs:                                 # List of ickpt cluster instance IPAddr's
+//  CheckPointPort:                       33123        # Only required if CheckPointIPAddrs is non-empty
+//  CheckPointCACertFilePath:                          # Defaults to /dev/null disabling TLS
+//
 //  RetryRPCTTLCompleted:                 10m
 //  RetryRPCAckTrim:                      100ms
 //  RetryRPCDeadlineIO:                   60s
