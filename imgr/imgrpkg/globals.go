@@ -27,9 +27,11 @@ type configStruct struct {
 	RetryRPCPort   uint16 // To be served only on PublicIPAddr  via TLS
 	HTTPServerPort uint16 // To be served only on PrivateIPAddr via TCP
 
-	CheckPointIPAddrs        []string
-	CheckPointPort           uint16
-	CheckPointCACertFilePath string
+	CheckPointIPAddrs            []string
+	CheckPointPort               uint16
+	CheckPointCACertFilePath     string
+	CheckPointTimeout            time.Duration
+	CheckPointConnectionPoolSize uint32
 
 	RetryRPCTTLCompleted    time.Duration
 	RetryRPCAckTrim         time.Duration
@@ -261,18 +263,19 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex                               //
-	config          configStruct             //
-	logFile         *os.File                 // == nil if config.LogFilePath == ""
-	inodeTableCache sortedmap.BPlusTreeCache //
-	inodeLeaseLRU   *list.List               // .Front() is the LRU inodeLeaseStruct.listElement
-	volumeMap       sortedmap.LLRBTree       // key == volumeStruct.name; value == *volumeStruct
-	mountMap        map[string]*mountStruct  // key == mountStruct.mountID
-	httpClient      *http.Client             //
-	retryrpcServer  *retryrpc.Server         //
-	httpServer      *http.Server             //
-	httpServerWG    sync.WaitGroup           //
-	stats           *statsStruct             //
+	sync.Mutex                                    //
+	config               configStruct             //
+	logFile              *os.File                 // == nil if config.LogFilePath == ""
+	inodeTableCache      sortedmap.BPlusTreeCache //
+	inodeLeaseLRU        *list.List               // .Front() is the LRU inodeLeaseStruct.listElement
+	volumeMap            sortedmap.LLRBTree       // key == volumeStruct.name; value == *volumeStruct
+	mountMap             map[string]*mountStruct  // key == mountStruct.mountID
+	checkPointHTTPClient *http.Client             //
+	swiftHTTPClient      *http.Client             //
+	retryrpcServer       *retryrpc.Server         //
+	httpServer           *http.Server             //
+	httpServerWG         sync.WaitGroup           //
+	stats                *statsStruct             //
 }
 
 var globals globalsStruct
@@ -358,6 +361,48 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 			if nil != err {
 				logFatal(err)
 			}
+		}
+	}
+	if nil == globals.config.CheckPointIPAddrs {
+		err = confMap.VerifyOptionIsMissing("IMGR", "CheckPointTimeout")
+		if nil == err {
+			globals.config.CheckPointTimeout = 0
+		} else {
+			err = confMap.VerifyOptionValueIsEmpty("IMGR", "CheckPointTimeout")
+			if nil == err {
+				globals.config.CheckPointTimeout = 0
+			} else {
+				globals.config.CheckPointTimeout, err = confMap.FetchOptionValueDuration("IMGR", "CheckPointTimeout")
+				if nil != err {
+					logFatal(err)
+				}
+			}
+		}
+	} else {
+		globals.config.CheckPointTimeout, err = confMap.FetchOptionValueDuration("IMGR", "CheckPointTimeout")
+		if nil != err {
+			logFatal(err)
+		}
+	}
+	if nil == globals.config.CheckPointIPAddrs {
+		err = confMap.VerifyOptionIsMissing("IMGR", "CheckPointConnectionPoolSize")
+		if nil == err {
+			globals.config.CheckPointConnectionPoolSize = 0
+		} else {
+			err = confMap.VerifyOptionValueIsEmpty("IMGR", "CheckPointConnectionPoolSize")
+			if nil == err {
+				globals.config.CheckPointConnectionPoolSize = 0
+			} else {
+				globals.config.CheckPointConnectionPoolSize, err = confMap.FetchOptionValueUint32("IMGR", "CheckPointConnectionPoolSize")
+				if nil != err {
+					logFatal(err)
+				}
+			}
+		}
+	} else {
+		globals.config.CheckPointConnectionPoolSize, err = confMap.FetchOptionValueUint32("IMGR", "CheckPointConnectionPoolSize")
+		if nil != err {
+			logFatal(err)
 		}
 	}
 

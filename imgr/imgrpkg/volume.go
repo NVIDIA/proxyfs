@@ -8,6 +8,7 @@ import (
 	"container/list"
 	"fmt"
 	"io"
+	"net/http"
 	"runtime"
 	"strings"
 	"sync"
@@ -19,6 +20,44 @@ import (
 )
 
 func startVolumeManagement() (err error) {
+	var (
+		customTransport  *http.Transport
+		defaultTransport *http.Transport
+		ok               bool
+	)
+
+	defaultTransport, ok = http.DefaultTransport.(*http.Transport)
+	if !ok {
+		err = fmt.Errorf("http.DefaultTransport.(*http.Transport) returned !ok")
+		return
+	}
+
+	customTransport = &http.Transport{ // Up-to-date as of Golang 1.17
+		Proxy:                  defaultTransport.Proxy,
+		DialContext:            defaultTransport.DialContext,
+		DialTLSContext:         defaultTransport.DialTLSContext,
+		TLSClientConfig:        defaultTransport.TLSClientConfig,
+		TLSHandshakeTimeout:    globals.config.SwiftTimeout,
+		DisableKeepAlives:      false,
+		DisableCompression:     defaultTransport.DisableCompression,
+		MaxIdleConns:           int(globals.config.SwiftConnectionPoolSize),
+		MaxIdleConnsPerHost:    int(globals.config.SwiftConnectionPoolSize),
+		MaxConnsPerHost:        int(globals.config.SwiftConnectionPoolSize),
+		IdleConnTimeout:        globals.config.SwiftTimeout,
+		ResponseHeaderTimeout:  globals.config.SwiftTimeout,
+		ExpectContinueTimeout:  globals.config.SwiftTimeout,
+		TLSNextProto:           defaultTransport.TLSNextProto,
+		ProxyConnectHeader:     defaultTransport.ProxyConnectHeader,
+		MaxResponseHeaderBytes: defaultTransport.MaxResponseHeaderBytes,
+		WriteBufferSize:        0,
+		ReadBufferSize:         0,
+	}
+
+	globals.checkPointHTTPClient = &http.Client{
+		Transport: customTransport,
+		Timeout:   globals.config.SwiftTimeout,
+	}
+
 	globals.inodeTableCache = sortedmap.NewBPlusTreeCache(globals.config.InodeTableCacheEvictLowLimit, globals.config.InodeTableCacheEvictLowLimit)
 	globals.inodeLeaseLRU = list.New()
 	globals.volumeMap = sortedmap.NewLLRBTree(sortedmap.CompareString, &globals)
@@ -83,6 +122,8 @@ func stopVolumeManagement() (err error) {
 	}
 
 	// TODO: For now, just clear out volume-related globals fields
+
+	globals.checkPointHTTPClient = nil
 
 	globals.inodeTableCache = nil
 	globals.inodeLeaseLRU = nil

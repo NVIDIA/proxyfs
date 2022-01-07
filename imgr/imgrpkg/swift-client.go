@@ -48,7 +48,7 @@ func startSwiftClient() (err error) {
 		ReadBufferSize:         0,
 	}
 
-	globals.httpClient = &http.Client{
+	globals.swiftHTTPClient = &http.Client{
 		Transport: customTransport,
 		Timeout:   globals.config.SwiftTimeout,
 	}
@@ -58,6 +58,8 @@ func startSwiftClient() (err error) {
 }
 
 func stopSwiftClient() (err error) {
+	globals.swiftHTTPClient = nil
+
 	err = nil
 	return
 }
@@ -77,9 +79,9 @@ func swiftObjectDeleteOnce(objectURL string, authToken string) (authOK bool, err
 		httpRequest.Header["X-Auth-Token"] = []string{authToken}
 	}
 
-	httpResponse, err = globals.httpClient.Do(httpRequest)
+	httpResponse, err = globals.swiftHTTPClient.Do(httpRequest)
 	if nil != err {
-		err = fmt.Errorf("globals.httpClient.Do(DELETE %s) failed: %v", objectURL, err)
+		err = fmt.Errorf("globals.swiftHTTPClient.Do(DELETE %s) failed: %v", objectURL, err)
 		return
 	}
 
@@ -284,9 +286,9 @@ func swiftObjectGetOnce(objectURL string, authToken string, rangeHeaderValue str
 		httpRequest.Header["Range"] = []string{rangeHeaderValue}
 	}
 
-	httpResponse, err = globals.httpClient.Do(httpRequest)
+	httpResponse, err = globals.swiftHTTPClient.Do(httpRequest)
 	if nil != err {
-		err = fmt.Errorf("globals.httpClient.Do(GET %s) failed: %v", objectURL, err)
+		err = fmt.Errorf("globals.swiftHTTPClient.Do(GET %s) failed: %v", objectURL, err)
 		return
 	}
 
@@ -650,9 +652,9 @@ func swiftObjectPutOnce(objectURL string, authToken string, body io.ReadSeeker) 
 		httpRequest.Header["X-Auth-Token"] = []string{authToken}
 	}
 
-	httpResponse, err = globals.httpClient.Do(httpRequest)
+	httpResponse, err = globals.swiftHTTPClient.Do(httpRequest)
 	if nil != err {
-		err = fmt.Errorf("globals.httpClient.Do(PUT %s) failed: %v", objectURL, err)
+		err = fmt.Errorf("globals.swiftHTTPClient.Do(PUT %s) failed: %v", objectURL, err)
 		return
 	}
 
