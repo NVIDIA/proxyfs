@@ -117,7 +117,7 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 		return
 	}
 
-	lastCheckPointAsByteSlice, err = swiftObjectGet(volume.storageURL, mountRequest.AuthToken, ilayout.CheckPointObjectNumber)
+	lastCheckPointAsByteSlice, err = checkPointRead(volume.storageURL, mountRequest.AuthToken)
 	if nil != err {
 		globals.Unlock()
 		err = fmt.Errorf("%s %s", EAuthTokenRejected, mountRequest.AuthToken)
@@ -232,8 +232,7 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 
 	mount.authToken = renewMountRequest.AuthToken
 
-	_, err = swiftObjectGet(mount.volume.storageURL, mount.authToken, ilayout.CheckPointObjectNumber)
-	if nil == err {
+	if checkAuthToken(mount.volume.storageURL, mount.authToken) {
 		mount.authTokenExpired = false
 
 		switch mount.mountListMembership {
@@ -832,8 +831,8 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 
 func (mount *mountStruct) authTokenHasExpired() (authTokenExpired bool) {
 	var (
-		err       error
-		startTime time.Time = time.Now()
+		authTokenIsAuthorized bool
+		startTime             time.Time = time.Now()
 	)
 
 	if mount.authTokenExpired {
@@ -844,11 +843,12 @@ func (mount *mountStruct) authTokenHasExpired() (authTokenExpired bool) {
 		return false
 	}
 
-	_, err = swiftObjectGet(mount.volume.storageURL, mount.authToken, ilayout.CheckPointObjectNumber)
+	authTokenIsAuthorized = checkAuthToken(mount.volume.storageURL, mount.authToken)
 
 	globals.stats.AuthTokenCheckUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 
-	if nil == err {
+	// if nil == err {
+	if authTokenIsAuthorized {
 		mount.lastAuthTime = startTime
 		return false
 	} else {

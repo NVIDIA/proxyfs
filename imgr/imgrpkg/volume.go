@@ -700,7 +700,7 @@ func postVolume(storageURL string, authToken string) (err error) {
 		return
 	}
 
-	err = swiftObjectPut(storageURL, authToken, ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String))
+	err = checkPointWrite(storageURL, authToken, strings.NewReader(checkPointV1String))
 	if nil != err {
 		return
 	}
@@ -943,14 +943,14 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 		logFatal(err)
 	}
 
-	authOK, err = volume.swiftObjectPut(true, ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String))
+	authOK, err = volume.checkPointWrite(strings.NewReader(checkPointV1String))
 	if nil != err {
-		err = fmt.Errorf("volume.swiftObjectPut(locked==true, ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String)) failed: %v", err)
+		err = fmt.Errorf("volume.checkPointWrite(strings.NewReader(checkPointV1String)) failed: %v", err)
 		logFatal(err)
 	}
 	if !authOK {
 		globals.Unlock()
-		err = fmt.Errorf("volume.swiftObjectPut(locked==true, ilayout.CheckPointObjectNumber, strings.NewReader(checkPointV1String)) returned !authOK")
+		err = fmt.Errorf("volume.checkPointWrite(strings.NewReader(checkPointV1String)) returned !authOK")
 		return
 	}
 
@@ -1228,17 +1228,11 @@ func (volume *volumeStruct) UnpackValue(payloadData []byte) (value sortedmap.Val
 
 func (volume *volumeStruct) fetchCheckPointWhileLocked() (checkPointV1 *ilayout.CheckPointV1Struct, err error) {
 	var (
-		authOK          bool
 		checkPointV1Buf []byte
 	)
 
-	checkPointV1Buf, authOK, err = volume.swiftObjectGet(true, ilayout.CheckPointObjectNumber)
-	if nil != err {
-		err = fmt.Errorf("volume.swiftObjectGet() failed: %v", err)
-		return
-	}
-	if !authOK {
-		err = fmt.Errorf("volume.swiftObjectGet() returned !authOK")
+	checkPointV1Buf, err = volume.checkPointRead()
+	if err != nil {
 		return
 	}
 
@@ -1328,19 +1322,19 @@ func (volume *volumeStruct) fetchNonceRangeWhileLocked() (nextNonce uint64, numN
 		logFatalf("nonceUpdatedCheckPoint.MarshalCheckPointV1() failed: %v", err)
 	}
 
-	authOK, err = volume.swiftObjectPut(true, ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString))
+	authOK, err = volume.checkPointWrite(strings.NewReader(nonceUpdatedCheckPointAsString))
 	if nil == err {
 		if authOK {
 			volume.checkPoint = nonceUpdatedCheckPoint
 		} else {
 			nextNonce = 0
 			numNoncesFetched = 0
-			err = fmt.Errorf("volume.swiftObjectPut(locked==true, ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString)) returned !authOK")
+			err = fmt.Errorf("volume.checkPointWrite(strings.NewReader(nonceUpdatedCheckPointAsString)) returned !authOK")
 		}
 	} else {
 		nextNonce = 0
 		numNoncesFetched = 0
-		err = fmt.Errorf("volume.swiftObjectPut(locked==true, ilayout.CheckPointObjectNumber, strings.NewReader(nonceUpdatedCheckPointAsString)) failed: %v", err)
+		err = fmt.Errorf("volume.checkPointWrite(strings.NewReader(nonceUpdatedCheckPointAsString)) failed: %v", err)
 	}
 
 	return
@@ -1410,6 +1404,18 @@ func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
 	if !ok {
 		logFatalf("volume.inodeTable.DeleteByKey(inodeNumber: %016X) returned !ok", inodeNumber)
 	}
+}
+
+func checkAuthToken(storageURL string, authToken string) (authTokenIsAuthorized bool) {
+	var (
+		err error
+	)
+
+	_, err = swiftObjectGet(storageURL, authToken, ilayout.CheckPointObjectNumber)
+
+	authTokenIsAuthorized = (err == nil)
+
+	return
 }
 
 func checkPointReadOnce(checkPointObjectURL string, authToken string) (buf []byte, authOK bool, err error) {
@@ -1505,6 +1511,11 @@ func checkPointRead(storageURL string, authToken string) (buf []byte, err error)
 		globals.stats.CheckPointReadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	if len(globals.config.CheckPointIPAddrs) == 0 {
+		buf, err = swiftObjectGet(storageURL, authToken, ilayout.CheckPointObjectNumber)
+		return
+	}
+
 	checkPointObjectURL = storageURL + "/" + ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber)
 
 	nextCheckPointRetryDelay = globals.config.CheckPointRetryDelay
@@ -1528,6 +1539,7 @@ func checkPointRead(storageURL string, authToken string) (buf []byte, err error)
 
 func (volume *volumeStruct) checkPointRead() (buf []byte, err error) {
 	var (
+		authOK                   bool
 		checkPointObjectURL      string
 		nextCheckPointRetryDelay time.Duration
 		numCheckPointRetries     uint32
@@ -1537,6 +1549,14 @@ func (volume *volumeStruct) checkPointRead() (buf []byte, err error) {
 	defer func() {
 		globals.stats.CheckPointReadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
+
+	if len(globals.config.CheckPointIPAddrs) == 0 {
+		buf, authOK, err = volume.swiftObjectGet(true, ilayout.CheckPointObjectNumber)
+		if (err == nil) && !authOK {
+			err = fmt.Errorf("volume.swiftObjectGet(true, ilayout.CheckPointObjectNumber) returned !authOK")
+		}
+		return
+	}
 
 	checkPointObjectURL = volume.storageURL + "/" + ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber)
 
@@ -1572,9 +1592,8 @@ func checkPointWriteOnce(checkPointObjectURL string, authToken string, body io.R
 	return false, nil // TODO
 }
 
-func (volume *volumeStruct) checkPointWriteOnce(checkPointObjectURL string, body io.ReadSeeker) (err error) {
+func (volume *volumeStruct) checkPointWriteOnce(checkPointObjectURL string, body io.ReadSeeker) (authOK bool, err error) {
 	var (
-		authOK               bool
 		authToken            string
 		mount                *mountStruct
 		mountListElement     *list.Element
@@ -1632,8 +1651,6 @@ func (volume *volumeStruct) checkPointWriteOnce(checkPointObjectURL string, body
 					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
 				}
 			}
-
-			err = fmt.Errorf("checkPointWriteOnce(checkPointObjectURL, authToken, body) returned !authOK")
 		}
 	}
 
@@ -1652,6 +1669,15 @@ func checkPointWrite(storageURL string, authToken string, body io.ReadSeeker) (e
 	defer func() {
 		globals.stats.CheckPointWriteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
+
+	err = swiftObjectPut(storageURL, authToken, ilayout.CheckPointObjectNumber, body)
+	if nil != err {
+		return
+	}
+
+	if len(globals.config.CheckPointIPAddrs) == 0 {
+		return
+	}
 
 	checkPointObjectURL = storageURL + "/" + ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber)
 
@@ -1673,7 +1699,7 @@ func checkPointWrite(storageURL string, authToken string, body io.ReadSeeker) (e
 	return
 }
 
-func (volume *volumeStruct) checkPointWrite(body io.ReadSeeker) (err error) {
+func (volume *volumeStruct) checkPointWrite(body io.ReadSeeker) (authOK bool, err error) {
 	var (
 		checkPointObjectURL      string
 		nextCheckPointRetryDelay time.Duration
@@ -1685,13 +1711,23 @@ func (volume *volumeStruct) checkPointWrite(body io.ReadSeeker) (err error) {
 		globals.stats.CheckPointWriteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	authOK, err = volume.swiftObjectPut(true, ilayout.CheckPointObjectNumber, body)
+	if (err != nil) || !authOK {
+		return
+	}
+
+	if len(globals.config.CheckPointIPAddrs) == 0 {
+		return
+	}
+
 	checkPointObjectURL = volume.storageURL + "/" + ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber)
 
 	nextCheckPointRetryDelay = globals.config.CheckPointRetryDelay
 
 	for numCheckPointRetries = 0; numCheckPointRetries <= globals.config.CheckPointRetryLimit; numCheckPointRetries++ {
-		err = volume.checkPointWriteOnce(checkPointObjectURL, body)
+		authOK, err = volume.checkPointWriteOnce(checkPointObjectURL, body)
 		if err == nil {
+			// Note: Either value of authOK is appropriate to return here
 			return
 		}
 
@@ -1700,6 +1736,7 @@ func (volume *volumeStruct) checkPointWrite(body io.ReadSeeker) (err error) {
 		nextCheckPointRetryDelay = time.Duration(float64(nextCheckPointRetryDelay) * globals.config.CheckPointRetryExpBackoff)
 	}
 
+	authOK = false
 	err = fmt.Errorf("globals.config.CheckPointRetryLimit exceeded")
 
 	return
