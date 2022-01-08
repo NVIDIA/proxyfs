@@ -6,6 +6,7 @@ package imgrpkg
 import (
 	"bytes"
 	"container/list"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,10 @@ import (
 	"github.com/NVIDIA/sortedmap"
 
 	"github.com/NVIDIA/proxyfs/ilayout"
+)
+
+const (
+	checkPointRandomPathByteSliceLen = 8
 )
 
 func startVolumeManagement() (err error) {
@@ -1405,4 +1410,320 @@ func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
 	if !ok {
 		logFatalf("volume.inodeTable.DeleteByKey(inodeNumber: %016X) returned !ok", inodeNumber)
 	}
+}
+
+func checkPointReadOnce(checkPointObjectURL string, authToken string) (buf []byte, authOK bool, err error) {
+	// TODO:
+	//   Need to do a quorum GET to every one of CheckPointIPAddrs
+	//   Let Nsuccesses == the number of GET requests that actually succeed
+	//   Let Asuccesses == the majority of the GET successes that agree
+	//   Obviously Asuccesses <= Nsuccesses
+	//   Importantly, Asuccesses must be a majority of the total number of CheckPointIPAddrs
+	//   A failure by any request due to 401 Unauthorized should result in authOK == false with err == true
+	//
+	return nil, false, nil // TODO
+}
+
+func (volume *volumeStruct) checkPointReadOnce(checkPointObjectURL string) (buf []byte, err error) {
+	var (
+		authOK               bool
+		authToken            string
+		mount                *mountStruct
+		mountListElement     *list.Element
+		ok                   bool
+		usingVolumeAuthToken bool
+	)
+
+	mountListElement = volume.healthyMountList.Front()
+
+	if mountListElement == nil {
+		if volume.authToken == "" {
+			err = fmt.Errorf("volume.healthyMountList and volume.authToken are empty")
+			return
+		}
+
+		authToken = volume.authToken
+		usingVolumeAuthToken = true
+	} else {
+		mount, ok = mountListElement.Value.(*mountStruct)
+		if !ok {
+			logFatalf("mountListElement.Value.(*mountStruct) returned !ok")
+		}
+
+		// We know that mount.mountListMembership == onHealthyMountList
+
+		volume.healthyMountList.MoveToBack(mount.mountListElement)
+
+		authToken = mount.authToken
+		usingVolumeAuthToken = true
+	}
+
+	buf, authOK, err = checkPointReadOnce(checkPointObjectURL, authToken)
+	if err == nil {
+		if !authOK {
+			if usingVolumeAuthToken {
+				logWarnf("checkPointReadOnce(checkPointObjectURL,volume.authToken) returned !authOK for volume %s...clearing volume.authToken", volume.name)
+				volume.authToken = ""
+			} else {
+				mount.authTokenExpired = true
+
+				// It's possible that mount has "moved" from volume.healthyMountList
+
+				switch mount.mountListMembership {
+				case onHealthyMountList:
+					_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
+					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+					mount.mountListMembership = onAuthTokenExpiredMountList
+				case onLeasesExpiredMountList:
+					_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
+					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+					mount.mountListMembership = onAuthTokenExpiredMountList
+				case onAuthTokenExpiredMountList:
+					volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
+				default:
+					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
+				}
+			}
+
+			err = fmt.Errorf("checkPointWriteOnce(checkPointObjectURL, authToken, body) returned !authOK")
+		}
+	}
+
+	return
+}
+
+func checkPointRead(storageURL string, authToken string) (buf []byte, err error) {
+	var (
+		authOK                   bool
+		checkPointObjectURL      string
+		nextCheckPointRetryDelay time.Duration
+		numCheckPointRetries     uint32
+		startTime                time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.CheckPointReadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	checkPointObjectURL = storageURL + "/" + ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber)
+
+	nextCheckPointRetryDelay = globals.config.CheckPointRetryDelay
+
+	for numCheckPointRetries = 0; numCheckPointRetries <= globals.config.CheckPointRetryLimit; numCheckPointRetries++ {
+		buf, authOK, err = checkPointReadOnce(checkPointObjectURL, authToken)
+		if (err == nil) && authOK {
+			return
+		}
+
+		time.Sleep(nextCheckPointRetryDelay)
+
+		nextCheckPointRetryDelay = time.Duration(float64(nextCheckPointRetryDelay) * globals.config.CheckPointRetryExpBackoff)
+	}
+
+	buf = nil
+	err = fmt.Errorf("globals.config.CheckPointRetryLimit exceeded")
+
+	return
+}
+
+func (volume *volumeStruct) checkPointRead() (buf []byte, err error) {
+	var (
+		checkPointObjectURL      string
+		nextCheckPointRetryDelay time.Duration
+		numCheckPointRetries     uint32
+		startTime                time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.CheckPointReadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	checkPointObjectURL = volume.storageURL + "/" + ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber)
+
+	nextCheckPointRetryDelay = globals.config.CheckPointRetryDelay
+
+	for numCheckPointRetries = 0; numCheckPointRetries <= globals.config.CheckPointRetryLimit; numCheckPointRetries++ {
+		buf, err = volume.checkPointReadOnce(checkPointObjectURL)
+		if err == nil {
+			return
+		}
+
+		time.Sleep(nextCheckPointRetryDelay)
+
+		nextCheckPointRetryDelay = time.Duration(float64(nextCheckPointRetryDelay) * globals.config.CheckPointRetryExpBackoff)
+	}
+
+	buf = nil
+	err = fmt.Errorf("globals.config.CheckPointRetryLimit exceeded")
+
+	return
+}
+
+func checkPointWriteOnce(checkPointObjectURL string, authToken string, body io.ReadSeeker) (authOK bool, err error) {
+	// TODO:
+	//   Need to do a quorum PUT to every one of CheckPointIPAddrs
+	//   Let N1successes == the number of PUT requests that actually succeed
+	//   Importantly, N1successes must be a majority of the total number of CheckPointIPAddrs
+	//   Need to do a quorum POST to only those CheckPointIPAddrs in the N1successes set
+	//   Let N2successes == the number of POST requests that actually succeed
+	//   Importantly, N2successes must be a majority of the total number of CheckPointIPAddrs
+	//   A failure by any request due to 401 Unauthorized should result in authOK == false with err == true
+	//
+	return false, nil // TODO
+}
+
+func (volume *volumeStruct) checkPointWriteOnce(checkPointObjectURL string, body io.ReadSeeker) (err error) {
+	var (
+		authOK               bool
+		authToken            string
+		mount                *mountStruct
+		mountListElement     *list.Element
+		ok                   bool
+		usingVolumeAuthToken bool
+	)
+
+	mountListElement = volume.healthyMountList.Front()
+
+	if mountListElement == nil {
+		if volume.authToken == "" {
+			err = fmt.Errorf("volume.healthyMountList and volume.authToken are empty")
+			return
+		}
+
+		authToken = volume.authToken
+		usingVolumeAuthToken = true
+	} else {
+		mount, ok = mountListElement.Value.(*mountStruct)
+		if !ok {
+			logFatalf("mountListElement.Value.(*mountStruct) returned !ok")
+		}
+
+		// We know that mount.mountListMembership == onHealthyMountList
+
+		volume.healthyMountList.MoveToBack(mount.mountListElement)
+
+		authToken = mount.authToken
+		usingVolumeAuthToken = true
+	}
+
+	authOK, err = checkPointWriteOnce(checkPointObjectURL, authToken, body)
+	if err == nil {
+		if !authOK {
+			if usingVolumeAuthToken {
+				logWarnf("swiftObjectPutOnce(checkPointObjectURL,volume.authToken,body) returned !authOK for volume %s...clearing volume.authToken", volume.name)
+				volume.authToken = ""
+			} else {
+				mount.authTokenExpired = true
+
+				// It's possible that mount has "moved" from volume.healthyMountList
+
+				switch mount.mountListMembership {
+				case onHealthyMountList:
+					_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
+					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+					mount.mountListMembership = onAuthTokenExpiredMountList
+				case onLeasesExpiredMountList:
+					_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
+					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+					mount.mountListMembership = onAuthTokenExpiredMountList
+				case onAuthTokenExpiredMountList:
+					volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
+				default:
+					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
+				}
+			}
+
+			err = fmt.Errorf("checkPointWriteOnce(checkPointObjectURL, authToken, body) returned !authOK")
+		}
+	}
+
+	return
+}
+
+func checkPointWrite(storageURL string, authToken string, body io.ReadSeeker) (err error) {
+	var (
+		authOK                   bool
+		checkPointObjectURL      string
+		nextCheckPointRetryDelay time.Duration
+		numCheckPointRetries     uint32
+		startTime                time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.CheckPointWriteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	checkPointObjectURL = storageURL + "/" + ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber)
+
+	nextCheckPointRetryDelay = globals.config.CheckPointRetryDelay
+
+	for numCheckPointRetries = 0; numCheckPointRetries <= globals.config.CheckPointRetryLimit; numCheckPointRetries++ {
+		authOK, err = checkPointWriteOnce(checkPointObjectURL, authToken, body)
+		if (err == nil) && authOK {
+			return
+		}
+
+		time.Sleep(nextCheckPointRetryDelay)
+
+		nextCheckPointRetryDelay = time.Duration(float64(nextCheckPointRetryDelay) * globals.config.CheckPointRetryExpBackoff)
+	}
+
+	err = fmt.Errorf("globals.config.CheckPointRetryLimit exceeded")
+
+	return
+}
+
+func (volume *volumeStruct) checkPointWrite(body io.ReadSeeker) (err error) {
+	var (
+		checkPointObjectURL      string
+		nextCheckPointRetryDelay time.Duration
+		numCheckPointRetries     uint32
+		startTime                time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.CheckPointWriteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	checkPointObjectURL = volume.storageURL + "/" + ilayout.GetObjectNameAsString(ilayout.CheckPointObjectNumber)
+
+	nextCheckPointRetryDelay = globals.config.CheckPointRetryDelay
+
+	for numCheckPointRetries = 0; numCheckPointRetries <= globals.config.CheckPointRetryLimit; numCheckPointRetries++ {
+		err = volume.checkPointWriteOnce(checkPointObjectURL, body)
+		if err == nil {
+			return
+		}
+
+		time.Sleep(nextCheckPointRetryDelay)
+
+		nextCheckPointRetryDelay = time.Duration(float64(nextCheckPointRetryDelay) * globals.config.CheckPointRetryExpBackoff)
+	}
+
+	err = fmt.Errorf("globals.config.CheckPointRetryLimit exceeded")
+
+	return
+}
+
+func fetchCheckPointRandomPath() (checkPointRandomPath string) {
+	var (
+		checkPointRandomPathAsByte      byte
+		checkPointRandomPathAsByteSlice []byte
+		err                             error
+	)
+
+	checkPointRandomPathAsByteSlice = make([]byte, checkPointRandomPathByteSliceLen)
+
+	_, err = rand.Read(checkPointRandomPathAsByteSlice)
+	if err != nil {
+		logFatalf("rand.Read(checkPointRandomPathAsByteSlice) failed: %v", err)
+	}
+
+	checkPointRandomPath = ""
+
+	for _, checkPointRandomPathAsByte = range checkPointRandomPathAsByteSlice {
+		checkPointRandomPath += fmt.Sprintf("%02X", checkPointRandomPathAsByte)
+	}
+
+	return
 }

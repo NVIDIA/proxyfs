@@ -116,6 +116,9 @@ type statsStruct struct {
 	InodeTableCacheHits   bucketstats.Totaler
 	InodeTableCacheMisses bucketstats.Totaler
 
+	CheckPointReadUsecs  bucketstats.BucketLog2Round
+	CheckPointWriteUsecs bucketstats.BucketLog2Round
+
 	SwiftObjectDeleteUsecs   bucketstats.BucketLog2Round
 	SwiftObjectGetUsecs      bucketstats.BucketLog2Round
 	SwiftObjectGetRangeUsecs bucketstats.BucketLog2Round
