@@ -30,6 +30,9 @@ type configStruct struct {
 	CheckPointIPAddrs            []string
 	CheckPointPort               uint16
 	CheckPointCACertFilePath     string
+	CheckPointRetryDelay         time.Duration
+	CheckPointRetryExpBackoff    float64
+	CheckPointRetryLimit         uint32
 	CheckPointTimeout            time.Duration
 	CheckPointConnectionPoolSize uint32
 
@@ -364,6 +367,69 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		}
 	}
 	if nil == globals.config.CheckPointIPAddrs {
+		err = confMap.VerifyOptionIsMissing("IMGR", "CheckPointRetryDelay")
+		if nil == err {
+			globals.config.CheckPointRetryDelay = 0
+		} else {
+			err = confMap.VerifyOptionValueIsEmpty("IMGR", "CheckPointRetryDelay")
+			if nil == err {
+				globals.config.CheckPointRetryDelay = 0
+			} else {
+				globals.config.CheckPointRetryDelay, err = confMap.FetchOptionValueDuration("IMGR", "CheckPointRetryDelay")
+				if nil != err {
+					logFatal(err)
+				}
+			}
+		}
+	} else {
+		globals.config.CheckPointRetryDelay, err = confMap.FetchOptionValueDuration("IMGR", "CheckPointRetryDelay")
+		if nil != err {
+			logFatal(err)
+		}
+	}
+	if nil == globals.config.CheckPointIPAddrs {
+		err = confMap.VerifyOptionIsMissing("IMGR", "CheckPointRetryExpBackoff")
+		if nil == err {
+			globals.config.CheckPointRetryExpBackoff = 0
+		} else {
+			err = confMap.VerifyOptionValueIsEmpty("IMGR", "CheckPointRetryExpBackoff")
+			if nil == err {
+				globals.config.CheckPointRetryExpBackoff = 0
+			} else {
+				globals.config.CheckPointRetryExpBackoff, err = confMap.FetchOptionValueFloat64("IMGR", "CheckPointRetryExpBackoff")
+				if nil != err {
+					logFatal(err)
+				}
+			}
+		}
+	} else {
+		globals.config.CheckPointRetryExpBackoff, err = confMap.FetchOptionValueFloat64("IMGR", "CheckPointRetryExpBackoff")
+		if nil != err {
+			logFatal(err)
+		}
+	}
+	if nil == globals.config.CheckPointIPAddrs {
+		err = confMap.VerifyOptionIsMissing("IMGR", "CheckPointRetryLimit")
+		if nil == err {
+			globals.config.CheckPointRetryLimit = 0
+		} else {
+			err = confMap.VerifyOptionValueIsEmpty("IMGR", "CheckPointRetryLimit")
+			if nil == err {
+				globals.config.CheckPointRetryLimit = 0
+			} else {
+				globals.config.CheckPointRetryLimit, err = confMap.FetchOptionValueUint32("IMGR", "CheckPointRetryLimit")
+				if nil != err {
+					logFatal(err)
+				}
+			}
+		}
+	} else {
+		globals.config.CheckPointRetryLimit, err = confMap.FetchOptionValueUint32("IMGR", "CheckPointRetryLimit")
+		if nil != err {
+			logFatal(err)
+		}
+	}
+	if nil == globals.config.CheckPointIPAddrs {
 		err = confMap.VerifyOptionIsMissing("IMGR", "CheckPointTimeout")
 		if nil == err {
 			globals.config.CheckPointTimeout = 0
@@ -589,6 +655,11 @@ func uninitializeGlobals() (err error) {
 	globals.config.CheckPointIPAddrs = nil
 	globals.config.CheckPointPort = 0
 	globals.config.CheckPointCACertFilePath = ""
+	globals.config.CheckPointRetryDelay = time.Duration(0)
+	globals.config.CheckPointRetryExpBackoff = 0.0
+	globals.config.CheckPointRetryLimit = 0
+	globals.config.CheckPointTimeout = time.Duration(0)
+	globals.config.CheckPointConnectionPoolSize = 0
 
 	globals.config.RetryRPCTTLCompleted = time.Duration(0)
 	globals.config.RetryRPCAckTrim = time.Duration(0)

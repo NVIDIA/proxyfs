@@ -23,6 +23,9 @@
 //  CheckPointIPAddrs:                                 # List of ickpt cluster instance IPAddr's
 //  CheckPointPort:                       33123        # Only required if CheckPointIPAddrs is non-empty
 //  CheckPointCACertFilePath:                          # Defaults to /dev/null disabling TLS
+//  CheckPointRetryDelay:                 100ms        # Only required if CheckPointIPAddrs is non-empty
+//  CheckPointRetryExpBackoff:            2            # Only required if CheckPointIPAddrs is non-empty
+//  CheckPointRetryLimit:                 4            # Only required if CheckPointIPAddrs is non-empty
 //  CheckPointTimeout:                    10m          # Only required if CheckPointIPAddrs is non-empty
 //  CheckPointConnectionPoolSize:         10           # Only required if CheckPointIPAddrs is non-empty
 //
