@@ -277,6 +277,7 @@ type globalsStruct struct {
 	volumeMap            sortedmap.LLRBTree       // key == volumeStruct.name; value == *volumeStruct
 	mountMap             map[string]*mountStruct  // key == mountStruct.mountID
 	checkPointHTTPClient *http.Client             //
+	checkPointURL        []string                 //
 	swiftHTTPClient      *http.Client             //
 	retryrpcServer       *retryrpc.Server         //
 	httpServer           *http.Server             //

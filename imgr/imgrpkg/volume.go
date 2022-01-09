@@ -7,8 +7,12 @@ import (
 	"bytes"
 	"container/list"
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"net"
 	"net/http"
 	"runtime"
 	"strings"
@@ -26,41 +30,81 @@ const (
 
 func startVolumeManagement() (err error) {
 	var (
+		checkPointIPAddr string
+		checkPointURL    string
 		customTransport  *http.Transport
 		defaultTransport *http.Transport
 		ok               bool
+		rootCA           []byte
+		rootCAPool       *x509.CertPool
+		tlsClientConfig  *tls.Config
 	)
 
-	defaultTransport, ok = http.DefaultTransport.(*http.Transport)
-	if !ok {
-		err = fmt.Errorf("http.DefaultTransport.(*http.Transport) returned !ok")
-		return
-	}
+	if len(globals.config.CheckPointIPAddrs) == 0 {
+		globals.checkPointHTTPClient = nil
+		globals.checkPointURL = nil
+	} else {
+		defaultTransport, ok = http.DefaultTransport.(*http.Transport)
+		if !ok {
+			err = fmt.Errorf("http.DefaultTransport.(*http.Transport) returned !ok")
+			return
+		}
 
-	customTransport = &http.Transport{ // Up-to-date as of Golang 1.17
-		Proxy:                  defaultTransport.Proxy,
-		DialContext:            defaultTransport.DialContext,
-		DialTLSContext:         defaultTransport.DialTLSContext,
-		TLSClientConfig:        defaultTransport.TLSClientConfig,
-		TLSHandshakeTimeout:    globals.config.SwiftTimeout,
-		DisableKeepAlives:      false,
-		DisableCompression:     defaultTransport.DisableCompression,
-		MaxIdleConns:           int(globals.config.SwiftConnectionPoolSize),
-		MaxIdleConnsPerHost:    int(globals.config.SwiftConnectionPoolSize),
-		MaxConnsPerHost:        int(globals.config.SwiftConnectionPoolSize),
-		IdleConnTimeout:        globals.config.SwiftTimeout,
-		ResponseHeaderTimeout:  globals.config.SwiftTimeout,
-		ExpectContinueTimeout:  globals.config.SwiftTimeout,
-		TLSNextProto:           defaultTransport.TLSNextProto,
-		ProxyConnectHeader:     defaultTransport.ProxyConnectHeader,
-		MaxResponseHeaderBytes: defaultTransport.MaxResponseHeaderBytes,
-		WriteBufferSize:        0,
-		ReadBufferSize:         0,
-	}
+		if globals.config.CheckPointCACertFilePath == "" {
+			tlsClientConfig = defaultTransport.TLSClientConfig
+		} else {
+			rootCA, err = ioutil.ReadFile(globals.config.CheckPointCACertFilePath)
+			if err != nil {
+				return
+			}
+			rootCAPool = x509.NewCertPool()
+			ok = rootCAPool.AppendCertsFromPEM(rootCA)
+			if !ok {
+				err = fmt.Errorf("rootCAPool.AppendCertsFromPEM(rootCA) returned !ok")
+				return
+			}
+			tlsClientConfig = &tls.Config{
+				RootCAs: rootCAPool,
+			}
+		}
 
-	globals.checkPointHTTPClient = &http.Client{
-		Transport: customTransport,
-		Timeout:   globals.config.SwiftTimeout,
+		customTransport = &http.Transport{ // Up-to-date as of Golang 1.17
+			Proxy:                  defaultTransport.Proxy,
+			DialContext:            defaultTransport.DialContext,
+			DialTLSContext:         defaultTransport.DialTLSContext,
+			TLSClientConfig:        tlsClientConfig,
+			TLSHandshakeTimeout:    globals.config.SwiftTimeout,
+			DisableKeepAlives:      false,
+			DisableCompression:     defaultTransport.DisableCompression,
+			MaxIdleConns:           int(globals.config.SwiftConnectionPoolSize),
+			MaxIdleConnsPerHost:    int(globals.config.SwiftConnectionPoolSize),
+			MaxConnsPerHost:        int(globals.config.SwiftConnectionPoolSize),
+			IdleConnTimeout:        globals.config.SwiftTimeout,
+			ResponseHeaderTimeout:  globals.config.SwiftTimeout,
+			ExpectContinueTimeout:  globals.config.SwiftTimeout,
+			TLSNextProto:           defaultTransport.TLSNextProto,
+			ProxyConnectHeader:     defaultTransport.ProxyConnectHeader,
+			MaxResponseHeaderBytes: defaultTransport.MaxResponseHeaderBytes,
+			WriteBufferSize:        0,
+			ReadBufferSize:         0,
+		}
+
+		globals.checkPointHTTPClient = &http.Client{
+			Transport: customTransport,
+			Timeout:   globals.config.SwiftTimeout,
+		}
+
+		globals.checkPointURL = make([]string, 0, len(globals.config.CheckPointIPAddrs))
+
+		for _, checkPointIPAddr = range globals.config.CheckPointIPAddrs {
+			if globals.config.CheckPointCACertFilePath == "" {
+				checkPointURL = "http://" + net.JoinHostPort(checkPointIPAddr, fmt.Sprintf("%d", globals.config.CheckPointPort))
+			} else {
+				checkPointURL = "https://" + net.JoinHostPort(checkPointIPAddr, fmt.Sprintf("%d", globals.config.CheckPointPort))
+			}
+
+			globals.checkPointURL = append(globals.checkPointURL, checkPointURL)
+		}
 	}
 
 	globals.inodeTableCache = sortedmap.NewBPlusTreeCache(globals.config.InodeTableCacheEvictLowLimit, globals.config.InodeTableCacheEvictLowLimit)
@@ -129,6 +173,7 @@ func stopVolumeManagement() (err error) {
 	// TODO: For now, just clear out volume-related globals fields
 
 	globals.checkPointHTTPClient = nil
+	globals.checkPointURL = nil
 
 	globals.inodeTableCache = nil
 	globals.inodeLeaseLRU = nil
@@ -1418,16 +1463,135 @@ func checkAuthToken(storageURL string, authToken string) (authTokenIsAuthorized 
 	return
 }
 
+func doCheckPointHTTPRequest(httpRequest *http.Request, httpResponse **http.Response, buf *[]byte, err *error, wg *sync.WaitGroup) {
+	*httpResponse, *err = globals.checkPointHTTPClient.Do(httpRequest)
+	if *err == nil {
+		if buf == nil {
+			_, *err = ioutil.ReadAll((*httpResponse).Body)
+		} else {
+			*buf, *err = ioutil.ReadAll((*httpResponse).Body)
+		}
+		if *err == nil {
+			*err = (*httpResponse).Body.Close()
+		}
+	}
+
+	wg.Done()
+}
+
+func fetchCheckPointRandomPath() (checkPointRandomPath string) {
+	var (
+		checkPointRandomPathAsByte      byte
+		checkPointRandomPathAsByteSlice []byte
+		err                             error
+	)
+
+	checkPointRandomPathAsByteSlice = make([]byte, checkPointRandomPathByteSliceLen)
+
+	_, err = rand.Read(checkPointRandomPathAsByteSlice)
+	if err != nil {
+		logFatalf("rand.Read(checkPointRandomPathAsByteSlice) failed: %v", err)
+	}
+
+	checkPointRandomPath = ""
+
+	for _, checkPointRandomPathAsByte = range checkPointRandomPathAsByteSlice {
+		checkPointRandomPath += fmt.Sprintf("%02X", checkPointRandomPathAsByte)
+	}
+
+	return
+}
+
 func checkPointReadOnce(checkPointObjectURL string, authToken string) (buf []byte, authOK bool, err error) {
-	// TODO:
-	//   Need to do a quorum GET to every one of CheckPointIPAddrs
-	//   Let Nsuccesses == the number of GET requests that actually succeed
-	//   Let Asuccesses == the majority of the GET successes that agree
-	//   Obviously Asuccesses <= Nsuccesses
-	//   Importantly, Asuccesses must be a majority of the total number of CheckPointIPAddrs
-	//   A failure by any request due to 401 Unauthorized should result in authOK == false with err == true
-	//
-	return nil, false, nil // TODO
+	var (
+		bufSlice           [][]byte
+		checkPointURL      string
+		checkPointURLIndex int
+		errSlice           []error
+		httpRequest        *http.Request
+		httpResponse       *http.Response
+		httpResponseSlice  []*http.Response
+		majority           int
+		majorityMap        map[string]int
+		majorityMapKey     string
+		majorityMapValue   int
+		ok                 bool
+		wg                 sync.WaitGroup
+	)
+
+	httpResponseSlice = make([]*http.Response, len(globals.checkPointURL))
+	bufSlice = make([][]byte, len(globals.checkPointURL))
+	errSlice = make([]error, len(globals.checkPointURL))
+
+	wg.Add(len(globals.config.CheckPointIPAddrs))
+
+	for checkPointURLIndex, checkPointURL = range globals.checkPointURL {
+		httpRequest, err = http.NewRequest("GET", checkPointURL, nil)
+		if err != nil {
+			return
+		}
+
+		httpRequest.Header.Add("X-Storage-Url", checkPointObjectURL)
+		httpRequest.Header.Add("X-Auth-Token", authToken)
+
+		go doCheckPointHTTPRequest(httpRequest, &httpResponseSlice[checkPointURLIndex], &bufSlice[checkPointURLIndex], &errSlice[checkPointURLIndex], &wg)
+	}
+
+	wg.Wait()
+
+	majorityMap = make(map[string]int)
+
+	for checkPointURLIndex = range globals.checkPointURL {
+		if errSlice[checkPointURLIndex] == nil {
+			httpResponse = httpResponseSlice[checkPointURLIndex]
+
+			if httpResponse.StatusCode == http.StatusUnauthorized {
+				// Special case: any auth failures get reported over errors or majority
+
+				buf = nil
+				authOK = false
+				err = nil
+
+				return
+			}
+
+			if (httpResponse.StatusCode >= 200) && (httpResponse.StatusCode <= 299) {
+				majorityMapKey = string(bufSlice[checkPointURLIndex][:])
+
+				majorityMapValue, ok = majorityMap[majorityMapKey]
+				if ok {
+					majorityMapValue++
+				} else {
+					majorityMapValue = 1
+				}
+				majorityMap[majorityMapKey] = majorityMapValue
+			}
+		}
+	}
+
+	// If we reach here, there were no auth failures... but we must search for a majority
+
+	majority = (len(globals.checkPointURL) / 2) + 1
+
+	for majorityMapKey, majorityMapValue = range majorityMap {
+		if majorityMapValue >= majority {
+			// Success... we can return majorityMapKey as buf right now
+
+			buf = []byte(majorityMapKey)
+			authOK = true
+			err = nil
+
+			return
+		}
+	}
+
+	// If we reach here, no majority was reached
+
+	buf = nil
+	authOK = true
+	err = fmt.Errorf("no majority was reached")
+
+	return
 }
 
 func (volume *volumeStruct) checkPointReadOnce(checkPointObjectURL string) (buf []byte, err error) {
@@ -1511,7 +1675,7 @@ func checkPointRead(storageURL string, authToken string) (buf []byte, err error)
 		globals.stats.CheckPointReadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	if len(globals.config.CheckPointIPAddrs) == 0 {
+	if globals.checkPointURL == nil {
 		buf, err = swiftObjectGet(storageURL, authToken, ilayout.CheckPointObjectNumber)
 		return
 	}
@@ -1550,7 +1714,7 @@ func (volume *volumeStruct) checkPointRead() (buf []byte, err error) {
 		globals.stats.CheckPointReadUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	if len(globals.config.CheckPointIPAddrs) == 0 {
+	if globals.checkPointURL == nil {
 		buf, authOK, err = volume.swiftObjectGet(true, ilayout.CheckPointObjectNumber)
 		if (err == nil) && !authOK {
 			err = fmt.Errorf("volume.swiftObjectGet(true, ilayout.CheckPointObjectNumber) returned !authOK")
@@ -1580,16 +1744,137 @@ func (volume *volumeStruct) checkPointRead() (buf []byte, err error) {
 }
 
 func checkPointWriteOnce(checkPointObjectURL string, authToken string, body io.ReadSeeker) (authOK bool, err error) {
-	// TODO:
-	//   Need to do a quorum PUT to every one of CheckPointIPAddrs
-	//   Let N1successes == the number of PUT requests that actually succeed
-	//   Importantly, N1successes must be a majority of the total number of CheckPointIPAddrs
-	//   Need to do a quorum POST to only those CheckPointIPAddrs in the N1successes set
-	//   Let N2successes == the number of POST requests that actually succeed
-	//   Importantly, N2successes must be a majority of the total number of CheckPointIPAddrs
-	//   A failure by any request due to 401 Unauthorized should result in authOK == false with err == true
-	//
-	return false, nil // TODO
+	var (
+		bodyAsByteSlice                []byte
+		checkPointURL                  string
+		checkPointURLIndex             int
+		checkPointURLRandomPath        string
+		checkPointURLWithRandomPath    string
+		checkPointURLWithSuccessfulPUT []string
+		errSlice                       []error
+		httpRequest                    *http.Request
+		httpResponse                   *http.Response
+		httpResponseSlice              []*http.Response
+		majority                       int
+		successfulPOSTs                int
+		successfulPUTs                 int
+		wg                             sync.WaitGroup
+	)
+
+	// Restart body (just in case) and clone it to avoid parallel use of the same io.Reader in http.NewRequest() call below
+
+	body.Seek(0, io.SeekStart)
+	bodyAsByteSlice, err = ioutil.ReadAll(body)
+
+	checkPointURLRandomPath = fetchCheckPointRandomPath()
+
+	httpResponseSlice = make([]*http.Response, len(globals.checkPointURL))
+	errSlice = make([]error, len(globals.checkPointURL))
+
+	wg.Add(len(globals.config.CheckPointIPAddrs))
+
+	for checkPointURLIndex, checkPointURL = range globals.checkPointURL {
+		checkPointURLWithRandomPath = checkPointURL + "/" + checkPointURLRandomPath
+
+		httpRequest, err = http.NewRequest("PUT", checkPointURLWithRandomPath, bytes.NewReader(bodyAsByteSlice))
+		if err != nil {
+			return
+		}
+
+		httpRequest.Header.Add("X-Storage-Url", checkPointObjectURL)
+		httpRequest.Header.Add("X-Auth-Token", authToken)
+
+		go doCheckPointHTTPRequest(httpRequest, &httpResponseSlice[checkPointURLIndex], nil, &errSlice[checkPointURLIndex], &wg)
+	}
+
+	wg.Wait()
+
+	successfulPUTs = 0
+	checkPointURLWithSuccessfulPUT = make([]string, 0, len(globals.checkPointURL))
+
+	for checkPointURLIndex, checkPointURL = range globals.checkPointURL {
+		if errSlice[checkPointURLIndex] == nil {
+			httpResponse = httpResponseSlice[checkPointURLIndex]
+
+			if httpResponse.StatusCode == http.StatusUnauthorized {
+				// Special case: any auth failures get reported over errors or majority
+
+				authOK = false
+				err = nil
+
+				return
+			}
+
+			if (httpResponse.StatusCode >= 200) && (httpResponse.StatusCode <= 299) {
+				successfulPUTs++
+
+				checkPointURLWithSuccessfulPUT = append(checkPointURLWithSuccessfulPUT, checkPointURL)
+			}
+		}
+	}
+
+	// If we reach here, there were no auth failures... but we must search for a majority
+
+	majority = (len(globals.checkPointURL) / 2) + 1
+
+	if len(checkPointURLWithSuccessfulPUT) < majority {
+		// No use doing the POST phase since no majority (of those) is possible
+
+		err = fmt.Errorf("no majority was reached during PUT phase")
+
+		return
+	}
+
+	wg.Add(len(globals.config.CheckPointIPAddrs))
+
+	for checkPointURLIndex, checkPointURL = range checkPointURLWithSuccessfulPUT {
+		checkPointURLWithRandomPath = checkPointURL + "/" + checkPointURLRandomPath
+
+		httpRequest, err = http.NewRequest("POST", checkPointURLWithRandomPath, nil)
+		if err != nil {
+			return
+		}
+
+		httpRequest.Header.Add("X-Storage-Url", checkPointObjectURL)
+		httpRequest.Header.Add("X-Auth-Token", authToken)
+
+		go doCheckPointHTTPRequest(httpRequest, &httpResponseSlice[checkPointURLIndex], nil, &errSlice[checkPointURLIndex], &wg)
+	}
+
+	wg.Wait()
+
+	successfulPOSTs = 0
+
+	for checkPointURLIndex, checkPointURL = range checkPointURLWithSuccessfulPUT {
+		if errSlice[checkPointURLIndex] == nil {
+			httpResponse = httpResponseSlice[checkPointURLIndex]
+
+			if httpResponse.StatusCode == http.StatusUnauthorized {
+				// Special case: any auth failures get reported over errors or majority
+
+				authOK = false
+				err = nil
+
+				return
+			}
+
+			if (httpResponse.StatusCode >= 200) && (httpResponse.StatusCode <= 299) {
+				successfulPOSTs++
+			}
+		}
+	}
+
+	// If we reach here, there were (again) no auth failures... but we must check majority
+
+	authOK = true
+
+	if successfulPOSTs >= majority {
+		err = nil
+	} else {
+		err = fmt.Errorf("no majority was reached during POST phase")
+	}
+
+	return
 }
 
 func (volume *volumeStruct) checkPointWriteOnce(checkPointObjectURL string, body io.ReadSeeker) (authOK bool, err error) {
@@ -1675,7 +1960,7 @@ func checkPointWrite(storageURL string, authToken string, body io.ReadSeeker) (e
 		return
 	}
 
-	if len(globals.config.CheckPointIPAddrs) == 0 {
+	if globals.checkPointURL == nil {
 		return
 	}
 
@@ -1716,7 +2001,7 @@ func (volume *volumeStruct) checkPointWrite(body io.ReadSeeker) (authOK bool, er
 		return
 	}
 
-	if len(globals.config.CheckPointIPAddrs) == 0 {
+	if globals.checkPointURL == nil {
 		return
 	}
 
@@ -1738,29 +2023,6 @@ func (volume *volumeStruct) checkPointWrite(body io.ReadSeeker) (authOK bool, er
 
 	authOK = false
 	err = fmt.Errorf("globals.config.CheckPointRetryLimit exceeded")
-
-	return
-}
-
-func fetchCheckPointRandomPath() (checkPointRandomPath string) {
-	var (
-		checkPointRandomPathAsByte      byte
-		checkPointRandomPathAsByteSlice []byte
-		err                             error
-	)
-
-	checkPointRandomPathAsByteSlice = make([]byte, checkPointRandomPathByteSliceLen)
-
-	_, err = rand.Read(checkPointRandomPathAsByteSlice)
-	if err != nil {
-		logFatalf("rand.Read(checkPointRandomPathAsByteSlice) failed: %v", err)
-	}
-
-	checkPointRandomPath = ""
-
-	for _, checkPointRandomPathAsByte = range checkPointRandomPathAsByteSlice {
-		checkPointRandomPath += fmt.Sprintf("%02X", checkPointRandomPathAsByte)
-	}
 
 	return
 }
