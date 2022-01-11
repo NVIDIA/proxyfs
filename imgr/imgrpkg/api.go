@@ -20,22 +20,22 @@
 //  RetryRPCPort:                         32356
 //  HTTPServerPort:                       15346
 //
-//  CheckPointIPAddrs:                                 # List of ickpt cluster instance IPAddr's
-//  CheckPointPort:                       33123        # Only required if CheckPointIPAddrs is non-empty
-//  CheckPointCACertFilePath:                          # Defaults to /dev/null disabling TLS
-//  CheckPointRetryDelay:                 100ms        # Only required if CheckPointIPAddrs is non-empty
-//  CheckPointRetryExpBackoff:            2            # Only required if CheckPointIPAddrs is non-empty
-//  CheckPointRetryLimit:                 4            # Only required if CheckPointIPAddrs is non-empty
-//  CheckPointTimeout:                    10m          # Only required if CheckPointIPAddrs is non-empty
-//  CheckPointConnectionPoolSize:         10           # Only required if CheckPointIPAddrs is non-empty
+//  CheckPointIPAddrs:                           # List of ickpt cluster instance IPAddr's
+//  CheckPointPort:                       33123  # Only required if CheckPointIPAddrs is non-empty
+//  CheckPointCACertFilePath:                    # Defaults to /dev/null disabling TLS
+//  CheckPointRetryDelay:                 100ms  # Only required if CheckPointIPAddrs is non-empty
+//  CheckPointRetryExpBackoff:            2      # Only required if CheckPointIPAddrs is non-empty
+//  CheckPointRetryLimit:                 4      # Only required if CheckPointIPAddrs is non-empty
+//  CheckPointTimeout:                    10m    # Only required if CheckPointIPAddrs is non-empty
+//  CheckPointConnectionPoolSize:         10     # Only required if CheckPointIPAddrs is non-empty
 //
 //  RetryRPCTTLCompleted:                 10m
 //  RetryRPCAckTrim:                      100ms
 //  RetryRPCDeadlineIO:                   60s
 //  RetryRPCKeepAlivePeriod:              60s
 //
-//  RetryRPCCertFilePath:                              # If both RetryRPC{Cert|Key}FilePath are missing or empty,
-//  RetryRPCKeyFilePath:                               #   non-TLS RetryRPC will be selected; otherwise TLS will be used
+//  RetryRPCCertFilePath:                        # If both RetryRPC{Cert|Key}FilePath are missing or empty,
+//  RetryRPCKeyFilePath:                         #   non-TLS RetryRPC will be selected; otherwise TLS will be used
 //
 //  CheckPointInterval:                   10s
 //
@@ -64,8 +64,8 @@
 //  InodeTableMaxInodesPerBPlusTreePage:  2048
 //  RootDirMaxDirEntriesPerBPlusTreePage: 1024
 //
-//  LogFilePath:                                       # imgr.log
-//  LogToConsole:                         true         # false
+//  LogFilePath:                                 # imgr.log
+//  LogToConsole:                         true   # false
 //  TraceEnabled:                         false
 //
 // Most of the config keys are required and must have values. One exception
