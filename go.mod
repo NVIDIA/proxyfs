@@ -3,7 +3,7 @@ module github.com/NVIDIA/proxyfs
 go 1.17
 
 require (
-	github.com/NVIDIA/fission v0.0.0-20211223045359-ebc0c4203e7b
+	github.com/NVIDIA/fission v0.0.0-20220110231326-e35d84a12929
 	github.com/NVIDIA/sortedmap v0.0.0-20210902154213-c8c741ed94c5
 	github.com/google/btree v1.0.1
 	github.com/sirupsen/logrus v1.8.1

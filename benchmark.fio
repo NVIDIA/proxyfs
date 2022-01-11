@@ -1,0 +1,57 @@
+; Job/Section Selection: --section={1MiB_write|1MiB_read|4KiB_write|4KiB_read}
+; Number of Threads:  --numjobs=<N>  (defaults to 1)
+;
+; Suggested sequence:
+;
+;  Startup file server
+;  Mount file system
+;  Erase all files in file system
+;  Unmount file system
+;  Restart file server
+;  Remount file system
+;  fio --section=1MiB_write --numjobs=<N> benchmark.fio
+;  Record results
+;  Unmount file system
+;  Restart file server
+;  Remount file system
+;  fio --section=1MiB_read --numjobs=<N> benchmark.fio
+;  Record results
+;  Erase all files in file system
+;  Unmount file system
+;  Restart file server
+;  Remount file system
+;  fio --section=4KiB_write --numjobs=<N> benchmark.fio
+;  Record results
+;  Unmount file system
+;  Restart file server
+;  Remount file system
+;  fio --section=4KiB_read --numjobs=<N> benchmark.fio
+;  Record results
+;  Erase all files in file system
+;  Unmount file system
+;  Stop file server
+
+[global]
+directory=/mnt
+end_fsync=1
+filename_format=fio.$jobnum.$filenum
+group_reporting
+iodepth=1
+ioengine=psync
+size=4Gi
+
+[1MiB_write]
+blocksize=1Mi
+readwrite=write
+
+[1MiB_read]
+blocksize=1Mi
+readwrite=read
+
+[4KiB_write]
+blocksize=4Ki
+readwrite=write
+
+[4KiB_read]
+blocksize=4Ki
+readwrite=read

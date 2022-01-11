@@ -14,8 +14,9 @@
 //  FUSEAllowOther:                   true
 //  FUSEMaxBackground:                1000
 //  FUSECongestionThreshhold:         0
-//  FUSEMaxRead:                      131076
-//  FUSEMaxWrite:                     131076
+//  FUSEMaxPages:                     256
+//  FUSEMaxRead:                      1048576  # 1MiB == FUSEMaxPages(256) * 4KiB
+//  FUSEMaxWrite:                     1048576  # 1MiB == FUSEMaxPages(256) * 4KiB
 //  FUSEEntryValidDuration:           250ms
 //  FUSEAttrValidDuration:            250ms
 //  AuthPlugInPath:                   iauth-swift.so

@@ -29,6 +29,7 @@ type configStruct struct {
 	FUSEAllowOther                   bool
 	FUSEMaxBackground                uint16
 	FUSECongestionThreshhold         uint16
+	FUSEMaxPages                     uint16
 	FUSEMaxRead                      uint32
 	FUSEMaxWrite                     uint32
 	FUSEEntryValidDuration           time.Duration
@@ -315,6 +316,10 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	if nil != err {
 		logFatal(err)
 	}
+	globals.config.FUSEMaxPages, err = confMap.FetchOptionValueUint16("ICLIENT", "FUSEMaxPages")
+	if nil != err {
+		logFatal(err)
+	}
 	globals.config.FUSEMaxRead, err = confMap.FetchOptionValueUint32("ICLIENT", "FUSEMaxRead")
 	if nil != err {
 		logFatal(err)
@@ -550,6 +555,7 @@ func uninitializeGlobals() (err error) {
 	globals.config.FUSEAllowOther = false
 	globals.config.FUSEMaxBackground = 0
 	globals.config.FUSECongestionThreshhold = 0
+	globals.config.FUSEMaxPages = 0
 	globals.config.FUSEMaxRead = 0
 	globals.config.FUSEMaxWrite = 0
 	globals.config.FUSEEntryValidDuration = time.Duration(0)
