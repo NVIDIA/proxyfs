@@ -70,6 +70,7 @@ ARG GolangVersion=1.17.5
 RUN apk add --no-cache               \
                        bind-tools    \
                        curl          \
+                       fio           \
                        fuse          \
                        gcc           \
                        git           \
