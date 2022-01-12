@@ -169,29 +169,15 @@ func TestLocks(t *testing.T) {
 		t.Fatalf("inodeHeldLock.exclusive should have been true")
 	}
 
-	// Verify we can get a shared lock on currently shared locked testInodeLockInodeNumberA
+	// Verify attempting a shared lock on a currently exclusively locked testInodeLockInodeNumberB while holding a shared lock on testInodeLockInodeNumberC fails releasing the shared lock on testInodeLockInodeNumberC
 
 	inodeLockRequestB = newLockRequest()
-	inodeLockRequestB.inodeNumber = testInodeLockInodeNumberA
+	inodeLockRequestB.inodeNumber = testInodeLockInodeNumberC
 	inodeLockRequestB.exclusive = false
 	inodeLockRequestB.addThisLock()
-	if len(inodeLockRequestB.locksHeld) != 1 {
-		t.Fatalf("len(inodeLockRequestB.locksHeld) (%v) should have been == 1", len(inodeLockRequestB.locksHeld))
-	}
-	inodeHeldLock, ok = inodeLockRequestB.locksHeld[testInodeLockInodeNumberA]
-	if !ok {
-		t.Fatalf("inodeLockRequestB.locksHeld[testInodeLockInodeNumberA] returned !ok")
-	}
-	if inodeHeldLock.inode.inodeNumber != testInodeLockInodeNumberA {
-		t.Fatalf("inodeHeldLock.inode.inodeNumber (%v) != testInodeLockInodeNumberA (%v)", inodeHeldLock.inode.inodeNumber, testInodeLockInodeNumberA)
-	}
-	if inodeHeldLock.exclusive {
-		t.Fatalf("inodeHeldLock.exclusive should have been false")
-	}
-
-	// Verify we can release the shared lock on testInodeLockInodeNumberA
-
-	inodeLockRequestB.unlockAll()
+	inodeLockRequestB.inodeNumber = testInodeLockInodeNumberB
+	inodeLockRequestB.exclusive = false
+	inodeLockRequestB.addThisLock()
 	if len(inodeLockRequestB.locksHeld) != 0 {
 		t.Fatalf("len(inodeLockRequestB.locksHeld) (%v) should have been == 0", len(inodeLockRequestB.locksHeld))
 	}
@@ -208,13 +194,25 @@ func TestLocks(t *testing.T) {
 		t.Fatalf("len(inodeLockRequestB.locksHeld) (%v) should have been == 0", len(inodeLockRequestB.locksHeld))
 	}
 
-	// Verify attempting a shared lock on a currently exclusively locked testInodeLockInodeNumberB while holding a shared lock on testInodeLockInodeNumberC fails releasing the shared lock on testInodeLockInodeNumberC
+	// Verify attempting a shared lock on a currently exclusively locked testInodeLockInodeNumberB while holding an exclusive lock on testInodeLockInodeNumberC fails releasing the exclusive lock on testInodeLockInodeNumberC
 
 	inodeLockRequestB.inodeNumber = testInodeLockInodeNumberC
-	inodeLockRequestB.exclusive = false
+	inodeLockRequestB.exclusive = true
 	inodeLockRequestB.addThisLock()
 	inodeLockRequestB.inodeNumber = testInodeLockInodeNumberB
 	inodeLockRequestB.exclusive = false
+	inodeLockRequestB.addThisLock()
+	if len(inodeLockRequestB.locksHeld) != 0 {
+		t.Fatalf("len(inodeLockRequestB.locksHeld) (%v) should have been == 0", len(inodeLockRequestB.locksHeld))
+	}
+
+	// Verify attempting an exclusive lock on a currently shared locked testInodeLockInodeNumberA while holding an exclusive lock on testInodeLockInodeNumberC fails releasing the exclusive lock on testInodeLockInodeNumberC
+
+	inodeLockRequestB.inodeNumber = testInodeLockInodeNumberC
+	inodeLockRequestB.exclusive = true
+	inodeLockRequestB.addThisLock()
+	inodeLockRequestB.inodeNumber = testInodeLockInodeNumberA
+	inodeLockRequestB.exclusive = true
 	inodeLockRequestB.addThisLock()
 	if len(inodeLockRequestB.locksHeld) != 0 {
 		t.Fatalf("len(inodeLockRequestB.locksHeld) (%v) should have been == 0", len(inodeLockRequestB.locksHeld))
@@ -232,15 +230,16 @@ func TestLocks(t *testing.T) {
 	// The sequence will be:
 	//
 	//   0: Shared    - this should be granted since testInodeLockInodeNumberA was previously unlocked
-	//   1: Shared    - this should be granted since testInodeLockInodeNumberA is currently share locked
+	//   1: Shared    - this should block since testInodeLockInodeNumberA is currently share locked
+	//                - this should unblock when both 0 is unlocked
 	//   2: Exclusive - this should block since testInodeLockInodeNumberA is currently share locked
-	//                - this should unblock when both 0 & 1 are unlocked
+	//                - this should unblock when both 1 is unlocked
 	//   3: Shared    - this should block since there is already a prior exclusive lock request
 	//                - this should unblock when 2 is unlocked
 	//   4: Shared    - this should block since there is already a prior exclusive lock request
-	//                - this should unblock when 2 is unlocked
+	//                - this should unblock when 3 is unlocked
 	//   5: Exclusive - this should block since testInodeLockInodeNumberA is currently share locked
-	//                - this should unblock when both 3 & 4 are unlocked
+	//                - this should unblock when 4 is unlocked
 	//   6: Exclusive - this should block since testInodeLockInodeNumberA is currently share locked
 	//                - this should unblock when 5 is unlocked
 
@@ -260,13 +259,13 @@ func TestLocks(t *testing.T) {
 	childLock[0].delayAndCheckForError(t)
 
 	if !childLock[0].lockHeld ||
-		!childLock[1].lockHeld ||
+		childLock[1].lockHeld ||
 		childLock[2].lockHeld ||
 		childLock[3].lockHeld ||
 		childLock[4].lockHeld ||
 		childLock[5].lockHeld ||
 		childLock[6].lockHeld {
-		t.Fatalf("Initial sequence should have had testInodeLockInodeNumberA only held by 0 & 1")
+		t.Fatalf("Initial sequence should have had testInodeLockInodeNumberA only held by 0")
 	}
 
 	childLock[0].finish()
@@ -302,10 +301,10 @@ func TestLocks(t *testing.T) {
 		childLock[1].lockHeld ||
 		childLock[2].lockHeld ||
 		!childLock[3].lockHeld ||
-		!childLock[4].lockHeld ||
+		childLock[4].lockHeld ||
 		childLock[5].lockHeld ||
 		childLock[6].lockHeld {
-		t.Fatalf("After 2 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 3 & 4")
+		t.Fatalf("After 2 releases their lock, the sequence should have had testInodeLockInodeNumberA only held by 3")
 	}
 
 	childLock[3].finish()
