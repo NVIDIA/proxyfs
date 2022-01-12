@@ -638,6 +638,8 @@ func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *Adjus
 		if inodeOpenCount == 0 {
 			mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] = uint64(adjustInodeTableEntryOpenCountRequest.Adjustment)
 			inodeOpenMapElement.numMounts++
+		} else {
+			mount.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] = inodeOpenCount + uint64(adjustInodeTableEntryOpenCountRequest.Adjustment)
 		}
 	} else { // adjustInodeTableEntryOpenCountRequest.Adjustment < 0 [we already know it is != 0]
 		inodeOpenCount -= uint64(-adjustInodeTableEntryOpenCountRequest.Adjustment)
