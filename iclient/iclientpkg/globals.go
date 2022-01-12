@@ -78,7 +78,7 @@ type swiftRetryDelayElementStruct struct {
 type inodeLeaseStateType uint32
 
 const (
-	inodeLeaseStateNone inodeLeaseStateType = iota // Only used if (*inodeStruct).requestList is non-empty
+	inodeLeaseStateNone inodeLeaseStateType = iota // Only used if (*inodeStruct).lockRequestList is non-empty
 	inodeLeaseStateSharedRequested
 	inodeLeaseStateSharedGranted
 	inodeLeaseStateSharedPromoting
@@ -118,8 +118,8 @@ type inodeStruct struct {
 	markedForDelete bool                                           // If true, remove from globalsStruct.inodeTable once openCount == 0
 	leaseState      inodeLeaseStateType                            //
 	listElement     *list.Element                                  // Maintains position in globalsStruct.{shared|exclusive}LeaseLRU
-	heldList        *list.List                                     // List of granted inodeHeldLockStruct's
-	requestList     *list.List                                     // List of pending inodeLockRequestStruct's
+	lockHolder      *inodeHeldLockStruct                           // If == nil, not locked
+	lockRequestList *list.List                                     // List of pending inodeLockRequestStruct's
 	inodeHeadV1     *ilayout.InodeHeadV1Struct                     //
 	linkSet         map[ilayout.InodeLinkTableEntryStruct]struct{} // Set form of .inodeHeadV1.LinkTable; key == ilayout.InodeLinkTableEntryStruct
 	streamMap       map[string][]byte                              // Map form of .inodeHeadV1.StreamTable; key == ilayout.InodeStreamTableEntryStruct.Name, value == ilayout.InodeStreamTableEntryStruct.Value
@@ -142,14 +142,13 @@ type inodeHeldLockStruct struct {
 	inode            *inodeStruct
 	inodeLockRequest *inodeLockRequestStruct
 	exclusive        bool
-	listElement      *list.Element //Maintains position in .inodeNumber's indicated inodeStruct.heldList
 }
 
 type inodeLockRequestStruct struct {
 	sync.WaitGroup                                 // Signaled when the state of the lock request has been served
 	inodeNumber    uint64                          // The inodeNumber for which the latest lock request is being made
 	exclusive      bool                            // Indicates if the latest lock request is exclusive
-	listElement    *list.Element                   // Maintains position in .inodeNumber's indicated inodeStruct.requestList
+	listElement    *list.Element                   // Maintains position in .inodeNumber's indicated inodeStruct.lockRequestList
 	locksHeld      map[uint64]*inodeHeldLockStruct // At entry, contains the list of inodeLock's already held (shared or exclusively)
 	//                                                At exit,  either contains the earlier list appended with the granted inodeLock
 	//                                                          or     is empty indicating the caller should restart lock request sequence

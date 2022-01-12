@@ -575,8 +575,8 @@ Retry:
 		markedForDelete: false,
 		leaseState:      inodeLeaseStateNone,
 		listElement:     nil,
-		heldList:        list.New(),
-		requestList:     list.New(),
+		lockHolder:      nil,
+		lockRequestList: list.New(),
 		inodeHeadV1: &ilayout.InodeHeadV1Struct{
 			InodeNumber:         symLinkInodeNumber,
 			InodeType:           ilayout.InodeTypeSymLink,
@@ -781,8 +781,8 @@ Retry:
 		markedForDelete: false,
 		leaseState:      inodeLeaseStateNone,
 		listElement:     nil,
-		heldList:        list.New(),
-		requestList:     list.New(),
+		lockHolder:      nil,
+		lockRequestList: list.New(),
 		inodeHeadV1: &ilayout.InodeHeadV1Struct{
 			InodeNumber:         childDirInodeNumber,
 			InodeType:           ilayout.InodeTypeDir,
@@ -3373,8 +3373,8 @@ Retry:
 			markedForDelete: false,
 			leaseState:      inodeLeaseStateNone,
 			listElement:     nil,
-			heldList:        list.New(),
-			requestList:     list.New(),
+			lockHolder:      nil,
+			lockRequestList: list.New(),
 			inodeHeadV1: &ilayout.InodeHeadV1Struct{
 				InodeNumber:         fileInodeNumber,
 				InodeType:           ilayout.InodeTypeFile,
