@@ -5,6 +5,7 @@ package iclientpkg
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -461,6 +462,36 @@ func rpcVolumeStatus(volumeStatusRequest *imgrpkg.VolumeStatusRequestStruct, vol
 	err = performMountRenewableRPC("VolumeStatus", volumeStatusRequest, volumeStatusResponse)
 
 	return
+}
+
+func (dummy *globalsStruct) Interrupt(payload []byte) {
+	var (
+		err          error
+		rpcInterrupt *imgrpkg.RPCInterrupt
+		wg           sync.WaitGroup
+	)
+
+	rpcInterrupt = &imgrpkg.RPCInterrupt{}
+
+	err = json.Unmarshal(payload, rpcInterrupt)
+	if nil != err {
+		logFatalf("json.Unmarshal(payload, rpcInterrupt) failed: %v", err)
+	}
+
+	switch rpcInterrupt.RPCInterruptType {
+	case imgrpkg.RPCInterruptTypeUnmount:
+		logFatalf("TODO: for now, we don't handle rpcInterrupt.RPCInterruptType: imgrpkg.RPCInterruptTypeUnmount")
+	case imgrpkg.RPCInterruptTypeDemote:
+		wg.Add(1)
+		go demoteInodeLease(rpcInterrupt.InodeNumber, &wg)
+		wg.Wait()
+	case imgrpkg.RPCInterruptTypeRelease:
+		wg.Add(1)
+		go releaseInodeLease(rpcInterrupt.InodeNumber, &wg)
+		wg.Wait()
+	default:
+		logFatalf("rpcInterrupt.RPCInterruptType(%v) unrecognized", rpcInterrupt.RPCInterruptType)
+	}
 }
 
 func objectGETRange(objectNumber uint64, offset uint64, length uint64) (buf []byte, err error) {
