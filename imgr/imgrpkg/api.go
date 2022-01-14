@@ -496,13 +496,13 @@ func (dummy *RetryRPCServerStruct) Lease(leaseRequest *LeaseRequestStruct, lease
 // of the client in an RPCInterrupt "upcall" to indicate that a lease or leases must be demoted
 // or released.
 //
-// type RPCInterruptType uint32
+type RPCInterruptType uint32
 
 const (
 	// RPCInterruptTypeUnmount indicates all Leases should be released (after performing necessary
 	// state saving RPCs) and the client should unmount.
 	//
-	RPCInterruptTypeUnmount uint32 = iota
+	RPCInterruptTypeUnmount RPCInterruptType = iota
 
 	// RPCInterruptTypeDemote indicates the specified LeaseHandle should (at least) be demoted
 	// from Exclusive to Shared (after performing necessary state saving RPCs).
@@ -518,6 +518,6 @@ const (
 // RPCInterrupt is the "upcall" mechanism used by ProxyFS to interrupt the client.
 //
 type RPCInterrupt struct {
-	RPCInterruptType uint32 // One of RPCInterruptType*
+	RPCInterruptType        // One of RPCInterruptType*
 	InodeNumber      uint64 // if RPCInterruptType == RPCInterruptTypeUnmount, InodeNumber == 0 (ignored)
 }
