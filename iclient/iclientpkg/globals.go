@@ -119,7 +119,7 @@ type inodeStruct struct {
 	leaseState      inodeLeaseStateType                            //
 	listElement     *list.Element                                  // Maintains position in globalsStruct.{shared|exclusive}LeaseLRU
 	lockHolder      *inodeHeldLockStruct                           // If == nil, not locked
-	lockRequestList *list.List                                     // List of pending inodeLockRequestStruct's
+	lockRequestList *list.List                                     // List of pending inodeLockRequestStruct's (including the one perhaps awaiting a Lease)
 	inodeHeadV1     *ilayout.InodeHeadV1Struct                     //
 	linkSet         map[ilayout.InodeLinkTableEntryStruct]struct{} // Set form of .inodeHeadV1.LinkTable; key == ilayout.InodeLinkTableEntryStruct
 	streamMap       map[string][]byte                              // Map form of .inodeHeadV1.StreamTable; key == ilayout.InodeStreamTableEntryStruct.Name, value == ilayout.InodeStreamTableEntryStruct.Value

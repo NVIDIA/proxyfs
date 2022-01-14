@@ -90,6 +90,30 @@ func performInodeLockRetryDelay() {
 // It is expected that the caller, when noticing locksHeld map is empty, will call
 // performInodeLockRetryDelay() before re-attempting the lock sequence.
 //
+// At any time an inode's lockHolder is nil and lockRequestList is empty (outside of a globals.Lock()
+// globals.Unlock() sequence), no inodeLockRequestStruct is acting on the inode in any way (i.e. not
+// holding a lock, attempting to acquire a lock, or releasing a lock). Hence, the only valid values
+// for inode.leaseState are:
+//
+//   inodeLeaseStateNone               - no lock requests may be granted
+//   inodeLeaseStateSharedGranted      - shared lock requests may be granted
+//   inodeLeaseStateExclusiveGranted   - either shared or exclusive lock requests may be granted
+//
+// During lock ownership transitions, other values should be expected:
+//
+//   inodeLeaseStateSharedRequested    - we are trying to grant a shared lock request
+//   inodeLeaseStateSharedPromoting    - we are trying to grant an exclusive lock request
+//   inodeLeaseStateExclusiveRequested - we are trying to grant an exclusive lock request
+//
+// The other inode.leaseState values occur during Unmount or some Lease Demote/Expired/Release
+// handling:
+//
+//   inodeLeaseStateSharedReleasing    - we are responding to an Unmount or Lease Release RPCInterrupt
+//   inodeLeaseStateSharedExpired      - upon learning our Shared Lease has expired
+//   inodeLeaseStateExclusiveDemoting  - we are responding to a Lease Demote RPCInterrupt
+//   inodeLeaseStateExclusiveReleasing - we are responding to an Unmount or Lease Release RPCInterrupt
+//   inodeLeaseStateExclusiveExpired   - upon learning our Exclusive Lease has expired
+//
 func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	var (
 		err           error
@@ -102,6 +126,8 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 
 	globals.Lock()
 
+	// Sanity check call
+
 	if inodeLockRequest.inodeNumber == 0 {
 		logFatalf("(*inodeLockRequestStruct)addThisLock() called with .inodeNumber == 0")
 	}
@@ -110,32 +136,10 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		logFatalf("*inodeLockRequestStruct)addThisLock() called with .inodeNumber already present in .locksHeld map")
 	}
 
-	// First get inode in the proper state required for this inodeLockRequest
+	// Ensure there is an inodeStruct for this possibly pre-creation inodeNumber
 
 	inode, ok = globals.inodeTable[inodeLockRequest.inodeNumber]
-	if ok {
-		switch inode.leaseState {
-		case inodeLeaseStateNone:
-		case inodeLeaseStateSharedRequested:
-			globals.sharedLeaseLRU.MoveToBack(inode.listElement)
-		case inodeLeaseStateSharedGranted:
-			globals.sharedLeaseLRU.MoveToBack(inode.listElement)
-		case inodeLeaseStateSharedPromoting:
-			globals.exclusiveLeaseLRU.MoveToBack(inode.listElement)
-		case inodeLeaseStateSharedReleasing:
-		case inodeLeaseStateSharedExpired:
-		case inodeLeaseStateExclusiveRequested:
-			globals.exclusiveLeaseLRU.MoveToBack(inode.listElement)
-		case inodeLeaseStateExclusiveGranted:
-			globals.exclusiveLeaseLRU.MoveToBack(inode.listElement)
-		case inodeLeaseStateExclusiveDemoting:
-			globals.sharedLeaseLRU.MoveToBack(inode.listElement)
-		case inodeLeaseStateExclusiveReleasing:
-		case inodeLeaseStateExclusiveExpired:
-		default:
-			logFatalf("switch inode.leaseState unexpected: %v", inode.leaseState)
-		}
-	} else {
+	if !ok {
 		inode = &inodeStruct{
 			inodeNumber:                              inodeLockRequest.inodeNumber,
 			dirty:                                    false,
@@ -162,12 +166,79 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		globals.inodeTable[inodeLockRequest.inodeNumber] = inode
 	}
 
-	if inodeLockRequest.exclusive {
-		if inode.leaseState == inodeLeaseStateExclusiveGranted {
-			// Attempt to grant exclusive inodeLockRequest
+	// Check if we will use another caller/context to finish our work
 
-			if inode.lockHolder == nil {
-				// We can now grant exclusive inodeLockRequest [Case 1]
+	if (inode.lockHolder != nil) || (inode.lockRequestList.Len() > 0) {
+		// Another caller/context is managing the lock... but could this cause a potential deadlock?
+
+		if len(inodeLockRequest.locksHeld) == 0 {
+			// No deadlock concern... so just let the other caller/context complete this inodeLockRequest
+
+			inodeLockRequest.listElement = inode.lockRequestList.PushBack(inodeLockRequest)
+
+			inodeLockRequest.Add(1)
+
+			globals.Unlock()
+
+			inodeLockRequest.Wait()
+		} else { // len(inodeLockRequest.locksHeld) != 0
+			// Potential deadlock must be averted...
+
+			globals.Unlock()
+
+			inodeLockRequest.unlockAll()
+		}
+
+		return
+	}
+
+	// At this point, we will be the next inodeLockRequest to (hopefully) be granted
+	// But first, we need to ensure the inodeLeaseState is sufficient
+
+	if inodeLockRequest.exclusive {
+		switch inode.leaseState {
+		case inodeLeaseStateNone:
+			// Before granting this exclusive inodeLockRequest, we must transition to inodeLeaseStateExclusiveGranted
+
+			inode.leaseState = inodeLeaseStateExclusiveRequested
+
+			inode.listElement = globals.exclusiveLeaseLRU.PushBack(inode)
+
+			leaseRequest = &imgrpkg.LeaseRequestStruct{
+				MountID:          globals.mountID,
+				InodeNumber:      inodeLockRequest.inodeNumber,
+				LeaseRequestType: imgrpkg.LeaseRequestTypeExclusive,
+			}
+			leaseResponse = &imgrpkg.LeaseResponseStruct{}
+
+			// Put this inodeLockRequest at front of inode.lockRequestList to indicate we
+			// are responsible for the inode (causing other inodeLockRequests to block)
+			// while we leave the globals.Lock()'d state during the Lease Request
+
+			inodeLockRequest.listElement = inode.lockRequestList.PushFront(inodeLockRequest)
+
+			globals.Unlock()
+
+			err = rpcLease(leaseRequest, leaseResponse)
+			if nil != err {
+				logFatal(err)
+			}
+
+			globals.Lock()
+
+			switch leaseResponse.LeaseResponseType {
+			case imgrpkg.LeaseResponseTypeDenied:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeDenied")
+			case imgrpkg.LeaseResponseTypeShared:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeShared")
+			case imgrpkg.LeaseResponseTypePromoted:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypePromoted")
+			case imgrpkg.LeaseResponseTypeExclusive:
+				inode.leaseState = inodeLeaseStateExclusiveGranted
+
+				_ = inode.lockRequestList.Remove(inodeLockRequest.listElement)
+
+				// We can now grant this exclusive inodeLockRequest
 
 				inodeHeldLock = &inodeHeldLockStruct{
 					inode:            inode,
@@ -181,38 +252,151 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 				globals.Unlock()
 
 				return
+			case imgrpkg.LeaseResponseTypeDemoted:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeDemoted")
+			case imgrpkg.LeaseResponseTypeReleased:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeReleased")
+			default:
+				logFatalf("switch leaseResponse.LeaseResponseType unexpected: %v", leaseResponse.LeaseResponseType)
+			}
+		case inodeLeaseStateSharedRequested:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateSharedRequested")
+		case inodeLeaseStateSharedGranted:
+			// Before granting this exclusive inodeLockRequest, we must transition to inodeLeaseStateExclusiveGranted
+
+			// TODO
+			inode.leaseState = inodeLeaseStateSharedPromoting
+
+			_ = globals.sharedLeaseLRU.Remove(inode.listElement)
+			inode.listElement = globals.exclusiveLeaseLRU.PushBack(inode)
+
+			leaseRequest = &imgrpkg.LeaseRequestStruct{
+				MountID:          globals.mountID,
+				InodeNumber:      inodeLockRequest.inodeNumber,
+				LeaseRequestType: imgrpkg.LeaseRequestTypePromote,
+			}
+			leaseResponse = &imgrpkg.LeaseResponseStruct{}
+
+			// Put this inodeLockRequest at front of inode.lockRequestList to indicate we
+			// are responsible for the inode (causing other inodeLockRequests to block)
+			// while we leave the globals.Lock()'d state during the Lease Request
+
+			inodeLockRequest.listElement = inode.lockRequestList.PushFront(inodeLockRequest)
+
+			globals.Unlock()
+
+			err = rpcLease(leaseRequest, leaseResponse)
+			if nil != err {
+				logFatal(err)
 			}
 
-			// Block exlusive inodeLockRequest unless .locksHeld is non-empty
+			globals.Lock()
 
-			if len(inodeLockRequest.locksHeld) == 0 {
-				// We must block exclusive inodeLockRequest [Case 1]
+			switch leaseResponse.LeaseResponseType {
+			case imgrpkg.LeaseResponseTypeDenied:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeDenied")
+			case imgrpkg.LeaseResponseTypeShared:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeShared")
+			case imgrpkg.LeaseResponseTypePromoted:
+				inode.leaseState = inodeLeaseStateExclusiveGranted
 
-				inodeLockRequest.listElement = inode.lockRequestList.PushBack(inodeLockRequest)
+				_ = inode.lockRequestList.Remove(inodeLockRequest.listElement)
 
-				inodeLockRequest.Add(1)
+				// We can now grant this exclusive inodeLockRequest
+
+				inodeHeldLock = &inodeHeldLockStruct{
+					inode:            inode,
+					inodeLockRequest: inodeLockRequest,
+					exclusive:        true,
+				}
+
+				inode.lockHolder = inodeHeldLock
+				inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
 
 				globals.Unlock()
 
-				inodeLockRequest.Wait()
-
 				return
-			} else {
-				// We must avoid deadlock for this exclusive inodeLockRequest with non-empty .locksHeld [Case 1]
-
-				globals.Unlock()
-
-				inodeLockRequest.unlockAll()
-
-				return
+			case imgrpkg.LeaseResponseTypeExclusive:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeExclusive")
+			case imgrpkg.LeaseResponseTypeDemoted:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeDemoted")
+			case imgrpkg.LeaseResponseTypeReleased:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeReleased")
+			default:
+				logFatalf("switch leaseResponse.LeaseResponseType unexpected: %v", leaseResponse.LeaseResponseType)
 			}
+		case inodeLeaseStateSharedPromoting:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateSharedPromoting")
+		case inodeLeaseStateSharedReleasing:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateSharedReleasing")
+		case inodeLeaseStateSharedExpired:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateSharedExpired")
+		case inodeLeaseStateExclusiveRequested:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveRequested")
+		case inodeLeaseStateExclusiveGranted:
+			// We can immediately grant this exclusive inodeLockRequest
+
+			inodeHeldLock = &inodeHeldLockStruct{
+				inode:            inode,
+				inodeLockRequest: inodeLockRequest,
+				exclusive:        true,
+			}
+
+			inode.lockHolder = inodeHeldLock
+			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+
+			globals.Unlock()
+
+			return
+		case inodeLeaseStateExclusiveDemoting:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveDemoting")
+		case inodeLeaseStateExclusiveReleasing:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveReleasing")
+		case inodeLeaseStateExclusiveExpired:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveExpired")
+		default:
+			logFatalf("switch inode.leaseState unexpected: %v", inode.leaseState)
 		}
 	} else { // !inodeLockRequest.exclusive
-		if (inode.leaseState == inodeLeaseStateSharedGranted) || (inode.leaseState == inodeLeaseStateExclusiveGranted) {
-			// Attempt to grant shared inodeLockRequest
+		switch inode.leaseState {
+		case inodeLeaseStateNone:
+			// Before granting this shared inodeLockRequest, we must transition to inodeLeaseStateExclusiveGranted
 
-			if inode.lockHolder == nil {
-				// We can now grant shared inodeLockRequest [Case 1]
+			inode.leaseState = inodeLeaseStateSharedRequested
+
+			inode.listElement = globals.sharedLeaseLRU.PushBack(inode)
+
+			leaseRequest = &imgrpkg.LeaseRequestStruct{
+				MountID:          globals.mountID,
+				InodeNumber:      inodeLockRequest.inodeNumber,
+				LeaseRequestType: imgrpkg.LeaseRequestTypeShared,
+			}
+			leaseResponse = &imgrpkg.LeaseResponseStruct{}
+
+			// Put this inodeLockRequest at front of inode.lockRequestList to indicate we
+			// are responsible for the inode (causing other inodeLockRequests to block)
+			// while we leave the globals.Lock()'d state during the Lease Request
+
+			inodeLockRequest.listElement = inode.lockRequestList.PushFront(inodeLockRequest)
+
+			globals.Unlock()
+
+			err = rpcLease(leaseRequest, leaseResponse)
+			if nil != err {
+				logFatal(err)
+			}
+
+			globals.Lock()
+
+			switch leaseResponse.LeaseResponseType {
+			case imgrpkg.LeaseResponseTypeDenied:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeDenied")
+			case imgrpkg.LeaseResponseTypeShared:
+				inode.leaseState = inodeLeaseStateSharedGranted
+
+				_ = inode.lockRequestList.Remove(inodeLockRequest.listElement)
+
+				// We can now grant this shared inodeLockRequest
 
 				inodeHeldLock = &inodeHeldLockStruct{
 					inode:            inode,
@@ -226,215 +410,67 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 				globals.Unlock()
 
 				return
+			case imgrpkg.LeaseResponseTypePromoted:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypePromoted")
+			case imgrpkg.LeaseResponseTypeExclusive:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeExclusive")
+			case imgrpkg.LeaseResponseTypeDemoted:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeDemoted")
+			case imgrpkg.LeaseResponseTypeReleased:
+				logFatalf("TODO: for now, we don't handle leaseResponse.LeaseResponseType: imgrpkg.LeaseResponseTypeReleased")
+			default:
+				logFatalf("switch leaseResponse.LeaseResponseType unexpected: %v", leaseResponse.LeaseResponseType)
 			}
-
-			// Block shared inodeLockRequest unless .locksHeld is non-empty
-
-			if len(inodeLockRequest.locksHeld) == 0 {
-				// We must block shared inodeLockRequest
-
-				inodeLockRequest.listElement = inode.lockRequestList.PushBack(inodeLockRequest)
-
-				inodeLockRequest.Add(1)
-
-				globals.Unlock()
-
-				inodeLockRequest.Wait()
-
-				return
-			} else {
-				// We must avoid deadlock for this shared inodeLockRequest with non-empty .locksHeld
-
-				globals.Unlock()
-
-				inodeLockRequest.unlockAll()
-
-				return
-			}
-		}
-	}
-
-	// If we reach here, inode was not in the proper state required for this inodeLockRequest
-
-	if (inode.leaseState != inodeLeaseStateNone) && (inode.leaseState != inodeLeaseStateSharedGranted) {
-		if len(inodeLockRequest.locksHeld) == 0 {
-			// We must block inodeLockRequest
-			//
-			// Ultimately, .leaseState will transition triggering the servicing of .lockRequestList
-
-			inodeLockRequest.listElement = inode.lockRequestList.PushBack(inodeLockRequest)
-
-			inodeLockRequest.Add(1)
-
-			globals.Unlock()
-
-			inodeLockRequest.Wait()
-
-			return
-		} else {
-			// We must avoid deadlock for this inodeLockRequest with non-empty .locksHeld
-
-			globals.Unlock()
-
-			inodeLockRequest.unlockAll()
-
-			return
-		}
-	}
-
-	// If we reach here, we are in one of three states:
-	//
-	//   inodeLockRequest.exclusive == true  && inode.leaseState == inodeLeaseStateNone
-	//   inodeLockRequest.exclusive == true  && inode.leaseState == inodeLeaseStateSharedGranted
-	//   inodeLockRequest.exclusive == false && inode.leaseState == inodeLeaseStateNone
-
-	if inodeLockRequest.exclusive {
-		if inode.leaseState == inodeLeaseStateNone {
-			// We need to issue a imgrpkg.LeaseRequestTypeExclusive
-
-			inode.leaseState = inodeLeaseStateExclusiveRequested
-
-			inode.listElement = globals.exclusiveLeaseLRU.PushBack(inode)
-
-			globals.Unlock()
-
-			leaseRequest = &imgrpkg.LeaseRequestStruct{
-				MountID:          globals.mountID,
-				InodeNumber:      inodeLockRequest.inodeNumber,
-				LeaseRequestType: imgrpkg.LeaseRequestTypeExclusive,
-			}
-			leaseResponse = &imgrpkg.LeaseResponseStruct{}
-
-			err = rpcLease(leaseRequest, leaseResponse)
-			if nil != err {
-				logFatal(err)
-			}
-
-			if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypeExclusive {
-				logFatalf("TODO: for now, we don't handle a Lease Request actually failing")
-			}
-
-			globals.Lock()
-
-			inode.leaseState = inodeLeaseStateExclusiveGranted
-
-			// We can now grant exclusive inodeLockRequest [Case 2]
+		case inodeLeaseStateSharedRequested:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateSharedRequested")
+		case inodeLeaseStateSharedGranted:
+			// We can immediately grant this shared inodeLockRequest
 
 			inodeHeldLock = &inodeHeldLockStruct{
 				inode:            inode,
 				inodeLockRequest: inodeLockRequest,
-				exclusive:        true,
+				exclusive:        false,
 			}
 
 			inode.lockHolder = inodeHeldLock
 			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
-		} else { // inode.leaseState == inodeLeaseStateSharedGranted
-			if inode.lockHolder != nil {
-				if len(inodeLockRequest.locksHeld) == 0 {
-					// We must block exclusive inodeLockRequest [Case 2]
-
-					inodeLockRequest.listElement = inode.lockRequestList.PushBack(inodeLockRequest)
-
-					inodeLockRequest.Add(1)
-
-					globals.Unlock()
-
-					inodeLockRequest.Wait()
-
-					return
-				} else {
-					// We must avoid deadlock for this exclusive inodeLockRequest with non-empty .locksHeld [Case 2]
-
-					globals.Unlock()
-
-					inodeLockRequest.unlockAll()
-
-					return
-				}
-			}
-
-			// We need to issue a imgrpkg.LeaseRequestTypePromote
-
-			inode.leaseState = inodeLeaseStateSharedPromoting
-
-			_ = globals.sharedLeaseLRU.Remove(inode.listElement)
-			inode.listElement = globals.exclusiveLeaseLRU.PushBack(inode)
 
 			globals.Unlock()
 
-			leaseRequest = &imgrpkg.LeaseRequestStruct{
-				MountID:          globals.mountID,
-				InodeNumber:      inodeLockRequest.inodeNumber,
-				LeaseRequestType: imgrpkg.LeaseRequestTypePromote,
-			}
-			leaseResponse = &imgrpkg.LeaseResponseStruct{}
-
-			err = rpcLease(leaseRequest, leaseResponse)
-			if nil != err {
-				logFatal(err)
-			}
-
-			if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypePromoted {
-				logFatalf("TODO: for now, we don't handle a Lease Request actually failing")
-			}
-
-			globals.Lock()
-
-			inode.leaseState = inodeLeaseStateExclusiveGranted
-
-			// We can now grant exclusive inodeLockRequest [Case 3]
+			return
+		case inodeLeaseStateSharedPromoting:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateSharedPromoting")
+		case inodeLeaseStateSharedReleasing:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateSharedReleasing")
+		case inodeLeaseStateSharedExpired:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateSharedExpired")
+		case inodeLeaseStateExclusiveRequested:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveRequested")
+		case inodeLeaseStateExclusiveGranted:
+			// We can immediately grant this shared inodeLockRequest
 
 			inodeHeldLock = &inodeHeldLockStruct{
 				inode:            inode,
 				inodeLockRequest: inodeLockRequest,
-				exclusive:        true,
+				exclusive:        false,
 			}
 
 			inode.lockHolder = inodeHeldLock
 			inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
+
+			globals.Unlock()
+
+			return
+		case inodeLeaseStateExclusiveDemoting:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveDemoting")
+		case inodeLeaseStateExclusiveReleasing:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveReleasing")
+		case inodeLeaseStateExclusiveExpired:
+			logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveExpired")
+		default:
+			logFatalf("switch inode.leaseState unexpected: %v", inode.leaseState)
 		}
-	} else { // !inodeLockRequest.exclusive && inode.leaseState == inodeLeaseStateNone
-		// We need to issue a imgrpkg.LeaseRequestTypeShared
-
-		inode.leaseState = inodeLeaseStateSharedRequested
-
-		inode.listElement = globals.sharedLeaseLRU.PushBack(inode)
-
-		globals.Unlock()
-
-		leaseRequest = &imgrpkg.LeaseRequestStruct{
-			MountID:          globals.mountID,
-			InodeNumber:      inodeLockRequest.inodeNumber,
-			LeaseRequestType: imgrpkg.LeaseRequestTypeShared,
-		}
-		leaseResponse = &imgrpkg.LeaseResponseStruct{}
-
-		err = rpcLease(leaseRequest, leaseResponse)
-		if nil != err {
-			logFatal(err)
-		}
-
-		if leaseResponse.LeaseResponseType != imgrpkg.LeaseResponseTypeShared {
-			logFatalf("TODO: for now, we don't handle a Lease Request actually failing")
-		}
-
-		globals.Lock()
-
-		inode.leaseState = inodeLeaseStateSharedGranted
-
-		// We can now grant shared inodeLockRequest [Case 2]
-
-		inodeHeldLock = &inodeHeldLockStruct{
-			inode:            inode,
-			inodeLockRequest: inodeLockRequest,
-			exclusive:        false,
-		}
-
-		inode.lockHolder = inodeHeldLock
-		inodeLockRequest.locksHeld[inodeLockRequest.inodeNumber] = inodeHeldLock
 	}
-
-	globals.Unlock()
 }
 
 // unlockAll is called to explicitly release all locks listed in the locksHeld map.
