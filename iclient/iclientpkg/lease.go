@@ -687,6 +687,24 @@ Retry:
 		logFatalf("globals.inodeTable[inodeNumber] returned !ok")
 	}
 
+	if inode.dirty {
+		// In this case, we know that we must currently hold an Exclusive Lease,
+		// so upgrade ourInodeLockRequest to indicate a Shared Lock
+
+		inodeHeldLock, ok = ourInodeLockRequest.locksHeld[inodeNumber]
+		if !ok {
+			logFatalf("ourInodeLockRequest.locksHeld[inodeNumber] returned !ok")
+		}
+
+		inodeHeldLock.exclusive = true
+
+		// Next, we must perform a "flush" on the inode while not in globals.Lock() section
+
+		globals.Unlock()
+		flushInodesInSlice([]*inodeStruct{inode})
+		globals.Lock()
+	}
+
 	switch inode.leaseState {
 	case inodeLeaseStateNone:
 		// Nothing to be done
@@ -703,15 +721,6 @@ Retry:
 	case inodeLeaseStateExclusiveRequested:
 		logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveRequested")
 	case inodeLeaseStateExclusiveGranted:
-		// Indicate that we do, in fact, have an Exclusive Lock in ourInodeLockRequest
-
-		inodeHeldLock, ok = ourInodeLockRequest.locksHeld[inodeNumber]
-		if !ok {
-			logFatalf("ourInodeLockRequest.locksHeld[inodeNumber] returned !ok")
-		}
-
-		inodeHeldLock.exclusive = true
-
 		// Perform the requested Lease Demotion
 
 		inode.leaseState = inodeLeaseStateExclusiveDemoting
@@ -820,6 +829,7 @@ func releaseInodeLease(inodeNumber uint64, wg *sync.WaitGroup) {
 		blockedInodeLockRequestListElement *list.Element
 		err                                error
 		inode                              *inodeStruct
+		inodeHeldLock                      *inodeHeldLockStruct
 		leaseRequest                       *imgrpkg.LeaseRequestStruct
 		leaseResponse                      *imgrpkg.LeaseResponseStruct
 		ok                                 bool
@@ -841,6 +851,40 @@ Retry:
 	inode, ok = globals.inodeTable[inodeNumber]
 	if !ok {
 		logFatalf("globals.inodeTable[inodeNumber] returned !ok")
+	}
+
+	if inode.dirty {
+		// In this case, we know that we must currently hold an Exclusive Lease,
+		// so upgrade ourInodeLockRequest to indicate a Shared Lock
+
+		inodeHeldLock, ok = ourInodeLockRequest.locksHeld[inodeNumber]
+		if !ok {
+			logFatalf("ourInodeLockRequest.locksHeld[inodeNumber] returned !ok")
+		}
+
+		inodeHeldLock.exclusive = true
+
+		// Next, we must perform a "flush" on the inode while not in globals.Lock() section
+
+		globals.Unlock()
+		flushInodesInSlice([]*inodeStruct{inode})
+		globals.Lock()
+	}
+
+	if inode.inodeHeadV1 != nil {
+		// In this case, we know that we must currently hold a Lease of some kind
+
+		if inode.payload != nil {
+			// As we are to end up with inode.leaseState == inodeLeaseStateNone,
+			// we should purge the caching of inode.payload
+
+			inode.payload = nil
+		}
+
+		// As we are to end up with inode.leaseState == inodeLeaseStateNone,
+		// we should purge the caching of inode.inodeHeadV1
+
+		inode.inodeHeadV1 = nil
 	}
 
 	switch inode.leaseState {
@@ -900,6 +944,11 @@ Retry:
 				_ = inode.lockRequestList.Remove(blockedInodeLockRequestListElement)
 				_ = blockedInodeLockRequestList.PushBack(blockedInodeLockRequest)
 			}
+
+			// As we've emptied inode.lockRequestList, it's appropriate for us to
+			// also remove the inodeStruct from globals.inodeTable
+
+			delete(globals.inodeTable, inodeNumber)
 		default:
 			logFatalf("switch leaseResponse.LeaseResponseType unexpected: %v", leaseResponse.LeaseResponseType)
 		}
@@ -912,15 +961,6 @@ Retry:
 	case inodeLeaseStateExclusiveRequested:
 		logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveRequested")
 	case inodeLeaseStateExclusiveGranted:
-		// Indicate that we do, in fact, have an Exclusive Lock in ourInodeLockRequest
-
-		inodeHeldLock, ok = ourInodeLockRequest.locksHeld[inodeNumber]
-		if !ok {
-			logFatalf("ourInodeLockRequest.locksHeld[inodeNumber] returned !ok")
-		}
-
-		inodeHeldLock.exclusive = true
-
 		// Perform the requested Lease Release
 
 		inode.leaseState = inodeLeaseStateExclusiveReleasing
@@ -972,6 +1012,11 @@ Retry:
 				_ = inode.lockRequestList.Remove(blockedInodeLockRequestListElement)
 				_ = blockedInodeLockRequestList.PushBack(blockedInodeLockRequest)
 			}
+
+			// As we've emptied inode.lockRequestList, it's appropriate for us to
+			// also remove the inodeStruct from globals.inodeTable
+
+			delete(globals.inodeTable, inodeNumber)
 		default:
 			logFatalf("switch leaseResponse.LeaseResponseType unexpected: %v", leaseResponse.LeaseResponseType)
 		}
