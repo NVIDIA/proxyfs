@@ -347,7 +347,7 @@ func serveHTTPPostOfLeasesDemote(responseWriter http.ResponseWriter, request *ht
 		globals.stats.PostLeasesDemoteUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	logWarnf("serveHTTPPostOfLeasesDemote() TODO")
+	demoteAllExclusiveLeases()
 
 	responseWriter.WriteHeader(http.StatusOK)
 }
@@ -361,7 +361,7 @@ func serveHTTPPostOfLeasesRelease(responseWriter http.ResponseWriter, request *h
 		globals.stats.PostLeasesReleaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	logWarnf("serveHTTPPostOfLeasesRelease() TODO")
+	releaseAllLeases()
 
 	responseWriter.WriteHeader(http.StatusOK)
 }
