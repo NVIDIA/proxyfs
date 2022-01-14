@@ -663,6 +663,7 @@ func demoteInodeLease(inodeNumber uint64, wg *sync.WaitGroup) {
 		blockedInodeLockRequestListElement *list.Element
 		err                                error
 		inode                              *inodeStruct
+		inodeHeldLock                      *inodeHeldLockStruct
 		leaseRequest                       *imgrpkg.LeaseRequestStruct
 		leaseResponse                      *imgrpkg.LeaseResponseStruct
 		ok                                 bool
@@ -702,6 +703,15 @@ Retry:
 	case inodeLeaseStateExclusiveRequested:
 		logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveRequested")
 	case inodeLeaseStateExclusiveGranted:
+		// Indicate that we do, in fact, have an Exclusive Lock in ourInodeLockRequest
+
+		inodeHeldLock, ok = ourInodeLockRequest.locksHeld[inodeNumber]
+		if !ok {
+			logFatalf("ourInodeLockRequest.locksHeld[inodeNumber] returned !ok")
+		}
+
+		inodeHeldLock.exclusive = true
+
 		// Perform the requested Lease Demotion
 
 		inode.leaseState = inodeLeaseStateExclusiveDemoting
@@ -902,6 +912,15 @@ Retry:
 	case inodeLeaseStateExclusiveRequested:
 		logFatalf("switch inode.leaseState unexpected: inodeLeaseStateExclusiveRequested")
 	case inodeLeaseStateExclusiveGranted:
+		// Indicate that we do, in fact, have an Exclusive Lock in ourInodeLockRequest
+
+		inodeHeldLock, ok = ourInodeLockRequest.locksHeld[inodeNumber]
+		if !ok {
+			logFatalf("ourInodeLockRequest.locksHeld[inodeNumber] returned !ok")
+		}
+
+		inodeHeldLock.exclusive = true
+
 		// Perform the requested Lease Release
 
 		inode.leaseState = inodeLeaseStateExclusiveReleasing
