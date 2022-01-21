@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// Copyright (c) 2015-2022, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
 package imgrpkg
@@ -89,6 +89,15 @@ func mount(retryRPCClientID uint64, mountRequest *MountRequestStruct, mountRespo
 		volume                              *volumeStruct
 		volumeAsValue                       sortedmap.Value
 	)
+
+	logTracef("==> [RPC] Mount(retryRPCClientID: 0x%016X, mountRequest: %+v,)", retryRPCClientID, mountRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] Mount(retryRPCClientID: 0x%016X, mountRequest: %+v,mountResponse: %+v)", retryRPCClientID, mountRequest, mountResponse)
+		} else {
+			logTracef("<== [RPC] Mount(retryRPCClientID: 0x%016X, mountRequest: %+v,) failed: %v", retryRPCClientID, mountRequest, err)
+		}
+	}()
 
 	defer func() {
 		globals.stats.MountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -217,6 +226,15 @@ func renewMount(renewMountRequest *RenewMountRequestStruct, renewMountResponse *
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> [RPC] RenewMount(renewMountRequest: %+v,)", renewMountRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] RenewMount(renewMountRequest: %+v, renewMountResponse: %+v)", renewMountRequest, renewMountResponse)
+		} else {
+			logTracef("<== [RPC] RenewMount(renewMountRequest: %+v,) failed: %v", renewMountRequest, err)
+		}
+	}()
+
 	defer func() {
 		globals.stats.RenewMountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -283,6 +301,15 @@ func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountRespo
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> [RPC] Unmount(unmountRequest: %+v,)", unmountRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] Unmount(unmountRequest: %+v, unmountResponse: %+v)", unmountRequest, unmountResponse)
+		} else {
+			logTracef("<== [RPC] Unmount(unmountRequest: %+v,) failed: %v", unmountRequest, err)
+		}
+	}()
+
 	defer func() {
 		globals.stats.UnmountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -300,6 +327,15 @@ func volumeStatus(volumeStatusRequest *VolumeStatusRequestStruct, volumeStatusRe
 		ok              bool
 		startTime       time.Time = time.Now()
 	)
+
+	logTracef("==> [RPC] VolumeStatus(volumeStatusRequest: %+v,)", volumeStatusRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] VolumeStatus(volumeStatusRequest: %+v, volumeStatusResponse: %+v)", volumeStatusRequest, volumeStatusResponse)
+		} else {
+			logTracef("<== [RPC] VolumeStatus(volumeStatusRequest: %+v,) failed: %v", volumeStatusRequest, err)
+		}
+	}()
 
 	defer func() {
 		globals.stats.VolumeStatusUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -339,6 +375,15 @@ func fetchNonceRange(fetchNonceRangeRequest *FetchNonceRangeRequestStruct, fetch
 		startTime time.Time = time.Now()
 	)
 
+	logTracef("==> [RPC] FetchNonceRange(renewMountRequest: %+v,)", fetchNonceRangeRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] FetchNonceRange(fetchNonceRangeRequest: %+v, fetchNonceRangeResponse: %+v)", fetchNonceRangeRequest, fetchNonceRangeResponse)
+		} else {
+			logTracef("<== [RPC] FetchNonceRange(fetchNonceRangeRequest: %+v,) failed: %v", fetchNonceRangeRequest, err)
+		}
+	}()
+
 	defer func() {
 		globals.stats.FetchNonceRangeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -375,6 +420,15 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 		startTime               time.Time = time.Now()
 		volume                  *volumeStruct
 	)
+
+	logTracef("==> [RPC] GetInodeTableEntry(getInodeTableEntryRequest: %+v,)", getInodeTableEntryRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] GetInodeTableEntry(getInodeTableEntryRequest: %+v, getInodeTableEntryResponse: %+v)", getInodeTableEntryRequest, getInodeTableEntryResponse)
+		} else {
+			logTracef("<== [RPC] GetInodeTableEntry(getInodeTableEntryRequest: %+v,) failed: %v", getInodeTableEntryRequest, err)
+		}
+	}()
 
 	defer func() {
 		globals.stats.GetInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -439,6 +493,15 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 		startTime                time.Time = time.Now()
 		volume                   *volumeStruct
 	)
+
+	logTracef("==> [RPC] PutInodeTableEntries(putInodeTableEntriesRequest: %+v,)", putInodeTableEntriesRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] PutInodeTableEntries(putInodeTableEntriesRequest: %+v, putInodeTableEntriesResponse: %+v)", putInodeTableEntriesRequest, putInodeTableEntriesResponse)
+		} else {
+			logTracef("<== [RPC] PutInodeTableEntries(putInodeTableEntriesRequest: %+v,) failed: %v", putInodeTableEntriesRequest, err)
+		}
+	}()
 
 	defer func() {
 		globals.stats.PutInodeTableEntriesUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -516,6 +579,15 @@ func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRe
 		startTime           time.Time = time.Now()
 	)
 
+	logTracef("==> [RPC] DeleteInodeTableEntry(deleteInodeTableEntryRequest: %+v,)", deleteInodeTableEntryRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] DeleteInodeTableEntry(deleteInodeTableEntryRequest: %+v, deleteInodeTableEntryResponse: %+v)", deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)
+		} else {
+			logTracef("<== [RPC] DeleteInodeTableEntry(deleteInodeTableEntryRequest: %+v,) failed: %v", deleteInodeTableEntryRequest, err)
+		}
+	}()
+
 	defer func() {
 		globals.stats.DeleteInodeTableEntryUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -564,6 +636,15 @@ func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *Adjus
 		ok                  bool
 		startTime           time.Time = time.Now()
 	)
+
+	logTracef("==> [RPC] AdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest: %+v,)", adjustInodeTableEntryOpenCountRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] AdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest: %+v, adjustInodeTableEntryOpenCountResponse: %+v)", adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+		} else {
+			logTracef("<== [RPC] AdjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest: %+v,) failed: %v", adjustInodeTableEntryOpenCountRequest, err)
+		}
+	}()
 
 	defer func() {
 		globals.stats.AdjustInodeTableEntryOpenCountUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -672,6 +753,15 @@ func flush(flushRequest *FlushRequestStruct, flushResponse *FlushResponseStruct)
 		volume                 *volumeStruct
 	)
 
+	logTracef("==> [RPC] Flush(flushRequest: %+v,)", flushRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] Flush(flushRequest: %+v, flushResponse: %+v)", flushRequest, flushResponse)
+		} else {
+			logTracef("<== [RPC] Flush(flushRequest: %+v,) failed: %v", flushRequest, err)
+		}
+	}()
+
 	defer func() {
 		globals.stats.FlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
@@ -719,6 +809,15 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 		startTime             time.Time = time.Now()
 		volume                *volumeStruct
 	)
+
+	logTracef("==> [RPC] Lease(leaseRequest: %+v,)", leaseRequest)
+	defer func() {
+		if err == nil {
+			logTracef("<== [RPC] Lease(leaseRequest: %+v, leaseResponse: %+v)", leaseRequest, leaseResponse)
+		} else {
+			logTracef("<== [RPC] Lease(leaseRequest: %+v,) failed: %v", leaseRequest, err)
+		}
+	}()
 
 	defer func() {
 		globals.stats.LeaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))

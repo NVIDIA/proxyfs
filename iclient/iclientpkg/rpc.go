@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// Copyright (c) 2015-2022, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
 package iclientpkg
@@ -477,6 +477,11 @@ func (dummy *globalsStruct) Interrupt(payload []byte) {
 	if nil != err {
 		logFatalf("json.Unmarshal(payload, rpcInterrupt) failed: %v", err)
 	}
+
+	logTracef("==> Interrupt(rpcInterrupt: %+v)", rpcInterrupt)
+	defer func() {
+		logTracef("<== Interrupt(rpcInterrupt: %+v)", rpcInterrupt)
+	}()
 
 	switch rpcInterrupt.RPCInterruptType {
 	case imgrpkg.RPCInterruptTypeUnmount:
