@@ -912,7 +912,7 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 
 	// Send Lease Request Operation to *inodeLeaseStruct.handler()
 	//
-	// Note that we still hold the volumesLock, so inodeLease can't disappear out from under us
+	// Note that we still hold the globals.Lock, so inodeLease can't disappear out from under us
 
 	leaseRequestOperation = &leaseRequestOperationStruct{
 		mount:            mount,

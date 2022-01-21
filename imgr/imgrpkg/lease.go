@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// Copyright (c) 2015-2022, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
 package imgrpkg
@@ -159,6 +159,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 						inodeLease.lastGrantTime = time.Now()
 						inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
 					} else {
+						leaseRequest.replyChan = leaseRequestOperation.replyChan
 						inodeLease.leaseState = inodeLeaseStateSharedPromoting
 						inodeLease.promotingHolder = leaseRequest
 						leaseRequest.requestState = leaseRequestStateSharedPromoting
