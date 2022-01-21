@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// Copyright (c) 2015-2022, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0
 
 package iclientpkg
@@ -2599,11 +2599,7 @@ Retry:
 
 func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission.FlushIn) (errno syscall.Errno) {
 	var (
-		err              error
-		inode            *inodeStruct
-		inodeLockRequest *inodeLockRequestStruct
-		openHandle       *openHandleStruct
-		startTime        time.Time = time.Now()
+		startTime time.Time = time.Now()
 	)
 
 	logTracef("==> DoFlush(inHeader: %+v, flushIn: %+v)", inHeader, flushIn)
@@ -2614,61 +2610,6 @@ func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission
 	defer func() {
 		globals.stats.DoFlushUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
-
-Retry:
-	inodeLockRequest = newLockRequest()
-	inodeLockRequest.inodeNumber = inHeader.NodeID
-	inodeLockRequest.exclusive = true
-	inodeLockRequest.addThisLock()
-	if len(inodeLockRequest.locksHeld) == 0 {
-		performInodeLockRetryDelay()
-		goto Retry
-	}
-
-	openHandle = lookupOpenHandle(flushIn.FH)
-	if nil == openHandle {
-		inodeLockRequest.unlockAll()
-		errno = syscall.EBADF
-		return
-	}
-	if openHandle.inodeNumber != inHeader.NodeID {
-		inodeLockRequest.unlockAll()
-		errno = syscall.EBADF
-		return
-	}
-	if !openHandle.fissionFlagsWrite {
-		inodeLockRequest.unlockAll()
-		errno = syscall.EBADF
-		return
-	}
-
-	inode = lookupInode(openHandle.inodeNumber)
-	if nil == inode {
-		inodeLockRequest.unlockAll()
-		errno = syscall.ENOENT
-		return
-	}
-
-	if nil == inode.inodeHeadV1 {
-		err = inode.populateInodeHeadV1()
-		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
-		}
-	}
-
-	if inode.inodeHeadV1.InodeType != ilayout.InodeTypeFile {
-		inodeLockRequest.unlockAll()
-		errno = syscall.EBADF
-		return
-	}
-
-	if inode.dirty {
-		flushInodesInSlice([]*inodeStruct{inode})
-	}
-
-	inodeLockRequest.unlockAll()
 
 	errno = 0
 	return
