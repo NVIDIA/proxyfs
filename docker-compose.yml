@@ -60,7 +60,9 @@ services:
       - 33123                                 # ICKPT.Port
       - 32356                                 # IMGR.RetryRPCPort
       - 15346                                 # IMGR.HTTPServerPort
-      - 15347                                 # ICLIENT.HTTPServerPort
+      - 15347                                 # ICLIENT.HTTPServerPort for iclient/dev.conf
+      - 15348                                 # ICLIENT.HTTPServerPort for iclient/dev2.conf
+      - 15349                                 # ICLIENT.HTTPServerPort for iclient/dev3.conf
     ports:
       - target: 33123
         published: 33123
@@ -76,6 +78,14 @@ services:
         mode: host
       - target: 15347
         published: 15347
+        protocol: tcp
+        mode: host
+      - target: 15348
+        published: 15348
+        protocol: tcp
+        mode: host
+      - target: 15349
+        published: 15349
         protocol: tcp
         mode: host
     volumes:
