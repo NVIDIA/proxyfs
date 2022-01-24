@@ -450,7 +450,7 @@ func getInodeTableEntry(getInodeTableEntryRequest *GetInodeTableEntryRequestStru
 	}
 
 	leaseRequest, ok = mount.leaseRequestMap[getInodeTableEntryRequest.InodeNumber]
-	if !ok || ((leaseRequestStateSharedGranted != leaseRequest.requestState) && (leaseRequestStateExclusiveGranted != leaseRequest.requestState)) {
+	if !ok || !leaseRequest.okToRead() {
 		globals.Unlock()
 		err = fmt.Errorf("%s %016X", EMissingLease, getInodeTableEntryRequest.InodeNumber)
 		return
@@ -524,7 +524,7 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 
 	for _, putInodeTableEntry = range putInodeTableEntriesRequest.UpdatedInodeTableEntryArray {
 		leaseRequest, ok = mount.leaseRequestMap[putInodeTableEntry.InodeNumber]
-		if !ok || (leaseRequestStateExclusiveGranted != leaseRequest.requestState) {
+		if !ok || !leaseRequest.okToWrite() {
 			globals.Unlock()
 			err = fmt.Errorf("%s %016X", EMissingLease, putInodeTableEntry.InodeNumber)
 			return
@@ -608,7 +608,7 @@ func deleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRe
 	}
 
 	leaseRequest, ok = mount.leaseRequestMap[deleteInodeTableEntryRequest.InodeNumber]
-	if !ok || (leaseRequestStateExclusiveGranted != leaseRequest.requestState) {
+	if !ok || !leaseRequest.okToWrite() {
 		globals.Unlock()
 		err = fmt.Errorf("%s %016X", EMissingLease, deleteInodeTableEntryRequest.InodeNumber)
 		return
@@ -671,7 +671,7 @@ func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *Adjus
 	}
 
 	leaseRequest, ok = mount.leaseRequestMap[adjustInodeTableEntryOpenCountRequest.InodeNumber]
-	if !ok || ((leaseRequestStateSharedGranted != leaseRequest.requestState) && (leaseRequestStateExclusiveGranted != leaseRequest.requestState)) {
+	if !ok || !leaseRequest.okToRead() {
 		globals.Unlock()
 		err = fmt.Errorf("%s %016X", EMissingLease, adjustInodeTableEntryOpenCountRequest.InodeNumber)
 		return
