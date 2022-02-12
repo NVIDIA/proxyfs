@@ -1,5 +1,4 @@
-; Job/Section Selection: --section={1MiB_write|1MiB_read|4KiB_write|4KiB_read}
-; Number of Threads:  --numjobs=<N>  (defaults to 1)
+; Job/Section Selection: --section={write_1|read_1|write_2|read_2|write_4|read_4|write_8|read_8|write_16|read_16}
 ;
 ; Suggested sequence:
 ;
@@ -9,23 +8,56 @@
 ;  Unmount file system
 ;  Restart file server
 ;  Remount file system
-;  fio --section=1MiB_write --numjobs=<N> benchmark.fio
+;  fio --section=write_1 benchmark.fio
 ;  Record results
 ;  Unmount file system
 ;  Restart file server
 ;  Remount file system
-;  fio --section=1MiB_read --numjobs=<N> benchmark.fio
+;  fio --section=read_1 benchmark.fio
 ;  Record results
 ;  Erase all files in file system
 ;  Unmount file system
 ;  Restart file server
 ;  Remount file system
-;  fio --section=4KiB_write --numjobs=<N> benchmark.fio
+;  fio --section=write_2 benchmark.fio
 ;  Record results
 ;  Unmount file system
 ;  Restart file server
 ;  Remount file system
-;  fio --section=4KiB_read --numjobs=<N> benchmark.fio
+;  fio --section=read_2 benchmark.fio
+;  Record results
+;  Erase all files in file system
+;  Unmount file system
+;  Restart file server
+;  Remount file system
+;  fio --section=write_4 benchmark.fio
+;  Record results
+;  Unmount file system
+;  Restart file server
+;  Remount file system
+;  fio --section=read_4 benchmark.fio
+;  Record results
+;  Erase all files in file system
+;  Unmount file system
+;  Restart file server
+;  Remount file system
+;  fio --section=write_8 benchmark.fio
+;  Record results
+;  Unmount file system
+;  Restart file server
+;  Remount file system
+;  fio --section=read_8 benchmark.fio
+;  Record results
+;  Erase all files in file system
+;  Unmount file system
+;  Restart file server
+;  Remount file system
+;  fio --section=write_16 benchmark.fio
+;  Record results
+;  Unmount file system
+;  Restart file server
+;  Remount file system
+;  fio --section=read_16 benchmark.fio
 ;  Record results
 ;  Erase all files in file system
 ;  Unmount file system
@@ -38,20 +70,46 @@ filename_format=fio.$jobnum.$filenum
 group_reporting
 iodepth=1
 ioengine=psync
+direct=1
+blocksize=64Ki
 size=4Gi
 
-[1MiB_write]
-blocksize=1Mi
+[write_1]
 readwrite=write
+numjobs=1
 
-[1MiB_read]
-blocksize=1Mi
+[read_1]
 readwrite=read
+numjobs=1
 
-[4KiB_write]
-blocksize=4Ki
+[write_2]
 readwrite=write
+numjobs=2
 
-[4KiB_read]
-blocksize=4Ki
+[read_2]
 readwrite=read
+numjobs=2
+
+[write_4]
+readwrite=write
+numjobs=4
+
+[read_4]
+readwrite=read
+numjobs=4
+
+[write_8]
+readwrite=write
+numjobs=8
+
+[read_8]
+readwrite=read
+numjobs=8
+
+[write_16]
+readwrite=write
+numjobs=16
+
+[read_16]
+readwrite=read
+numjobs=16
