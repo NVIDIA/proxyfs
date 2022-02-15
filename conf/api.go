@@ -237,6 +237,7 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 			if confFileBytesLineOffsetStart < confFileBytesOffset {
 				currentLine = string(confFileBytes[confFileBytesLineOffsetStart:confFileBytesOffset])
 
+				currentLine = strings.TrimRight(currentLine, "\r")   // Trim trailing CR (if present)
 				currentLine = strings.SplitN(currentLine, ";", 2)[0] // Trim comment after ';'
 				currentLine = strings.SplitN(currentLine, "#", 2)[0] // Trim comment after '#'
 				currentLine = strings.Trim(currentLine, " \t")       // Trim leading & trailing spaces & tabs

@@ -52,9 +52,9 @@ func TestMain(m *testing.M) {
 
 	tempFile2Name = tempFile2.Name()
 
-	io.WriteString(tempFile2, "; A comment on it's own line\n")
-	io.WriteString(tempFile2, "[TestNamespace:Test_-_Section] ; A comment at the end of a line\n")
-	io.WriteString(tempFile2, "Test_-_Option =\n")
+	io.WriteString(tempFile2, "; A comment on it's own line\r\n")
+	io.WriteString(tempFile2, "[TestNamespace:Test_-_Section] ; A comment at the end of a line\r\n")
+	io.WriteString(tempFile2, "Test_-_Option =\r\n")
 
 	tempFile2.Close()
 
