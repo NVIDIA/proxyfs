@@ -216,8 +216,8 @@ type SuperBlockV1Struct struct {
 	InodeTableRootObjectLength     uint64                          // Number of bytes in the Object of the root of the InodeTable
 	InodeTableLayout               []InodeTableLayoutEntryV1Struct // Describes the data and space occupied by the the InodeTable
 	InodeObjectCount               uint64                          // Number of Objects holding {Dir|File}Inode Payload-described B+Tree as well as the FileInode's contents
-	InodeObjectSize                uint64                          // Sum of sizes of all Objects holding {Dir|File}Inode Payload-described B+Tree as well as the FileInode's contents
-	InodeBytesReferenced           uint64                          // Sum of bytes referenced in all Objects holding {Dir|File}Inode Payload-described B+Tree as well as the FileInode's contents
+	InodeObjectSize                uint64                          // Sum of bytes written              in all Objects holding {Dir|File}Inode Payload-described B+Tree as well as the FileInode's contents
+	InodeBytesReferenced           uint64                          // Sum of bytes currently referenced in all Objects holding {Dir|File}Inode Payload-described B+Tree as well as the FileInode's contents
 	PendingDeleteObjectNumberArray []uint64                        // List of Objects to be deleted after the this CheckPoint
 }
 

@@ -715,8 +715,8 @@ func postVolume(storageURL string, authToken string) (err error) {
 			},
 		},
 		InodeObjectCount:     1,
-		InodeObjectSize:      uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
-		InodeBytesReferenced: uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
+		InodeObjectSize:      uint64(len(postVolumeSuperBlockInodeTableCallbacks.body)),
+		InodeBytesReferenced: uint64(len(postVolumeSuperBlockInodeTableCallbacks.body)),
 	}
 
 	superBlockV1Buf, err = superBlockV1.MarshalSuperBlockV1()
@@ -1440,6 +1440,8 @@ func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
 
 	if !inodeHeadObjectNumberInLayout {
 		_ = volume.pendingDeleteObjectNumberList.PushBack(inodeTableEntryValue.InodeHeadObjectNumber)
+
+		volume.superBlock.InodeObjectCount--
 	}
 
 	ok, err = volume.inodeTable.DeleteByKey(inodeNumber)

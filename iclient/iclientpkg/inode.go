@@ -646,8 +646,6 @@ func (inode *inodeStruct) ensurePutObjectIsActive() {
 		inode.putObjectNumber = fetchNonce()
 		inode.putObjectBuffer = make([]byte, 0)
 
-		inode.superBlockInodeObjectCountAdjustment++
-
 		inode.layoutMap[inode.putObjectNumber] = layoutMapEntryStruct{
 			objectSize:      0,
 			bytesReferenced: 0,
