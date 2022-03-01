@@ -134,7 +134,10 @@ func (inode *inodeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, ob
 
 	layoutMapEntry, ok = inode.layoutMap[inode.putObjectNumber]
 	if !ok {
-		logFatalf("inode.layoutMap[inode.putObjectNumber] returned !ok")
+		layoutMapEntry = layoutMapEntryStruct{
+			objectSize:      0,
+			bytesReferenced: 0,
+		}
 	}
 
 	objectNumber = inode.putObjectNumber
@@ -182,10 +185,8 @@ func (inode *inodeStruct) DiscardNode(objectNumber uint64, objectOffset uint64, 
 
 	// It's ok to update lauoutMap... but note that the above checks don't protect against all double deallocations
 
-	if (objectLength == layoutMapEntry.bytesReferenced) && (objectNumber != inode.putObjectNumber) {
-		// Note that we skip the special case where we are currently
-		// discarding the only referenced bytes in an active putObjectBuffer
-		// since a subsequent flush will write (at least) the inodeHeadV1 there
+	if objectLength == layoutMapEntry.bytesReferenced {
+		// We are completely dereferencing objectNumber...
 
 		delete(inode.layoutMap, objectNumber)
 
@@ -193,8 +194,16 @@ func (inode *inodeStruct) DiscardNode(objectNumber uint64, objectOffset uint64, 
 		inode.superBlockInodeObjectSizeAdjustment -= int64(layoutMapEntry.objectSize)
 		inode.superBlockInodeBytesReferencedAdjustment -= int64(objectLength)
 
-		inode.dereferencedObjectNumberArray = append(inode.dereferencedObjectNumberArray, objectNumber)
+		if objectNumber == inode.putObjectNumber {
+			// We haven't put inode.putObjectNumber yet, so no need to delete it
+		} else {
+			// Ok to delete the object as it will be unrefenenced when we put inode.putObjectNumber during flush
+
+			inode.dereferencedObjectNumberArray = append(inode.dereferencedObjectNumberArray, objectNumber)
+		}
 	} else {
+		// Just update layoutMapEntry.bytesReferenced (that will still be non-zero)
+
 		layoutMapEntry.bytesReferenced -= objectLength
 
 		inode.layoutMap[objectNumber] = layoutMapEntry
@@ -645,13 +654,6 @@ func (inode *inodeStruct) ensurePutObjectIsActive() {
 	if inode.putObjectNumber == 0 {
 		inode.putObjectNumber = fetchNonce()
 		inode.putObjectBuffer = make([]byte, 0)
-
-		inode.layoutMap[inode.putObjectNumber] = layoutMapEntryStruct{
-			objectSize:      0,
-			bytesReferenced: 0,
-		}
-
-		inode.superBlockInodeObjectCountAdjustment++
 	}
 }
 
@@ -896,7 +898,10 @@ func (fileInode *inodeStruct) recordExtent(startingFileOffset uint64, length uin
 
 	layoutMapEntry, ok = fileInode.layoutMap[fileInode.putObjectNumber]
 	if !ok {
-		logFatalf("fileInode.layoutMap[inode.putObjectNumber] returned !ok")
+		layoutMapEntry = layoutMapEntryStruct{
+			objectSize:      0,
+			bytesReferenced: 0,
+		}
 	}
 
 	layoutMapEntry.objectSize += length
@@ -1212,19 +1217,29 @@ func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint
 			logFatalf("fileInode.payload.DeleteByIndex() returned !ok")
 		}
 
-		// Update the layoutMapEntry... possibly deleting it if .bytesReferences reaches 0 (and it's not the current putObject)
+		// Update the layoutMapEntry... possibly deleting it if .bytesReferences reaches 0
 
 		layoutMapEntry.bytesReferenced -= extentMapEntryValueV1.Length
 
-		if (layoutMapEntry.bytesReferenced == 0) && (extentMapEntryValueV1.ObjectNumber != fileInode.putObjectNumber) {
+		if layoutMapEntry.bytesReferenced == 0 {
+			// We are completely dereferencing extentMapEntryValueV1.ObjectNumber
+
 			delete(fileInode.layoutMap, extentMapEntryValueV1.ObjectNumber)
 
 			fileInode.superBlockInodeObjectCountAdjustment--
 			fileInode.superBlockInodeObjectSizeAdjustment -= int64(layoutMapEntry.objectSize)
 			fileInode.superBlockInodeBytesReferencedAdjustment -= int64(extentMapEntryValueV1.Length)
 
-			fileInode.dereferencedObjectNumberArray = append(fileInode.dereferencedObjectNumberArray, extentMapEntryValueV1.ObjectNumber)
+			if extentMapEntryValueV1.ObjectNumber == fileInode.putObjectNumber {
+				// We haven't put inode.putObjectNumber yet, so no need to delete it
+			} else {
+				// Ok to delete the object as it will be unrefenenced when we put fileInode.putObjectNumber during flush
+
+				fileInode.dereferencedObjectNumberArray = append(fileInode.dereferencedObjectNumberArray, extentMapEntryValueV1.ObjectNumber)
+			}
 		} else {
+			// Just update layoutMapEntry.bytesReferenced (that will still be non-zero)
+
 			fileInode.layoutMap[extentMapEntryValueV1.ObjectNumber] = layoutMapEntry
 
 			fileInode.superBlockInodeBytesReferencedAdjustment -= int64(extentMapEntryValueV1.Length)
