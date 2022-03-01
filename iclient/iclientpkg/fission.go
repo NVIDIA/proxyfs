@@ -4001,7 +4001,6 @@ Retry:
 
 		renamedInode.dirty = true
 
-		renamedInode.inodeHeadV1.ModificationTime = startTime
 		renamedInode.inodeHeadV1.StatusChangeTime = startTime
 
 		delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
@@ -4081,7 +4080,6 @@ Retry:
 
 			renamedInode.dirty = true
 
-			renamedInode.inodeHeadV1.ModificationTime = startTime
 			renamedInode.inodeHeadV1.StatusChangeTime = startTime
 
 			delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
@@ -4127,7 +4125,6 @@ Retry:
 		} else {
 			renamedInode.dirty = true
 
-			renamedInode.inodeHeadV1.ModificationTime = startTime
 			renamedInode.inodeHeadV1.StatusChangeTime = startTime
 
 			delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
