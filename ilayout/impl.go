@@ -154,7 +154,7 @@ func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf [
 			return
 		}
 
-		curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectSize)
+		curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeTableLayout[inodeTableLayoutIndex].BytesWritten)
 		if nil != err {
 			return
 		}
@@ -170,7 +170,7 @@ func (superBlockV1 *SuperBlockV1Struct) marshalSuperBlockV1() (superBlockV1Buf [
 		return
 	}
 
-	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeObjectSize)
+	curPos, err = putLEUint64ToBuf(superBlockV1Buf, curPos, superBlockV1.InodeBytesWritten)
 	if nil != err {
 		return
 	}
@@ -277,7 +277,7 @@ func unmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1St
 			return
 		}
 
-		superBlockV1.InodeTableLayout[inodeTableLayoutIndex].ObjectSize, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
+		superBlockV1.InodeTableLayout[inodeTableLayoutIndex].BytesWritten, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 		if nil != err {
 			return
 		}
@@ -293,7 +293,7 @@ func unmarshalSuperBlockV1(superBlockV1Buf []byte) (superBlockV1 *SuperBlockV1St
 		return
 	}
 
-	superBlockV1.InodeObjectSize, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
+	superBlockV1.InodeBytesWritten, curPos, err = getLEUint64FromBuf(superBlockV1Buf, curPos)
 	if nil != err {
 		return
 	}
@@ -544,7 +544,7 @@ func (inodeHeadV1 *InodeHeadV1Struct) marshalInodeHeadV1() (inodeHeadV1Buf []byt
 			return
 		}
 
-		curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Layout[layoutIndex].ObjectSize)
+		curPos, err = putLEUint64ToBuf(inodeHeadV1Buf, curPos, inodeHeadV1.Layout[layoutIndex].BytesWritten)
 		if nil != err {
 			return
 		}
@@ -731,7 +731,7 @@ func unmarshalInodeHeadV1(inodeHeadV1Buf []byte) (inodeHeadV1 *InodeHeadV1Struct
 			return
 		}
 
-		inodeHeadV1.Layout[layoutIndex].ObjectSize, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
+		inodeHeadV1.Layout[layoutIndex].BytesWritten, curPos, err = getLEUint64FromBuf(inodeHeadV1Buf, curPos)
 		if nil != err {
 			return
 		}

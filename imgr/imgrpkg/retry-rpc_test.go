@@ -27,7 +27,7 @@ const (
 )
 
 type testInodeHeadLayoutEntryV1Struct struct {
-	objectSize      uint64
+	bytesWritten    uint64
 	bytesReferenced uint64
 }
 
@@ -35,7 +35,7 @@ type testFileInodeStruct struct {
 	inodeHeadV1                              *ilayout.InodeHeadV1Struct
 	layoutAsMap                              map[uint64]*testInodeHeadLayoutEntryV1Struct // key == ilayout.InodeHeadLayoutEntryV1Struct; value == remaining fields of ilayout.InodeHeadLayoutEntryV1Struct
 	superBlockInodeObjectCountAdjustment     int64                                        // to be sent in next PutInodeTableEntriesRequest
-	superBlockInodeObjectSizeAdjustment      int64                                        // to be sent in next PutInodeTableEntriesRequest
+	superBlockInodeBytesWrittenAdjustment    int64                                        // to be sent in next PutInodeTableEntriesRequest
 	superBlockInodeBytesReferencedAdjustment int64                                        // to be sent in next PutInodeTableEntriesRequest
 	dereferencedObjectNumberArray            []uint64                                     // to be sent in next PutInodeTableEntriesRequest
 	extentMapCache                           sortedmap.BPlusTreeCache
@@ -69,7 +69,7 @@ func newTestFileInode(inodeNumber uint64) (testFileInode *testFileInodeStruct) {
 		},
 		layoutAsMap:                              make(map[uint64]*testInodeHeadLayoutEntryV1Struct),
 		superBlockInodeObjectCountAdjustment:     0,
-		superBlockInodeObjectSizeAdjustment:      0,
+		superBlockInodeBytesWrittenAdjustment:    0,
 		superBlockInodeBytesReferencedAdjustment: 0,
 		dereferencedObjectNumberArray:            []uint64{},
 		extentMapCache:                           sortedmap.NewBPlusTreeCache(testFileInodeExtentMapCacheEvictLowLimit, testFileInodeExtentMapCacheEvictHighLimit),
@@ -97,7 +97,7 @@ func oldTestFileInode(inodeHeadV1 *ilayout.InodeHeadV1Struct) (testFileInode *te
 		inodeHeadV1:                              inodeHeadV1,
 		layoutAsMap:                              make(map[uint64]*testInodeHeadLayoutEntryV1Struct),
 		superBlockInodeObjectCountAdjustment:     0,
-		superBlockInodeObjectSizeAdjustment:      0,
+		superBlockInodeBytesWrittenAdjustment:    0,
 		superBlockInodeBytesReferencedAdjustment: 0,
 		dereferencedObjectNumberArray:            []uint64{},
 		extentMapCache:                           sortedmap.NewBPlusTreeCache(testFileInodeExtentMapCacheEvictLowLimit, testFileInodeExtentMapCacheEvictHighLimit),
@@ -108,7 +108,7 @@ func oldTestFileInode(inodeHeadV1 *ilayout.InodeHeadV1Struct) (testFileInode *te
 
 	for _, inodeHeadLayoutEntryV1 = range testFileInode.inodeHeadV1.Layout {
 		testFileInode.layoutAsMap[inodeHeadLayoutEntryV1.ObjectNumber] = &testInodeHeadLayoutEntryV1Struct{
-			objectSize:      inodeHeadLayoutEntryV1.ObjectSize,
+			bytesWritten:    inodeHeadLayoutEntryV1.BytesWritten,
 			bytesReferenced: inodeHeadLayoutEntryV1.BytesReferenced,
 		}
 	}
@@ -168,7 +168,7 @@ func (testFileInode *testFileInodeStruct) externalizeInodeHeadV1Layout() {
 	for layoutIndex, objectNumber = range inodeHeadLayoutEntryV1StructObjectNumberSlice {
 		testFileInode.inodeHeadV1.Layout[layoutIndex] = ilayout.InodeHeadLayoutEntryV1Struct{
 			ObjectNumber:    objectNumber,
-			ObjectSize:      testFileInode.layoutAsMap[objectNumber].objectSize,
+			BytesWritten:    testFileInode.layoutAsMap[objectNumber].bytesWritten,
 			BytesReferenced: testFileInode.layoutAsMap[objectNumber].bytesReferenced,
 		}
 	}
@@ -181,7 +181,7 @@ func (testFileInode *testFileInodeStruct) openObject(objectNumber uint64) (err e
 	}
 
 	testFileInode.superBlockInodeObjectCountAdjustment = 0
-	testFileInode.superBlockInodeObjectSizeAdjustment = 0
+	testFileInode.superBlockInodeBytesWrittenAdjustment = 0
 	testFileInode.superBlockInodeBytesReferencedAdjustment = 0
 	testFileInode.dereferencedObjectNumberArray = []uint64{}
 
@@ -275,18 +275,18 @@ func (testFileInode *testFileInodeStruct) putObjectData(objectData []byte, track
 	if trackedInLayout {
 		testInodeHeadLayoutEntryV1, ok = testFileInode.layoutAsMap[testFileInode.putObjectNumber]
 		if ok {
-			testInodeHeadLayoutEntryV1.objectSize += uint64(len(objectData))
+			testInodeHeadLayoutEntryV1.bytesWritten += uint64(len(objectData))
 			testInodeHeadLayoutEntryV1.bytesReferenced += uint64(len(objectData))
 		} else {
 			testInodeHeadLayoutEntryV1 = &testInodeHeadLayoutEntryV1Struct{
-				objectSize:      uint64(len(objectData)),
+				bytesWritten:    uint64(len(objectData)),
 				bytesReferenced: uint64(len(objectData)),
 			}
 
 			testFileInode.layoutAsMap[testFileInode.putObjectNumber] = testInodeHeadLayoutEntryV1
 		}
 
-		testFileInode.superBlockInodeObjectSizeAdjustment += int64(len(objectData))
+		testFileInode.superBlockInodeBytesWrittenAdjustment += int64(len(objectData))
 		testFileInode.superBlockInodeBytesReferencedAdjustment += int64(len(objectData))
 	}
 
@@ -322,7 +322,7 @@ func (testFileInode *testFileInodeStruct) discardObjectData(objectNumber uint64,
 	if testInodeHeadLayoutEntryV1.bytesReferenced == 0 {
 		delete(testFileInode.layoutAsMap, objectNumber)
 		testFileInode.superBlockInodeObjectCountAdjustment--
-		testFileInode.superBlockInodeObjectSizeAdjustment -= int64(testInodeHeadLayoutEntryV1.objectSize)
+		testFileInode.superBlockInodeBytesWrittenAdjustment -= int64(testInodeHeadLayoutEntryV1.bytesWritten)
 		testFileInode.dereferencedObjectNumberArray = append(testFileInode.dereferencedObjectNumberArray, objectNumber)
 	} else {
 		testFileInode.layoutAsMap[objectNumber] = testInodeHeadLayoutEntryV1
@@ -708,7 +708,7 @@ func TestRetryRPC(t *testing.T) {
 			},
 		},
 		SuperBlockInodeObjectCountAdjustment:     0,
-		SuperBlockInodeObjectSizeAdjustment:      0,
+		SuperBlockInodeBytesWrittenAdjustment:    0,
 		SuperBlockInodeBytesReferencedAdjustment: 0,
 		DereferencedObjectNumberArray:            []uint64{},
 	}
@@ -786,8 +786,8 @@ func TestRetryRPC(t *testing.T) {
 	if testFileInode.inodeHeadV1.Layout[0].ObjectNumber != fileInodeObjectA {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectNumber)
 	}
-	if testFileInode.inodeHeadV1.Layout[0].ObjectSize != 3+58 {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectSize)
+	if testFileInode.inodeHeadV1.Layout[0].BytesWritten != 3+58 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].BytesWritten was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].BytesWritten)
 	}
 	if testFileInode.inodeHeadV1.Layout[0].BytesReferenced != 3+58 {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].BytesReferenced)
@@ -840,7 +840,7 @@ func TestRetryRPC(t *testing.T) {
 			},
 		},
 		SuperBlockInodeObjectCountAdjustment:     testFileInode.superBlockInodeObjectCountAdjustment,
-		SuperBlockInodeObjectSizeAdjustment:      testFileInode.superBlockInodeObjectSizeAdjustment,
+		SuperBlockInodeBytesWrittenAdjustment:    testFileInode.superBlockInodeBytesWrittenAdjustment,
 		SuperBlockInodeBytesReferencedAdjustment: testFileInode.superBlockInodeBytesReferencedAdjustment,
 		DereferencedObjectNumberArray:            testFileInode.dereferencedObjectNumberArray,
 	}
@@ -915,8 +915,8 @@ func TestRetryRPC(t *testing.T) {
 	if testFileInode.inodeHeadV1.Layout[0].ObjectNumber != fileInodeObjectA {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectNumber)
 	}
-	if testFileInode.inodeHeadV1.Layout[0].ObjectSize != 3+58 {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectSize)
+	if testFileInode.inodeHeadV1.Layout[0].BytesWritten != 3+58 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].BytesWritten was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].BytesWritten)
 	}
 	if testFileInode.inodeHeadV1.Layout[0].BytesReferenced != 3 {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].BytesReferenced)
@@ -924,8 +924,8 @@ func TestRetryRPC(t *testing.T) {
 	if testFileInode.inodeHeadV1.Layout[1].ObjectNumber != fileInodeObjectB {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectNumber)
 	}
-	if testFileInode.inodeHeadV1.Layout[1].ObjectSize != 4+90 {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectSize)
+	if testFileInode.inodeHeadV1.Layout[1].BytesWritten != 4+90 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].BytesWritten was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].BytesWritten)
 	}
 	if testFileInode.inodeHeadV1.Layout[1].BytesReferenced != 4+90 {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].BytesReferenced)
@@ -964,7 +964,7 @@ func TestRetryRPC(t *testing.T) {
 			},
 		},
 		SuperBlockInodeObjectCountAdjustment:     testFileInode.superBlockInodeObjectCountAdjustment,
-		SuperBlockInodeObjectSizeAdjustment:      testFileInode.superBlockInodeObjectSizeAdjustment,
+		SuperBlockInodeBytesWrittenAdjustment:    testFileInode.superBlockInodeBytesWrittenAdjustment,
 		SuperBlockInodeBytesReferencedAdjustment: testFileInode.superBlockInodeBytesReferencedAdjustment,
 		DereferencedObjectNumberArray:            testFileInode.dereferencedObjectNumberArray,
 	}
@@ -1065,8 +1065,8 @@ func TestRetryRPC(t *testing.T) {
 	if testFileInode.inodeHeadV1.Layout[0].ObjectNumber != fileInodeObjectB {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectNumber)
 	}
-	if testFileInode.inodeHeadV1.Layout[0].ObjectSize != 4+90 {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].ObjectSize)
+	if testFileInode.inodeHeadV1.Layout[0].BytesWritten != 4+90 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].BytesWritten was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].BytesWritten)
 	}
 	if testFileInode.inodeHeadV1.Layout[0].BytesReferenced != 4 {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[0].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[0].BytesReferenced)
@@ -1074,8 +1074,8 @@ func TestRetryRPC(t *testing.T) {
 	if testFileInode.inodeHeadV1.Layout[1].ObjectNumber != fileInodeObjectC {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectNumber was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectNumber)
 	}
-	if testFileInode.inodeHeadV1.Layout[1].ObjectSize != 3+90 {
-		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].ObjectSize was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].ObjectSize)
+	if testFileInode.inodeHeadV1.Layout[1].BytesWritten != 3+90 {
+		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].BytesWritten was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].BytesWritten)
 	}
 	if testFileInode.inodeHeadV1.Layout[1].BytesReferenced != 3+90 {
 		t.Fatalf("following testFileInode.externalizeInodeHeadV1Layout(), testFileInode.inodeHeadV1.Layout[1].BytesReferenced was unexpected: %v", testFileInode.inodeHeadV1.Layout[1].BytesReferenced)
@@ -1114,7 +1114,7 @@ func TestRetryRPC(t *testing.T) {
 			},
 		},
 		SuperBlockInodeObjectCountAdjustment:     testFileInode.superBlockInodeObjectCountAdjustment,
-		SuperBlockInodeObjectSizeAdjustment:      testFileInode.superBlockInodeObjectSizeAdjustment,
+		SuperBlockInodeBytesWrittenAdjustment:    testFileInode.superBlockInodeBytesWrittenAdjustment,
 		SuperBlockInodeBytesReferencedAdjustment: testFileInode.superBlockInodeBytesReferencedAdjustment,
 		DereferencedObjectNumberArray:            testFileInode.dereferencedObjectNumberArray,
 	}

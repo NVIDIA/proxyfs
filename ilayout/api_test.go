@@ -40,17 +40,17 @@ func TestAPI(t *testing.T) {
 			InodeTableLayout: []InodeTableLayoutEntryV1Struct{
 				{
 					ObjectNumber:    11,
-					ObjectSize:      12,
+					BytesWritten:    12,
 					BytesReferenced: 13,
 				},
 				{
 					ObjectNumber:    21,
-					ObjectSize:      22,
+					BytesWritten:    22,
 					BytesReferenced: 23,
 				},
 			},
 			InodeObjectCount:     4,
-			InodeObjectSize:      5,
+			InodeBytesWritten:    5,
 			InodeBytesReferenced: 6,
 			PendingDeleteObjectNumberArray: []uint64{
 				7,
@@ -114,12 +114,12 @@ func TestAPI(t *testing.T) {
 			Layout: []InodeHeadLayoutEntryV1Struct{
 				{
 					ObjectNumber:    311,
-					ObjectSize:      312,
+					BytesWritten:    312,
 					BytesReferenced: 313,
 				},
 				{
 					ObjectNumber:    321,
-					ObjectSize:      322,
+					BytesWritten:    322,
 					BytesReferenced: 323,
 				},
 			},

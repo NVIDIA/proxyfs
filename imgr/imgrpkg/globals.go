@@ -231,7 +231,7 @@ type mountStruct struct {
 }
 
 type inodeTableLayoutElementStruct struct {
-	objectSize      uint64 // matches ilayout.InodeTableLayoutEntryV1Struct.ObjectSize
+	bytesWritten    uint64 // matches ilayout.InodeTableLayoutEntryV1Struct.BytesWritten
 	bytesReferenced uint64 // matches ilayout.InodeTableLayoutEntryV1Struct.BytesReferenced
 }
 

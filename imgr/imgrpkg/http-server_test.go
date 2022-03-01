@@ -126,7 +126,7 @@ func TestHTTPServer(t *testing.T) {
 		t.Fatalf("testDoHTTPRequest(\"PUT\", testGlobals.httpServerURL+\"/volume\"+testVolume, nil, strings.NewReader(putRequestBody)) [case 2] failed: %v", err)
 	}
 
-	responseBodyExpected = fmt.Sprintf("{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0,\"SuperBlockObjectName\":\"3000000000000000\",\"SuperBlockLength\":96,\"ReservedToNonce\":3,\"InodeTableMinInodesPerNode\":1024,\"InodeTableMaxInodesPerNode\":2048,\"InodeTableInodeCount\":1,\"InodeTableHeight\":1,\"InodeTableLayout\":[{\"ObjectName\":\"3000000000000000\",\"ObjectSize\":58,\"BytesReferenced\":58}],\"InodeObjectCount\":1,\"InodeObjectSize\":58,\"InodeBytesReferenced\":58,\"PendingDeleteObjectNameArray\":[],\"InodeTable\":[{\"InodeNumber\":1,\"InodeHeadObjectName\":\"2000000000000000\",\"InodeHeadLength\":174}]}", testVolume, testGlobals.containerURL, testGlobals.authToken)
+	responseBodyExpected = fmt.Sprintf("{\"Name\":\"%s\",\"StorageURL\":\"%s\",\"AuthToken\":\"%s\",\"HealthyMounts\":0,\"LeasesExpiredMounts\":0,\"AuthTokenExpiredMounts\":0,\"SuperBlockObjectName\":\"3000000000000000\",\"SuperBlockLength\":96,\"ReservedToNonce\":3,\"InodeTableMinInodesPerNode\":1024,\"InodeTableMaxInodesPerNode\":2048,\"InodeTableInodeCount\":1,\"InodeTableHeight\":1,\"InodeTableLayout\":[{\"ObjectName\":\"3000000000000000\",\"BytesWritten\":58,\"BytesReferenced\":58}],\"InodeObjectCount\":1,\"InodeBytesWritten\":63,\"InodeBytesReferenced\":63,\"PendingDeleteObjectNameArray\":[],\"InodeTable\":[{\"InodeNumber\":1,\"InodeHeadObjectName\":\"2000000000000000\",\"InodeHeadLength\":174}]}", testVolume, testGlobals.containerURL, testGlobals.authToken)
 
 	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume/"+testVolume, nil, nil)
 	if nil != err {
@@ -140,7 +140,7 @@ func TestHTTPServer(t *testing.T) {
 	// Next segment to be a quoted ModificationTime.Format(time.RFC3339)
 	responseBodyExpectedStaticMiddle = "\",\"StatusChangeTime\":\""
 	// Next segment to be a quoted StatusChangeTime.Format(time.RFC3339)
-	responseBodyExpectedStaticSuffix = "\",\"Mode\":511,\"UserID\":0,\"GroupID\":0,\"StreamTable\":[],\"MinDirEntriesPerNode\":512,\"MaxDirEntriesPerNode\":1024,\"DirEntryCount\":2,\"DirectoryHeight\":1,\"Payload\":[{\"BaseName\":\".\",\"InodeNumber\":1,\"InodeType\":\"Dir\"},{\"BaseName\":\"..\",\"InodeNumber\":1,\"InodeType\":\"Dir\"}],\"Layout\":[{\"ObjectName\":\"2000000000000000\",\"ObjectSize\":63,\"BytesReferenced\":63}]}"
+	responseBodyExpectedStaticSuffix = "\",\"Mode\":511,\"UserID\":0,\"GroupID\":0,\"StreamTable\":[],\"MinDirEntriesPerNode\":512,\"MaxDirEntriesPerNode\":1024,\"DirEntryCount\":2,\"DirectoryHeight\":1,\"Payload\":[{\"BaseName\":\".\",\"InodeNumber\":1,\"InodeType\":\"Dir\"},{\"BaseName\":\"..\",\"InodeNumber\":1,\"InodeType\":\"Dir\"}],\"Layout\":[{\"ObjectName\":\"2000000000000000\",\"BytesWritten\":63,\"BytesReferenced\":63}]}"
 
 	_, responseBody, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/volume/"+testVolume+"/inode/1", nil, nil)
 	if nil != err {

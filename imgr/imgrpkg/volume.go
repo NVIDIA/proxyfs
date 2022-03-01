@@ -652,7 +652,7 @@ func postVolume(storageURL string, authToken string) (err error) {
 		Layout: []ilayout.InodeHeadLayoutEntryV1Struct{
 			{
 				ObjectNumber:    rootDirInodeObjectNumber,
-				ObjectSize:      uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
+				BytesWritten:    uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
 				BytesReferenced: uint64(len(postVolumeRootDirDirectoryCallbacks.body)),
 			},
 		},
@@ -710,12 +710,12 @@ func postVolume(storageURL string, authToken string) (err error) {
 		InodeTableLayout: []ilayout.InodeTableLayoutEntryV1Struct{
 			{
 				ObjectNumber:    superBlockObjectNumber,
-				ObjectSize:      uint64(len(postVolumeSuperBlockInodeTableCallbacks.body)),
+				BytesWritten:    uint64(len(postVolumeSuperBlockInodeTableCallbacks.body)),
 				BytesReferenced: uint64(len(postVolumeSuperBlockInodeTableCallbacks.body)),
 			},
 		},
 		InodeObjectCount:     1,
-		InodeObjectSize:      rootDirInodeHeadV1.Layout[0].ObjectSize,
+		InodeBytesWritten:    rootDirInodeHeadV1.Layout[0].BytesWritten,
 		InodeBytesReferenced: rootDirInodeHeadV1.Layout[0].BytesReferenced,
 	}
 
@@ -909,7 +909,7 @@ func (volume *volumeStruct) doCheckPoint() (err error) {
 	for objectNumber, inodeTableLayoutElement = range volume.inodeTableLayout {
 		volume.superBlock.InodeTableLayout = append(volume.superBlock.InodeTableLayout, ilayout.InodeTableLayoutEntryV1Struct{
 			ObjectNumber:    objectNumber,
-			ObjectSize:      inodeTableLayoutElement.objectSize,
+			BytesWritten:    inodeTableLayoutElement.bytesWritten,
 			BytesReferenced: inodeTableLayoutElement.bytesReferenced,
 		})
 	}
@@ -1141,11 +1141,11 @@ func (volume *volumeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, 
 
 	inodeTableLayoutElement, ok = volume.inodeTableLayout[volume.checkPointObjectNumber]
 	if ok {
-		inodeTableLayoutElement.objectSize += uint64(len(nodeByteSlice))
+		inodeTableLayoutElement.bytesWritten += uint64(len(nodeByteSlice))
 		inodeTableLayoutElement.bytesReferenced += uint64(len(nodeByteSlice))
 	} else {
 		inodeTableLayoutElement = &inodeTableLayoutElementStruct{
-			objectSize:      uint64(len(nodeByteSlice)),
+			bytesWritten:    uint64(len(nodeByteSlice)),
 			bytesReferenced: uint64(len(nodeByteSlice)),
 		}
 
@@ -1328,7 +1328,7 @@ func (volume *volumeStruct) fetchInodeHeadWhileLocked(inodeHeadObjectNumber uint
 	return
 }
 
-func (volume *volumeStruct) statusWhileLocked() (numInodes uint64, objectCount uint64, objectSize uint64, bytesReferenced uint64) {
+func (volume *volumeStruct) statusWhileLocked() (numInodes uint64, objectCount uint64, bytesWritten uint64, bytesReferenced uint64) {
 	var (
 		err           error
 		inodeTableLen int
@@ -1341,7 +1341,7 @@ func (volume *volumeStruct) statusWhileLocked() (numInodes uint64, objectCount u
 	numInodes = uint64(inodeTableLen)
 
 	objectCount = volume.superBlock.InodeObjectCount
-	objectSize = volume.superBlock.InodeObjectSize
+	bytesWritten = volume.superBlock.InodeBytesWritten
 	bytesReferenced = volume.superBlock.InodeBytesReferenced
 
 	return
@@ -1430,7 +1430,7 @@ func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
 		_ = volume.pendingDeleteObjectNumberList.PushBack(inodeHeadLayoutEntryV1.ObjectNumber)
 
 		volume.superBlock.InodeObjectCount--
-		volume.superBlock.InodeObjectSize -= inodeHeadLayoutEntryV1.ObjectSize
+		volume.superBlock.InodeBytesWritten -= inodeHeadLayoutEntryV1.BytesWritten
 		volume.superBlock.InodeBytesReferenced -= inodeHeadLayoutEntryV1.BytesReferenced
 
 		if inodeHeadLayoutEntryV1.ObjectNumber == inodeTableEntryValue.InodeHeadObjectNumber {

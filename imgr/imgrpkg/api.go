@@ -279,7 +279,7 @@ type VolumeStatusRequestStruct struct {
 type VolumeStatusResponseStruct struct {
 	NumInodes       uint64
 	ObjectCount     uint64
-	ObjectSize      uint64
+	BytesWritten    uint64
 	BytesReferenced uint64
 }
 
@@ -352,7 +352,7 @@ type PutInodeTableEntryStruct struct {
 // (which must have an active Exclusive Lease for every PutInodeTableEntryStruct.InodeNumber
 // granted to the MountID).
 //
-// The SuperBlockInode{ObjectCount|ObjectSize|BytesReferenced}Adjustment fields
+// The SuperBlockInode{ObjectCount|BytesWritten|BytesReferenced}Adjustment fields
 // are used to update the corresponding fields in the volume's SuperBlock.
 //
 // Note that dereferenced objects listed in the DereferencedObjectNumberArray will
@@ -362,7 +362,7 @@ type PutInodeTableEntriesRequestStruct struct {
 	MountID                                  string
 	UpdatedInodeTableEntryArray              []PutInodeTableEntryStruct
 	SuperBlockInodeObjectCountAdjustment     int64
-	SuperBlockInodeObjectSizeAdjustment      int64
+	SuperBlockInodeBytesWrittenAdjustment    int64
 	SuperBlockInodeBytesReferencedAdjustment int64
 	DereferencedObjectNumberArray            []uint64
 }

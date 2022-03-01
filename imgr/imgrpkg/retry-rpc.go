@@ -192,7 +192,7 @@ retryGenerateMountID:
 
 		for _, inodeTableEntryOnDisk = range volume.superBlock.InodeTableLayout {
 			inodeTableEntryInMemory = &inodeTableLayoutElementStruct{
-				objectSize:      inodeTableEntryOnDisk.ObjectSize,
+				bytesWritten:    inodeTableEntryOnDisk.BytesWritten,
 				bytesReferenced: inodeTableEntryOnDisk.BytesReferenced,
 			}
 
@@ -324,7 +324,7 @@ func volumeStatus(volumeStatusRequest *VolumeStatusRequestStruct, volumeStatusRe
 		mount           *mountStruct
 		numInodes       uint64
 		objectCount     uint64
-		objectSize      uint64
+		bytesWritten    uint64
 		ok              bool
 		startTime       time.Time = time.Now()
 	)
@@ -357,13 +357,13 @@ func volumeStatus(volumeStatusRequest *VolumeStatusRequestStruct, volumeStatusRe
 		return
 	}
 
-	numInodes, objectCount, objectSize, bytesReferenced = mount.volume.statusWhileLocked()
+	numInodes, objectCount, bytesWritten, bytesReferenced = mount.volume.statusWhileLocked()
 
 	globals.Unlock()
 
 	volumeStatusResponse.NumInodes = numInodes
 	volumeStatusResponse.ObjectCount = objectCount
-	volumeStatusResponse.ObjectSize = objectSize
+	volumeStatusResponse.BytesWritten = bytesWritten
 	volumeStatusResponse.BytesReferenced = bytesReferenced
 
 	return
@@ -556,7 +556,7 @@ func putInodeTableEntries(putInodeTableEntriesRequest *PutInodeTableEntriesReque
 	}
 
 	volume.superBlock.InodeObjectCount = uint64(int64(volume.superBlock.InodeObjectCount) + putInodeTableEntriesRequest.SuperBlockInodeObjectCountAdjustment)
-	volume.superBlock.InodeObjectSize = uint64(int64(volume.superBlock.InodeObjectSize) + putInodeTableEntriesRequest.SuperBlockInodeObjectSizeAdjustment)
+	volume.superBlock.InodeBytesWritten = uint64(int64(volume.superBlock.InodeBytesWritten) + putInodeTableEntriesRequest.SuperBlockInodeBytesWrittenAdjustment)
 	volume.superBlock.InodeBytesReferenced = uint64(int64(volume.superBlock.InodeBytesReferenced) + putInodeTableEntriesRequest.SuperBlockInodeBytesReferencedAdjustment)
 
 	for _, dereferencedObjectNumber = range putInodeTableEntriesRequest.DereferencedObjectNumberArray {

@@ -187,7 +187,7 @@ const (
 //
 type InodeTableLayoutEntryV1Struct struct {
 	ObjectNumber    uint64 // Identifies the Object containing the page(s) of the InodeTable B+Tree
-	ObjectSize      uint64 // Number of bytes written to the Object
+	BytesWritten    uint64 // Number of bytes written to the Object
 	BytesReferenced uint64 // Number of bytes currently referenced in the Object
 }
 
@@ -216,7 +216,7 @@ type SuperBlockV1Struct struct {
 	InodeTableRootObjectLength     uint64                          // Number of bytes in the Object of the root of the InodeTable
 	InodeTableLayout               []InodeTableLayoutEntryV1Struct // Describes the data and space occupied by the the InodeTable
 	InodeObjectCount               uint64                          // Number of Objects holding {Dir|File}Inode Payload-described B+Tree's as well as the FileInode's contents
-	InodeObjectSize                uint64                          // Sum of bytes written              in all Objects holding {Dir|File}Inode Payload-described B+Tree as well as the FileInode's contents
+	InodeBytesWritten              uint64                          // Sum of bytes written              in all Objects holding {Dir|File}Inode Payload-described B+Tree as well as the FileInode's contents
 	InodeBytesReferenced           uint64                          // Sum of bytes currently referenced in all Objects holding {Dir|File}Inode Payload-described B+Tree as well as the FileInode's contents
 	PendingDeleteObjectNumberArray []uint64                        // List of Objects to be deleted after the this CheckPoint
 }
@@ -350,7 +350,7 @@ type InodeHeadLayoutEntryV1Struct struct {
 	//                        For FileInode's:
 	//                          Identifies the Object containing the page(s) of the ExtentMap B+Tree
 	//                          as well as the bytes of the File's contents
-	ObjectSize      uint64 // Number of bytes written to the Object
+	BytesWritten    uint64 // Number of bytes written to the Object
 	BytesReferenced uint64 // Number of bytes currently referenced in the Object
 }
 

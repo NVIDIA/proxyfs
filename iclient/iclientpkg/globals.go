@@ -93,7 +93,7 @@ const (
 )
 
 type layoutMapEntryStruct struct {
-	objectSize      uint64
+	bytesWritten    uint64
 	bytesReferenced uint64
 }
 
@@ -128,7 +128,7 @@ type inodeStruct struct {
 	payload         sortedmap.BPlusTree                            // For DirInode:  Directory B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
 	//                                                                For FileInode: ExtentMap B+Tree from .inodeHeadV1.PayloadObjec{Number|Offset|Length}
 	superBlockInodeObjectCountAdjustment     int64    //
-	superBlockInodeObjectSizeAdjustment      int64    //
+	superBlockInodeBytesWrittenAdjustment    int64    //
 	superBlockInodeBytesReferencedAdjustment int64    //
 	dereferencedObjectNumberArray            []uint64 //
 	putObjectNumber                          uint64   //              ObjectNumber to PUT during flush

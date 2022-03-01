@@ -156,7 +156,7 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			layoutMap:                                nil,
 			payload:                                  nil,
 			superBlockInodeObjectCountAdjustment:     0,
-			superBlockInodeObjectSizeAdjustment:      0,
+			superBlockInodeBytesWrittenAdjustment:    0,
 			superBlockInodeBytesReferencedAdjustment: 0,
 			dereferencedObjectNumberArray:            make([]uint64, 0),
 			putObjectNumber:                          0,
