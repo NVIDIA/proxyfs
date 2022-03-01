@@ -5,10 +5,29 @@ package imgrpkg
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"runtime"
 	"time"
 )
+
+type logLoggerIOWriterStruct struct {
+	tag     string
+	enabled bool
+}
+
+func logLoggerNew(tag string, enabled bool) (logLogger *log.Logger) {
+	logLogger = log.New(&logLoggerIOWriterStruct{tag: tag, enabled: enabled}, "", log.Lshortfile)
+	return
+}
+
+func (logLoggerIOWriter *logLoggerIOWriterStruct) Write(p []byte) (n int, err error) {
+	if logLoggerIOWriter.enabled {
+		logf(logLoggerIOWriter.tag, "%s", string(p[:]))
+	}
+
+	return len(p), nil
+}
 
 func logFatal(err error) {
 	logf("FATAL", "%v", err)
@@ -101,6 +120,7 @@ func logf(level string, format string, args ...interface{}) {
 	} else {
 		globals.logFile.WriteString(logMsg + "\n")
 	}
+
 	if globals.config.LogToConsole {
 		fmt.Println(logMsg)
 	}

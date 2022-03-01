@@ -93,6 +93,7 @@ func startRPCHandler() (err error) {
 		Callbacks:                &globals,
 		DeadlineIO:               globals.config.RetryRPCDeadlineIO,
 		KeepAlivePeriod:          globals.config.RetryRPCKeepAlivePeriod,
+		Logger:                   logLoggerNew("RETRYRPC", globals.config.RetryRPCLogEnabled),
 	}
 
 	globals.retryRPCClient, err = retryrpc.NewClient(globals.retryRPCClientConfig)

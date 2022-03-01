@@ -67,6 +67,7 @@
 //  LogFilePath:                                 # imgr.log
 //  LogToConsole:                         true   # false
 //  TraceEnabled:                         false
+//  RetryRPCLogEnabled:                   false
 //
 // Most of the config keys are required and must have values. One exception
 // is LogFilePath that will default to "" and, hence, cause logging to not

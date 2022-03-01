@@ -83,7 +83,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 			if connectionRetryCount > ConnectionRetryLimit {
 				client.logger.Fatalf("In send(), ConnectionRetryLimit (%v) on calling dial() exceeded", ConnectionRetryLimit)
 			}
-			client.logger.Printf("initialDial() failed; retrying: %v\n", err)
+			client.logger.Printf("initialDial() failed; retrying: %v", err)
 			time.Sleep(connectionRetryDelay)
 			connectionRetryDelay *= ConnectionRetryDelayMultiplier
 			client.Lock()
@@ -221,7 +221,7 @@ func (client *Client) notifyReply(buf []byte, genNum uint64, recvResponse time.T
 		// Don't have ctx to reply.  Assume read garbage on socket and
 		// reconnect.
 
-		client.logger.Printf("notifyReply failed to unmarshal buf: %+v err: %v\n", string(buf), err)
+		client.logger.Printf("notifyReply failed to unmarshal buf: %+v err: %v", string(buf), err)
 		client.retransmit(genNum)
 		return
 	}
@@ -255,7 +255,7 @@ func (client *Client) notifyReply(buf []byte, genNum uint64, recvResponse time.T
 	m := svrResponse{Result: ctx.rpcReply}
 	unmarshalErr := json.Unmarshal(buf, &m)
 	if unmarshalErr != nil {
-		client.logger.Printf("notifyReply failed to unmarshal buf: %v err: %v ctx: %v\n", string(buf), unmarshalErr, ctx)
+		client.logger.Printf("notifyReply failed to unmarshal buf: %v err: %v ctx: %v", string(buf), unmarshalErr, ctx)
 
 		// Assume read garbage on socket - close the socket and reconnect
 		// Drop client lock since retransmit() will acquire it.
@@ -369,7 +369,7 @@ func (client *Client) readReplies(nC net.Conn, callingGenNum uint64) {
 			client.stats.UpcallCalled.Add(1)
 
 		default:
-			client.logger.Printf("CLIENT - invalid msgType: %v\n", msgType)
+			client.logger.Printf("CLIENT - invalid msgType: %v", msgType)
 		}
 	}
 }

@@ -71,9 +71,10 @@ type configStruct struct {
 	InodeTableMaxInodesPerBPlusTreePage  uint64
 	RootDirMaxDirEntriesPerBPlusTreePage uint64
 
-	LogFilePath  string // Unless starting with '/', relative to $CWD; == "" means disabled
-	LogToConsole bool
-	TraceEnabled bool
+	LogFilePath        string // Unless starting with '/', relative to $CWD; == "" means disabled
+	LogToConsole       bool
+	TraceEnabled       bool
+	RetryRPCLogEnabled bool
 }
 
 type statsStruct struct {
@@ -637,6 +638,10 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		logFatal(err)
 	}
+	globals.config.RetryRPCLogEnabled, err = confMap.FetchOptionValueBool("IMGR", "RetryRPCLogEnabled")
+	if nil != err {
+		logFatal(err)
+	}
 
 	configJSONified = utils.JSONify(globals.config, true)
 
@@ -703,6 +708,7 @@ func uninitializeGlobals() (err error) {
 	globals.config.LogFilePath = ""
 	globals.config.LogToConsole = false
 	globals.config.TraceEnabled = false
+	globals.config.RetryRPCLogEnabled = false
 
 	bucketstats.UnRegister("IMGR", "")
 

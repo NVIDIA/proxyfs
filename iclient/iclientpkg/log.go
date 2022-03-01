@@ -11,6 +11,24 @@ import (
 	"time"
 )
 
+type logLoggerIOWriterStruct struct {
+	tag     string
+	enabled bool
+}
+
+func logLoggerNew(tag string, enabled bool) (logLogger *log.Logger) {
+	logLogger = log.New(&logLoggerIOWriterStruct{tag: tag, enabled: enabled}, "", log.Lshortfile)
+	return
+}
+
+func (logLoggerIOWriter *logLoggerIOWriterStruct) Write(p []byte) (n int, err error) {
+	if logLoggerIOWriter.enabled {
+		logf(logLoggerIOWriter.tag, "%s", string(p[:]))
+	}
+
+	return len(p), nil
+}
+
 func logFatal(err error) {
 	logf("FATAL", "%v", err)
 	logStack()
@@ -102,6 +120,7 @@ func logf(level string, format string, args ...interface{}) {
 	} else {
 		globals.logFile.WriteString(logMsg + "\n")
 	}
+
 	if globals.config.LogToConsole {
 		fmt.Println(logMsg)
 	}
@@ -112,15 +131,4 @@ func logSIGHUP() {
 		_ = globals.logFile.Close()
 		globals.logFile = nil
 	}
-}
-
-func newLogger() *log.Logger {
-	return log.New(&globals, "", 0)
-}
-
-func (dummy *globalsStruct) Write(p []byte) (n int, err error) {
-	if globals.config.FUSELogEnabled {
-		logf("FISSION", "%s", string(p[:]))
-	}
-	return 0, nil
 }

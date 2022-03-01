@@ -162,6 +162,7 @@ func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 		"IMGR.LogFilePath=",
 		"IMGR.LogToConsole=true",
 		"IMGR.TraceEnabled=false",
+		"IMGR.RetryRPCLogEnabled=false",
 
 		"ISWIFT.SwiftProxyIPAddr=" + testIPAddr,
 		"ISWIFT.SwiftProxyTCPPort=" + fmt.Sprintf("%d", testSwiftProxyTCPPort),

@@ -186,7 +186,7 @@ func (server *Server) SendCallback(clientID uint64, msg []byte) {
 	server.Lock()
 	lci, ok := server.perClientInfo[clientID]
 	if !ok {
-		server.logger.Printf("SERVER: SendCallback() - unable to find client UniqueID: %v\n", clientID)
+		server.logger.Printf("SERVER: SendCallback() - unable to find client UniqueID: %v", clientID)
 		server.Unlock()
 		return
 	}
@@ -211,12 +211,12 @@ func (server *Server) Close() {
 	if len(server.tlsCertificate.Certificate) == 0 {
 		err := server.netListener.Close()
 		if err != nil {
-			server.logger.Printf("server.netListener.Close() returned err: %v\n", err)
+			server.logger.Printf("server.netListener.Close() returned err: %v", err)
 		}
 	} else {
 		err := server.tlsListener.Close()
 		if err != nil {
-			server.logger.Printf("server.tlsListener.Close() returned err: %v\n", err)
+			server.logger.Printf("server.tlsListener.Close() returned err: %v", err)
 		}
 	}
 

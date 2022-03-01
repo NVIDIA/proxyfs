@@ -66,6 +66,7 @@ type configStruct struct {
 	LogToConsole                     bool
 	TraceEnabled                     bool
 	FUSELogEnabled                   bool
+	RetryRPCLogEnabled               bool
 	HTTPServerIPAddr                 string
 	HTTPServerPort                   uint16 // To be served on HTTPServerIPAddr via TCP
 }
@@ -499,6 +500,10 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	if nil != err {
 		logFatal(err)
 	}
+	globals.config.RetryRPCLogEnabled, err = confMap.FetchOptionValueBool("ICLIENT", "RetryRPCLogEnabled")
+	if nil != err {
+		logFatal(err)
+	}
 	globals.config.HTTPServerIPAddr, err = confMap.FetchOptionValueString("ICLIENT", "HTTPServerIPAddr")
 	if nil != err {
 		globals.config.HTTPServerIPAddr = "0.0.0.0"
@@ -589,6 +594,7 @@ func uninitializeGlobals() (err error) {
 	globals.config.LogToConsole = false
 	globals.config.TraceEnabled = false
 	globals.config.FUSELogEnabled = false
+	globals.config.RetryRPCLogEnabled = false
 	globals.config.HTTPServerIPAddr = ""
 	globals.config.HTTPServerPort = 0
 

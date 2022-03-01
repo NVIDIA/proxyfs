@@ -49,7 +49,7 @@ func performMountFUSE() (err error) {
 		fuseDefaultPermissions,
 		globals.config.FUSEAllowOther,
 		&globals,
-		newLogger(),
+		logLoggerNew("FISSION", globals.config.FUSELogEnabled),
 		globals.fissionErrChan,
 	)
 

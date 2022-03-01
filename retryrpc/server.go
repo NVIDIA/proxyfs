@@ -45,7 +45,7 @@ func (server *Server) run() {
 		}
 		if err != nil {
 			if !server.halting {
-				server.logger.Printf("net.Accept failed for Retry RPC listener - err: %v\n", err)
+				server.logger.Printf("net.Accept failed for Retry RPC listener - err: %v", err)
 			}
 			server.listenersWG.Done()
 			return
@@ -72,7 +72,7 @@ func (server *Server) run() {
 		ci, err := server.getClientIDAndWait(cCtx)
 		if err != nil {
 			// Socket already had an error - just loop back
-			server.logger.Printf("getClientIDAndWait() from client addr: %v returned err: %v\n", conn.RemoteAddr(), err)
+			server.logger.Printf("getClientIDAndWait() from client addr: %v returned err: %v", conn.RemoteAddr(), err)
 
 			// Sleep to block over active clients from pounding on us
 			time.Sleep(1 * time.Second)
@@ -85,10 +85,10 @@ func (server *Server) run() {
 		go func(myCi *clientInfo, myCCtx *connCtx, myConn net.Conn, myElm *list.Element) {
 			defer server.goroutineWG.Done()
 
-			server.logger.Printf("Servicing client: %v address: %v\n", myCi.myUniqueID, myConn.RemoteAddr())
+			server.logger.Printf("Servicing client: %v address: %v", myCi.myUniqueID, myConn.RemoteAddr())
 			server.serviceClient(myCi, myCCtx)
 
-			server.logger.Printf("Closing client: %v address: %v\n", myCi.myUniqueID, myConn.RemoteAddr())
+			server.logger.Printf("Closing client: %v address: %v", myCi.myUniqueID, myConn.RemoteAddr())
 			server.closeClient(myConn, myElm)
 
 			// The clientInfo for this client will first be trimmed and then later
@@ -109,7 +109,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 	jReq := jsonRequest{}
 	unmarErr := json.Unmarshal(buf, &jReq)
 	if unmarErr != nil {
-		server.logger.Printf("Unmarshal of buf failed with err: %v\n", unmarErr)
+		server.logger.Printf("Unmarshal of buf failed with err: %v", unmarErr)
 		return
 	}
 
@@ -216,7 +216,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 	}
 
 	if (msgType != PassID) && (msgType != AskMyUniqueID) {
-		server.logger.Fatalf("Server expecting msgType PassID or AskMyUniqueID and received: %v\n", msgType)
+		server.logger.Fatalf("Server expecting msgType PassID or AskMyUniqueID and received: %v", msgType)
 		return
 	}
 
@@ -443,7 +443,7 @@ func (server *Server) returnResults(ior *ioReply, cCtx *connCtx) {
 	cCtx.conn.SetDeadline(time.Now().Add(server.deadlineIO))
 	cnt, e := cCtx.conn.Write(ior.JResult)
 	if e != nil {
-		server.logger.Printf("returnResults() returned err: %v cnt: %v length of JResult: %v\n", e, cnt, len(ior.JResult))
+		server.logger.Printf("returnResults() returned err: %v cnt: %v length of JResult: %v", e, cnt, len(ior.JResult))
 	}
 	cCtx.Unlock()
 }
@@ -493,12 +493,12 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 			if ci.isEmpty() && ci.cCtx.serviceClientExited {
 				ci.unregsiterMethodStats(server)
 				delete(server.perClientInfo, key)
-				server.logger.Printf("Trim - DELETE inactive clientInfo with ID: %v\n", ci.myUniqueID)
+				server.logger.Printf("Trim - DELETE inactive clientInfo with ID: %v", ci.myUniqueID)
 			}
 			ci.cCtx.Unlock()
 			ci.Unlock()
 		}
-		server.logger.Printf("Trimmed completed RetryRpcs - Total: %v\n", totalItems)
+		server.logger.Printf("Trimmed completed RetryRpcs - Total: %v", totalItems)
 	} else {
 		for k, ci := range server.perClientInfo {
 			n := server.trimAClientBasedACK(k, ci)
@@ -556,7 +556,7 @@ func (server *Server) trimTLLBased(ci *clientInfo, t time.Time) (numItems int) {
 		}
 	}
 	s := ci.stats
-	server.logger.Printf("ID: %v largestReplySize: %v largestReplySizeMethod: %v longest RPC: %v longest RPC Method: %v\n",
+	server.logger.Printf("ID: %v largestReplySize: %v largestReplySizeMethod: %v longest RPC: %v longest RPC Method: %v",
 		ci.myUniqueID, s.largestReplySize, s.largestReplySizeMethod, s.longestRPC, s.longestRPCMethod)
 
 	ci.Unlock()

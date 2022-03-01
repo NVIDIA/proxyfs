@@ -40,6 +40,7 @@ func startRetryRPCServer() (err error) {
 		DeadlineIO:      globals.config.RetryRPCDeadlineIO,
 		KeepAlivePeriod: globals.config.RetryRPCKeepAlivePeriod,
 		TLSCertificate:  tlsCertificate,
+		Logger:          logLoggerNew("RETRYRPC", globals.config.RetryRPCLogEnabled),
 	}
 
 	globals.retryrpcServer = retryrpc.NewServer(retryrpcServerConfig)
