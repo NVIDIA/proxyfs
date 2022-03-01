@@ -138,6 +138,8 @@ func (inode *inodeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, ob
 			bytesWritten:    0,
 			bytesReferenced: 0,
 		}
+
+		inode.superBlockInodeObjectCountAdjustment++
 	}
 
 	objectNumber = inode.putObjectNumber
@@ -902,6 +904,8 @@ func (fileInode *inodeStruct) recordExtent(startingFileOffset uint64, length uin
 			bytesWritten:    0,
 			bytesReferenced: 0,
 		}
+
+		fileInode.superBlockInodeObjectCountAdjustment++
 	}
 
 	layoutMapEntry.bytesWritten += length

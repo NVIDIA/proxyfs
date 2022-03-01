@@ -1440,8 +1440,6 @@ func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
 
 	if !inodeHeadObjectNumberInLayout {
 		_ = volume.pendingDeleteObjectNumberList.PushBack(inodeTableEntryValue.InodeHeadObjectNumber)
-
-		volume.superBlock.InodeObjectCount--
 	}
 
 	ok, err = volume.inodeTable.DeleteByKey(inodeNumber)

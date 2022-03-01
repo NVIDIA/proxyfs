@@ -2025,6 +2025,18 @@ Retry:
 		logFatalf("inode.inodeHeadV1.InodeType(%v) unexpected - must be either ilayout.InodeTypeDir(%v) or ilayout.InodeTypeFile(%v)", inode.inodeHeadV1.InodeType, ilayout.InodeTypeDir, ilayout.InodeTypeFile)
 	}
 
+	if writeIn.Size == 0 {
+		inodeLockRequest.unlockAll()
+
+		writeOut = &fission.WriteOut{
+			Size:    0,
+			Padding: 0,
+		}
+
+		errno = 0
+		return
+	}
+
 	if inode.payload == nil {
 		err = inode.oldPayload()
 		if nil != err {
