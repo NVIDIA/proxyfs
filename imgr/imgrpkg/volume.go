@@ -715,8 +715,8 @@ func postVolume(storageURL string, authToken string) (err error) {
 			},
 		},
 		InodeObjectCount:     1,
-		InodeObjectSize:      uint64(len(postVolumeSuperBlockInodeTableCallbacks.body)),
-		InodeBytesReferenced: uint64(len(postVolumeSuperBlockInodeTableCallbacks.body)),
+		InodeObjectSize:      rootDirInodeHeadV1.Layout[0].ObjectSize,
+		InodeBytesReferenced: rootDirInodeHeadV1.Layout[0].BytesReferenced,
 	}
 
 	superBlockV1Buf, err = superBlockV1.MarshalSuperBlockV1()
