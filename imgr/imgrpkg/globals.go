@@ -217,6 +217,7 @@ type mountStruct struct {
 	volume                 *volumeStruct                  // volume.{R|}Lock() also protects each mountStruct
 	mountID                string                         //
 	retryRPCClientID       uint64                         //
+	unmounting             bool                           //
 	acceptingLeaseRequests bool                           //
 	leaseRequestMap        map[uint64]*leaseRequestStruct // key == leaseRequestStruct.inodeLease.inodeNumber
 	authToken              string                         //

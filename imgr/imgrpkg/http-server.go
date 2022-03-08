@@ -320,6 +320,8 @@ type volumeGETStruct struct {
 	InodeBytesReferenced         uint64
 	PendingDeleteObjectNameArray []string // == []ilayout.GetObjectNameAsString(PendingDeleteObjectNumber)
 	InodeTable                   []volumeGETInodeTableEntryStruct
+	InodeOpenCount               uint64
+	InodeLeaseCount              uint64
 }
 
 type inodeGETLinkTableEntryStruct struct {
@@ -841,6 +843,8 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				InodeBytesReferenced:         superBlockV1.InodeBytesReferenced,
 				PendingDeleteObjectNameArray: make([]string, len(superBlockV1.PendingDeleteObjectNumberArray)),
 				InodeTable:                   make([]volumeGETInodeTableEntryStruct, dimensionsReport.Items),
+				InodeOpenCount:               uint64(len(volumeAsStruct.inodeOpenMap)),
+				InodeLeaseCount:              uint64(len(volumeAsStruct.inodeLeaseMap)),
 			}
 
 			for inodeTableLayoutIndex = range volumeGET.InodeTableLayout {

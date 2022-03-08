@@ -162,6 +162,7 @@ retryGenerateMountID:
 		volume:                 volume,
 		mountID:                mountIDAsString,
 		retryRPCClientID:       retryRPCClientID,
+		unmounting:             false,
 		acceptingLeaseRequests: true,
 		leaseRequestMap:        make(map[uint64]*leaseRequestStruct),
 		authToken:              mountRequest.AuthToken,

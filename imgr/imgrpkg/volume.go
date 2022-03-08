@@ -2006,6 +2006,18 @@ func (mount *mountStruct) performUnmount(unmountFinishedWG *sync.WaitGroup) {
 
 	globals.Lock()
 
+	if mount.unmounting {
+		globals.Unlock()
+
+		if unmountFinishedWG != nil {
+			unmountFinishedWG.Done()
+		}
+
+		return
+	}
+
+	mount.unmounting = true
+
 	for _, leaseRequest = range mount.leaseRequestMap {
 		leaseRequestOperation = &leaseRequestOperationStruct{
 			mount:            mount,
@@ -2040,7 +2052,11 @@ func (mount *mountStruct) performUnmount(unmountFinishedWG *sync.WaitGroup) {
 		logFatalf("mount.mountListMembership (%v) not one of on{Healthy|AuthTokenExpired|LeasesExpired}MountList")
 	}
 
+	mount.volume.mountMapWG.Done()
+
 	globals.Unlock()
 
-	unmountFinishedWG.Done()
+	if unmountFinishedWG != nil {
+		unmountFinishedWG.Done()
+	}
 }
