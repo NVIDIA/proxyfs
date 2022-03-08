@@ -1996,3 +1996,51 @@ func (volume *volumeStruct) checkPointWrite(body io.ReadSeeker) (authOK bool, er
 
 	return
 }
+
+func (mount *mountStruct) performUnmount(unmountFinishedWG *sync.WaitGroup) {
+	var (
+		leaseReleaseFinishedWG sync.WaitGroup
+		leaseRequest           *leaseRequestStruct
+		leaseRequestOperation  *leaseRequestOperationStruct
+	)
+
+	globals.Lock()
+
+	for _, leaseRequest = range mount.leaseRequestMap {
+		leaseRequestOperation = &leaseRequestOperationStruct{
+			mount:            mount,
+			inodeLease:       leaseRequest.inodeLease,
+			LeaseRequestType: LeaseRequestTypeRelease,
+			replyChan:        make(chan LeaseResponseType, 1),
+		}
+
+		leaseReleaseFinishedWG.Add(1)
+
+		go func(leaseRequestOperation *leaseRequestOperationStruct) {
+			leaseRequestOperation.inodeLease.handleOperation(leaseRequestOperation)
+			<-leaseRequestOperation.replyChan
+			leaseReleaseFinishedWG.Done()
+		}(leaseRequestOperation)
+	}
+
+	globals.Unlock()
+
+	leaseReleaseFinishedWG.Wait()
+
+	globals.Lock()
+
+	switch mount.mountListMembership {
+	case onHealthyMountList:
+		_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
+	case onAuthTokenExpiredMountList:
+		_ = mount.volume.authTokenExpiredMountList.Remove(mount.mountListElement)
+	case onLeasesExpiredMountList:
+		_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
+	default:
+		logFatalf("mount.mountListMembership (%v) not one of on{Healthy|AuthTokenExpired|LeasesExpired}MountList")
+	}
+
+	globals.Unlock()
+
+	unmountFinishedWG.Done()
+}

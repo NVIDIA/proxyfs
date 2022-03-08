@@ -1590,22 +1590,20 @@ func (mount *mountStruct) armReleaseOfAllLeasesWhileLocked(leaseReleaseStartWG *
 	)
 
 	for _, leaseRequest = range mount.leaseRequestMap {
-		if nil != leaseRequest.inodeLease {
-			leaseRequestOperation = &leaseRequestOperationStruct{
-				mount:            mount,
-				inodeLease:       leaseRequest.inodeLease,
-				LeaseRequestType: LeaseRequestTypeRelease,
-				replyChan:        make(chan LeaseResponseType),
-			}
-
-			leaseReleaseFinishedWG.Add(1)
-
-			go func(leaseRequestOperation *leaseRequestOperationStruct) {
-				leaseReleaseStartWG.Wait()
-				leaseRequestOperation.inodeLease.requestChan <- leaseRequestOperation
-				_ = <-leaseRequestOperation.replyChan
-				leaseReleaseFinishedWG.Done()
-			}(leaseRequestOperation)
+		leaseRequestOperation = &leaseRequestOperationStruct{
+			mount:            mount,
+			inodeLease:       leaseRequest.inodeLease,
+			LeaseRequestType: LeaseRequestTypeRelease,
+			replyChan:        make(chan LeaseResponseType),
 		}
+
+		leaseReleaseFinishedWG.Add(1)
+
+		go func(leaseRequestOperation *leaseRequestOperationStruct) {
+			leaseReleaseStartWG.Wait()
+			leaseRequestOperation.inodeLease.requestChan <- leaseRequestOperation
+			<-leaseRequestOperation.replyChan
+			leaseReleaseFinishedWG.Done()
+		}(leaseRequestOperation)
 	}
 }

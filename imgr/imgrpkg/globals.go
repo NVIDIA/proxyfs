@@ -245,6 +245,7 @@ type volumeStruct struct {
 	healthyMountList              *list.List                                // LRU of mountStruct's with .mountListMembership == onHealthyMountList
 	authTokenExpiredMountList     *list.List                                // LRU of mountStruct's with .mountListMembership == onAuthTokenExpiredMountList
 	leasesExpiredMountList        *list.List                                // LRU of mountStruct's with .mountListMembership == onLeasesExpiredMountList
+	mountMapWG                    sync.WaitGroup                            // explicitly or lease expiration triggered unmount indicates it is done by calling .Done() on this WG
 	deleting                      bool                                      //
 	checkPoint                    *ilayout.CheckPointV1Struct               // == nil if not currently mounted and/or checkpointing
 	superBlock                    *ilayout.SuperBlockV1Struct               // == nil if not currently mounted and/or checkpointing

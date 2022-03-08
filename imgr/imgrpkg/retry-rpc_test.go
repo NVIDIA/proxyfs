@@ -1140,7 +1140,17 @@ func TestRetryRPC(t *testing.T) {
 	// TODO: Remove this early exit skipping of following TODOs
 
 	if nil == err {
-		t.Logf("Exiting TestRetryRPC() early to skip following TODOs")
+		t.Logf("Exiting TestRetryRPC() early (to skip following TODOs [before Unmount()]")
+		unmountRequest = &UnmountRequestStruct{
+			MountID: mountResponse.MountID,
+		}
+		unmountResponse = &UnmountResponseStruct{}
+
+		err = retryrpcClient.Send("Unmount", unmountRequest, unmountResponse)
+		if nil != err {
+			t.Fatalf("retryrpcClient.Send(\"Unmount()\",,) failed: %v", err)
+		}
+		t.Logf("Exiting TestRetryRPC() early (to skip following TODOs [after  Unmount()]")
 		return
 	}
 
