@@ -203,16 +203,14 @@ type inodeLeaseStruct struct {
 	interruptTimer *time.Timer // if .C != nil, timing when to issue next Interrupt... or expire a Lease
 }
 
-// on*MountList indicates which volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList the mountStruct is on
+// on*MountList indicates which volumeStruct.{healthy|authTokenExpired|leasesExpired}MountList the mountStruct is on
 //
-// Note that both of mountStruct.{leases|authToken}Expired may be true simultaneously.
-// In this case, mountStruct.mountListMembership should be == onAuthTokenExpiredMountList.
+// Note that lease expiration takes precedent over auth token expiration.
 
 const (
 	onHealthyMountList          = uint8(iota) // if mountStruct.mountListElement is on volumeStruct.healthyMountList
-	onLeasesExpiredMountList                  // if mountStruct.mountListElement is on volumeStruct.leasesExpiredMountList
 	onAuthTokenExpiredMountList               // if mountStruct.mountListElement is on volumeStruct.authTokenExpiredMountList
-	onNoMountList                             // if mountStruct.mountListElement is not an any of volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList
+	onLeasesExpiredMountList                  // if mountStruct.mountListElement is on volumeStruct.leasesExpiredMountList
 )
 
 type mountStruct struct {
@@ -221,12 +219,10 @@ type mountStruct struct {
 	retryRPCClientID       uint64                         //
 	acceptingLeaseRequests bool                           //
 	leaseRequestMap        map[uint64]*leaseRequestStruct // key == leaseRequestStruct.inodeLease.inodeNumber
-	leasesExpired          bool                           // if true, leases are being expired prior to auto-deletion of mountStruct
-	authTokenExpired       bool                           // if true, authToken has been rejected... needing a renewMount() to update
 	authToken              string                         //
 	lastAuthTime           time.Time                      // used to periodically check TTL of authToken
-	mountListElement       *list.Element                  // LRU element on either volumeStruct.{healthy|leasesExpired|authTokenExpired}MountList
-	mountListMembership    uint8                          // == one of on{No|healthy|leasesExpired|authTokenExpired}MountList
+	mountListElement       *list.Element                  // LRU element on either volumeStruct.{healthy|authTokenExpired|leasesExpired}MountList
+	mountListMembership    uint8                          // == one of on{No|healthy|authTokenExpired|leasesExpired}MountList
 	inodeOpenMap           map[uint64]uint64              // key == inodeNumber; value == open count for this mountStruct for this inodeNumber
 }
 
@@ -246,9 +242,9 @@ type volumeStruct struct {
 	storageURL                    string                                    //
 	authToken                     string                                    // if != "" & healthyMountList is empty, this AuthToken will be used; cleared on auth failure
 	mountMap                      map[string]*mountStruct                   // key == mountStruct.mountID
-	healthyMountList              *list.List                                // LRU of mountStruct's with .{leases|authToken}Expired == false
-	leasesExpiredMountList        *list.List                                // list of mountStruct's with .leasesExpired == true (regardless of .authTokenExpired) value
-	authTokenExpiredMountList     *list.List                                // list of mountStruct's with at .authTokenExpired == true (& .leasesExpired == false)
+	healthyMountList              *list.List                                // LRU of mountStruct's with .mountListMembership == onHealthyMountList
+	authTokenExpiredMountList     *list.List                                // LRU of mountStruct's with .mountListMembership == onAuthTokenExpiredMountList
+	leasesExpiredMountList        *list.List                                // LRU of mountStruct's with .mountListMembership == onLeasesExpiredMountList
 	deleting                      bool                                      //
 	checkPoint                    *ilayout.CheckPointV1Struct               // == nil if not currently mounted and/or checkpointing
 	superBlock                    *ilayout.SuperBlockV1Struct               // == nil if not currently mounted and/or checkpointing

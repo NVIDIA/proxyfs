@@ -767,8 +767,8 @@ func putVolume(name string, storageURL string, authToken string) (err error) {
 		authToken:                     authToken,
 		mountMap:                      make(map[string]*mountStruct),
 		healthyMountList:              list.New(),
-		leasesExpiredMountList:        list.New(),
 		authTokenExpiredMountList:     list.New(),
+		leasesExpiredMountList:        list.New(),
 		deleting:                      false,
 		checkPoint:                    nil,
 		superBlock:                    nil,
@@ -1635,24 +1635,9 @@ func (volume *volumeStruct) checkPointReadOnce(checkPointObjectURL string) (buf 
 				logWarnf("checkPointReadOnce(checkPointObjectURL,volume.authToken) returned !authOK for volume %s...clearing volume.authToken", volume.name)
 				volume.authToken = ""
 			} else {
-				mount.authTokenExpired = true
-
-				// It's possible that mount has "moved" from volume.healthyMountList
-
-				switch mount.mountListMembership {
-				case onHealthyMountList:
-					_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
-					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
-					mount.mountListMembership = onAuthTokenExpiredMountList
-				case onLeasesExpiredMountList:
-					_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
-					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
-					mount.mountListMembership = onAuthTokenExpiredMountList
-				case onAuthTokenExpiredMountList:
-					volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
-				default:
-					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
-				}
+				_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
+				mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+				mount.mountListMembership = onAuthTokenExpiredMountList
 			}
 
 			err = fmt.Errorf("checkPointWriteOnce(checkPointObjectURL, authToken, body) returned !authOK")
@@ -1917,24 +1902,9 @@ func (volume *volumeStruct) checkPointWriteOnce(checkPointObjectURL string, body
 				logWarnf("swiftObjectPutOnce(checkPointObjectURL,volume.authToken,body) returned !authOK for volume %s...clearing volume.authToken", volume.name)
 				volume.authToken = ""
 			} else {
-				mount.authTokenExpired = true
-
-				// It's possible that mount has "moved" from volume.healthyMountList
-
-				switch mount.mountListMembership {
-				case onHealthyMountList:
-					_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
-					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
-					mount.mountListMembership = onAuthTokenExpiredMountList
-				case onLeasesExpiredMountList:
-					_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
-					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
-					mount.mountListMembership = onAuthTokenExpiredMountList
-				case onAuthTokenExpiredMountList:
-					volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
-				default:
-					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
-				}
+				_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
+				mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
+				mount.mountListMembership = onAuthTokenExpiredMountList
 			}
 		}
 	}

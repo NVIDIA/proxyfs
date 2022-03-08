@@ -165,8 +165,6 @@ func (volume *volumeStruct) swiftObjectDeleteOnce(alreadyLocked bool, objectURL 
 				logWarnf("swiftObjectDeleteOnce(,volume.authToken) returned !authOK for volume %s...clearing volume.authToken", volume.name)
 				volume.authToken = ""
 			} else {
-				mount.authTokenExpired = true
-
 				// It's possible that mount has "moved" from volume.healthyMountList
 
 				switch mount.mountListMembership {
@@ -174,12 +172,10 @@ func (volume *volumeStruct) swiftObjectDeleteOnce(alreadyLocked bool, objectURL 
 					_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
 					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
 					mount.mountListMembership = onAuthTokenExpiredMountList
-				case onLeasesExpiredMountList:
-					_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
-					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
-					mount.mountListMembership = onAuthTokenExpiredMountList
 				case onAuthTokenExpiredMountList:
 					volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
+				case onLeasesExpiredMountList:
+					volume.leasesExpiredMountList.MoveToBack(mount.mountListElement)
 				default:
 					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
 				}
@@ -372,8 +368,6 @@ func (volume *volumeStruct) swiftObjectGetOnce(alreadyLocked bool, objectURL str
 				logWarnf("swiftObjectGetOnce(,volume.authToken,) returned !authOK for volume %s...clearing volume.authToken", volume.name)
 				volume.authToken = ""
 			} else {
-				mount.authTokenExpired = true
-
 				// It's possible that mount has "moved" from volume.healthyMountList
 
 				switch mount.mountListMembership {
@@ -381,12 +375,10 @@ func (volume *volumeStruct) swiftObjectGetOnce(alreadyLocked bool, objectURL str
 					_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
 					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
 					mount.mountListMembership = onAuthTokenExpiredMountList
-				case onLeasesExpiredMountList:
-					_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
-					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
-					mount.mountListMembership = onAuthTokenExpiredMountList
 				case onAuthTokenExpiredMountList:
 					volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
+				case onLeasesExpiredMountList:
+					volume.leasesExpiredMountList.MoveToBack(mount.mountListElement)
 				default:
 					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
 				}
@@ -738,8 +730,6 @@ func (volume *volumeStruct) swiftObjectPutOnce(alreadyLocked bool, objectURL str
 				logWarnf("swiftObjectPutOnce(,volume.authToken,) returned !authOK for volume %s...clearing volume.authToken", volume.name)
 				volume.authToken = ""
 			} else {
-				mount.authTokenExpired = true
-
 				// It's possible that mount has "moved" from volume.healthyMountList
 
 				switch mount.mountListMembership {
@@ -747,12 +737,10 @@ func (volume *volumeStruct) swiftObjectPutOnce(alreadyLocked bool, objectURL str
 					_ = mount.volume.healthyMountList.Remove(mount.mountListElement)
 					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
 					mount.mountListMembership = onAuthTokenExpiredMountList
-				case onLeasesExpiredMountList:
-					_ = mount.volume.leasesExpiredMountList.Remove(mount.mountListElement)
-					mount.mountListElement = mount.volume.authTokenExpiredMountList.PushBack(mount)
-					mount.mountListMembership = onAuthTokenExpiredMountList
 				case onAuthTokenExpiredMountList:
 					volume.authTokenExpiredMountList.MoveToBack(mount.mountListElement)
+				case onLeasesExpiredMountList:
+					volume.leasesExpiredMountList.MoveToBack(mount.mountListElement)
 				default:
 					logFatalf("mount.mountListMembership (%v) not one of on{Healthy|LeasesExpired|AuthTokenExpired}MountList")
 				}

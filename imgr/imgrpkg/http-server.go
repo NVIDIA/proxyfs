@@ -271,8 +271,8 @@ type volumeListGETEntryStruct struct {
 	StorageURL             string
 	AuthToken              string
 	HealthyMounts          uint64
-	LeasesExpiredMounts    uint64
 	AuthTokenExpiredMounts uint64
+	LeasesExpiredMounts    uint64
 }
 
 type volumeOrInodeGETDimensionStruct struct {
@@ -305,8 +305,8 @@ type volumeGETStruct struct {
 	StorageURL                   string
 	AuthToken                    string
 	HealthyMounts                uint64
-	LeasesExpiredMounts          uint64
 	AuthTokenExpiredMounts       uint64
+	LeasesExpiredMounts          uint64
 	SuperBlockObjectName         string // == ilayout.GetObjectNameAsString(SuperBlockObjectNumber)
 	SuperBlockLength             uint64
 	ReservedToNonce              uint64
@@ -721,8 +721,8 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				StorageURL:             volumeAsStruct.storageURL,
 				AuthToken:              volumeAsStruct.authToken,
 				HealthyMounts:          uint64(volumeAsStruct.healthyMountList.Len()),
-				LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
 				AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
+				LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
 			}
 		}
 
@@ -826,8 +826,8 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				StorageURL:                   volumeAsStruct.storageURL,
 				AuthToken:                    volumeAuthToken,
 				HealthyMounts:                uint64(volumeAsStruct.healthyMountList.Len()),
-				LeasesExpiredMounts:          uint64(volumeAsStruct.leasesExpiredMountList.Len()),
 				AuthTokenExpiredMounts:       uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
+				LeasesExpiredMounts:          uint64(volumeAsStruct.leasesExpiredMountList.Len()),
 				SuperBlockObjectName:         ilayout.GetObjectNameAsString(checkPointV1.SuperBlockObjectNumber),
 				SuperBlockLength:             checkPointV1.SuperBlockLength,
 				ReservedToNonce:              checkPointV1.ReservedToNonce,
