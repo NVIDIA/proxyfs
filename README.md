@@ -62,14 +62,23 @@ To kick off development activities:
 
 * [Host shell] docker-compose up -d dev
 * [Host shell] docker-compose exec dev sh
+
+To build all the images:
 * [`dev` /src#] make
+
+To clear out prior launches and run the processes in the background:
 * [`dev` /src#] rm -rf /tmp/ickptDB
 * [`dev` /src#] ickpt/ickpt ickpt/dev.conf &
 * [`dev` /src#] imgr/imgr imgr/dev.conf &
+* [`dev` /src#] idestroy/idestroy iclient/dev.conf &
 * [`dev` /src#] imgr/mkmount.sh -fs
 * [`dev` /src#] iclient/iclient iclient/dev.conf &
 
-Note that `imgr` and `iclient` will be logging to $StdOut in this example launching. Each of the above can be terminated by delivering a SIGINT or SIGTERM to their processes.
+Notes:
+* To relaunch the daemons without reformatting, skip the `rm -rf /tmp/ickptDB` and `idestroy...` steps
+* `idestroy` step will fail with `httpGETResponse.Status unexpected: 404 Not Found` if this is the fist iteration through 
+* `imgr` and `iclient` will be logging to $StdOut in this example launching
+* Each of the above can be terminated by delivering a SIGINT or SIGTERM to their processes
 
 For a more appropriate environment in which to perform functional testing, the `docker-compose.yml` file my also be used to launch the suite of Docker Containers:
 
@@ -78,7 +87,7 @@ For a more appropriate environment in which to perform functional testing, the `
 
 At this point, you have a separate Docker Container running each of the ProxyFS services. Inside the `iclient` Docker Container, the `/mnt` directory will be the FUSE mount point to your ProxyFS file system.
 
-Both the `imgr` and `iclient` services provide an HTTP endpoint that, due to the port mapping specified in `docker-compose.yml`, should be reachable from a browser in the host:
+For either the up cases (i.e. `dev` or `iclient`), both the `imgr` and `iclient` services provide an HTTP endpoint that, due to the port mapping specified in `docker-compose.yml`, should be reachable from a browser in the host:
 
 * `imgr` - http://localhost:15346/
 * `iclient` - http://localhost:15347/
