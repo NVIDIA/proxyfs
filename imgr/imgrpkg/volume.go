@@ -1999,12 +1999,51 @@ func (volume *volumeStruct) checkPointWrite(body io.ReadSeeker) (authOK bool, er
 
 func (mount *mountStruct) performUnmount(unmountFinishedWG *sync.WaitGroup) {
 	var (
+		inodeNumber            uint64
+		inodeNumberList        *list.List
+		inodeNumberListElement *list.Element
+		inodeOpenMapElement    *inodeOpenMapElementStruct
 		leaseReleaseFinishedWG sync.WaitGroup
 		leaseRequest           *leaseRequestStruct
 		leaseRequestOperation  *leaseRequestOperationStruct
+		ok                     bool
 	)
 
 	globals.Lock()
+
+	inodeNumberList = list.New()
+
+	for inodeNumber = range mount.inodeOpenMap {
+		inodeNumberList.PushBack(inodeNumber)
+	}
+
+	for {
+		inodeNumberListElement = inodeNumberList.Front()
+		if inodeNumberListElement == nil {
+			break
+		}
+
+		inodeNumber, ok = inodeNumberListElement.Value.(uint64)
+		if !ok {
+			logFatalf("inodeNumberListElement.Value.(uint64) returned !ok")
+		}
+
+		inodeNumberList.Remove(inodeNumberListElement)
+		delete(mount.inodeOpenMap, inodeNumber)
+
+		inodeOpenMapElement, ok = mount.volume.inodeOpenMap[inodeNumber]
+		if !ok {
+			logFatalf("mount.volume.inodeOpenMap[inodeNumber] is missing")
+		}
+
+		inodeOpenMapElement.numMounts--
+		if inodeOpenMapElement.numMounts == 0 {
+			delete(mount.volume.inodeOpenMap, inodeNumber)
+			if inodeOpenMapElement.markedForDeletion {
+				mount.volume.removeInodeWhileLocked(inodeNumber)
+			}
+		}
+	}
 
 	for _, leaseRequest = range mount.leaseRequestMap {
 		leaseRequestOperation = &leaseRequestOperationStruct{
