@@ -18,13 +18,15 @@ import (
 
 	"github.com/NVIDIA/proxyfs/conf"
 	"github.com/NVIDIA/proxyfs/ickpt/ickptpkg"
+	"github.com/NVIDIA/proxyfs/utils"
 )
 
 func main() {
 	var (
-		confMap    conf.ConfMap
-		err        error
-		signalChan chan os.Signal
+		confMap            conf.ConfMap
+		configMapJSONified string
+		err                error
+		signalChan         chan os.Signal
 	)
 
 	if len(os.Args) < 2 {
@@ -44,7 +46,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	configMapJSONified = utils.JSONify(confMap, true)
+
 	// Start
+
+	fmt.Printf("Calling ickptpkg.Start(confMap)...with confMap:\n%s\n", configMapJSONified)
 
 	err = ickptpkg.Start(confMap)
 	if nil != err {
@@ -64,6 +70,8 @@ func main() {
 	<-signalChan
 
 	// Stop
+
+	fmt.Printf("Calling ickptpkg.Stop()...\n")
 
 	err = ickptpkg.Stop()
 	if nil != err {
