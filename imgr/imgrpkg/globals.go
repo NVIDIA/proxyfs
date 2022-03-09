@@ -214,17 +214,16 @@ const (
 )
 
 type mountStruct struct {
-	volume                 *volumeStruct                  // volume.{R|}Lock() also protects each mountStruct
-	mountID                string                         //
-	retryRPCClientID       uint64                         //
-	unmounting             bool                           //
-	acceptingLeaseRequests bool                           //
-	leaseRequestMap        map[uint64]*leaseRequestStruct // key == leaseRequestStruct.inodeLease.inodeNumber
-	authToken              string                         //
-	lastAuthTime           time.Time                      // used to periodically check TTL of authToken
-	mountListElement       *list.Element                  // LRU element on either volumeStruct.{healthy|authTokenExpired|leasesExpired}MountList
-	mountListMembership    uint8                          // == one of on{No|healthy|authTokenExpired|leasesExpired}MountList
-	inodeOpenMap           map[uint64]uint64              // key == inodeNumber; value == open count for this mountStruct for this inodeNumber
+	volume              *volumeStruct                  // volume.{R|}Lock() also protects each mountStruct
+	mountID             string                         //
+	retryRPCClientID    uint64                         //
+	unmounting          bool                           //
+	leaseRequestMap     map[uint64]*leaseRequestStruct // key == leaseRequestStruct.inodeLease.inodeNumber
+	authToken           string                         //
+	lastAuthTime        time.Time                      // used to periodically check TTL of authToken
+	mountListElement    *list.Element                  // LRU element on either volumeStruct.{healthy|authTokenExpired|leasesExpired}MountList
+	mountListMembership uint8                          // == one of on{No|healthy|authTokenExpired|leasesExpired}MountList
+	inodeOpenMap        map[uint64]uint64              // key == inodeNumber; value == open count for this mountStruct for this inodeNumber
 }
 
 type inodeTableLayoutElementStruct struct {

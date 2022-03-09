@@ -2006,18 +2006,6 @@ func (mount *mountStruct) performUnmount(unmountFinishedWG *sync.WaitGroup) {
 
 	globals.Lock()
 
-	if mount.unmounting {
-		globals.Unlock()
-
-		if unmountFinishedWG != nil {
-			unmountFinishedWG.Done()
-		}
-
-		return
-	}
-
-	mount.unmounting = true
-
 	for _, leaseRequest = range mount.leaseRequestMap {
 		leaseRequestOperation = &leaseRequestOperationStruct{
 			mount:            mount,

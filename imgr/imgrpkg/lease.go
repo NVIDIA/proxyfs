@@ -816,8 +816,11 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 				delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
 
-				leaseRequest.mount.acceptingLeaseRequests = false
-				go leaseRequest.mount.performUnmount(nil)
+				if !leaseRequest.mount.unmounting {
+					leaseRequest.mount.unmounting = true
+
+					go leaseRequest.mount.performUnmount(nil)
+				}
 
 				inodeLease.releasingHoldersList.Remove(leaseRequestElement)
 				leaseRequest.listElement = nil
@@ -846,8 +849,11 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 				delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
 
-				leaseRequest.mount.acceptingLeaseRequests = false
-				go leaseRequest.mount.performUnmount(nil)
+				if !leaseRequest.mount.unmounting {
+					leaseRequest.mount.unmounting = true
+
+					go leaseRequest.mount.performUnmount(nil)
+				}
 
 				inodeLease.releasingHoldersList.Remove(leaseRequestElement)
 				leaseRequest.listElement = nil
@@ -883,8 +889,11 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 			delete(inodeLease.demotingHolder.mount.leaseRequestMap, inodeLease.inodeNumber)
 
-			inodeLease.demotingHolder.mount.acceptingLeaseRequests = false
-			go leaseRequest.mount.performUnmount(nil)
+			if !inodeLease.demotingHolder.mount.unmounting {
+				inodeLease.demotingHolder.mount.unmounting = true
+
+				go inodeLease.demotingHolder.mount.performUnmount(nil)
+			}
 
 			inodeLease.demotingHolder = nil
 
@@ -930,8 +939,11 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 			delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
 
-			leaseRequest.mount.acceptingLeaseRequests = false
-			go leaseRequest.mount.performUnmount(nil)
+			if !leaseRequest.mount.unmounting {
+				leaseRequest.mount.unmounting = true
+
+				go leaseRequest.mount.performUnmount(nil)
+			}
 
 			inodeLease.releasingHoldersList.Remove(leaseRequestElement)
 			leaseRequest.listElement = nil
