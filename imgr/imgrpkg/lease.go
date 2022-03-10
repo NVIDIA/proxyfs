@@ -7,7 +7,6 @@ import (
 	"container/list"
 	"encoding/json"
 	"runtime"
-	"sync"
 	"time"
 )
 
@@ -409,12 +408,12 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 						if nil == inodeLease.promotingHolder {
 							leaseRequestElement = inodeLease.requestedList.Front()
 							if nil == leaseRequestElement {
-								inodeLease.leaseState = inodeLeaseStateNone
+								delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 							} else { // nil != leaseRequestElement
 								leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
 								_ = inodeLease.requestedList.Remove(leaseRequestElement)
 								if leaseRequestStateSharedRequested == leaseRequest.requestState {
-									if 0 == inodeLease.requestedList.Len() {
+									if inodeLease.requestedList.Len() == 0 {
 										inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
 										inodeLease.exclusiveHolder = leaseRequest
 										leaseRequest.listElement = nil
@@ -470,7 +469,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
 					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
 					if inodeLease.sharedHoldersList.Len() == 0 {
-						inodeLease.leaseState = inodeLeaseStateNone
+						delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 					}
 				} else { // leaseRequestStateSharedGranted != leaseRequest.requestState
 					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
@@ -482,7 +481,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 					leaseRequest.requestState = leaseRequestStateNone
 					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
 					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-					if 0 == inodeLease.releasingHoldersList.Len() {
+					if inodeLease.releasingHoldersList.Len() == 0 {
 						if !inodeLease.interruptTimer.Stop() {
 							<-inodeLease.interruptTimer.C
 						}
@@ -540,10 +539,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
 					leaseRequestElement = inodeLease.requestedList.Front()
 					if nil == leaseRequestElement {
-						inodeLease.leaseState = inodeLeaseStateNone
-						inodeLease.exclusiveHolder = nil
-						inodeLease.lastGrantTime = time.Time{}
-						inodeLease.longAgoTimer = &time.Timer{}
+						delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 					} else { // nil != leaseRequestElement
 						leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
 						_ = inodeLease.requestedList.Remove(leaseRequestElement)
@@ -579,11 +575,9 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 				}
 			case inodeLeaseStateExclusiveGrantedLongAgo:
 				if leaseRequestStateExclusiveGranted == leaseRequest.requestState {
-					inodeLease.leaseState = inodeLeaseStateNone
-					leaseRequest.requestState = leaseRequestStateNone
 					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-					inodeLease.exclusiveHolder = nil
 					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
+					delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 				} else { // leaseRequestStateExclusiveGranted != leaseRequest.requestState
 					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 				}
@@ -1322,6 +1316,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 								inodeLease.interruptsSent = 0
 
 								inodeLease.interruptTimer = &time.Timer{}
+
+								delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 							}
 						} else {
 							leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
@@ -1344,6 +1340,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 							inodeLease.interruptsSent = 0
 
 							inodeLease.interruptTimer = &time.Timer{}
+
+							delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 						} else {
 							leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 						}
@@ -1366,6 +1364,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 							inodeLease.interruptsSent = 0
 
 							inodeLease.interruptTimer = &time.Timer{}
+
+							delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 						} else {
 							leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 						}
@@ -1404,6 +1404,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					}
 
 					inodeLease.leaseState = inodeLeaseStateNone
+
+					delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 				} else { // globals.config.LeaseInterruptLimit > inodeLease.interruptsSent {
 					leaseRequestElement = inodeLease.releasingHoldersList.Front()
 
@@ -1448,6 +1450,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					leaseRequest.requestState = leaseRequestStateNone
 
 					inodeLease.leaseState = inodeLeaseStateNone
+
+					delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 				} else { // globals.config.LeaseInterruptLimit > inodeLease.interruptsSent {
 					leaseRequest = inodeLease.demotingHolder
 
@@ -1486,6 +1490,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					leaseRequest.requestState = leaseRequestStateNone
 
 					inodeLease.leaseState = inodeLeaseStateNone
+
+					delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 				} else { // globals.config.LeaseInterruptLimit > inodeLease.interruptsSent {
 					leaseRequestElement = inodeLease.releasingHoldersList.Front()
 					leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
@@ -1590,36 +1596,4 @@ func (leaseRequest *leaseRequestStruct) okToWrite() (ok bool) {
 	}
 
 	return
-}
-
-// armReleaseOfAllLeasesWhileLocked is called to schedule releasing of all held leases
-// for a specific mountStruct. It is called while inodeLease.volume is locked. The
-// leaseReleaseStartWG is assumed to be a sync.WaitGroup with a count of 1 such that
-// the actual releasing of each lease will occur once leaseReleaseStartWG is signaled
-// by calling Done() once. The caller would presumably do this after having released
-// inodeLease.volume and then await completion by calling leaseReleaseFinishedWG.Wait().
-//
-func (mount *mountStruct) armReleaseOfAllLeasesWhileLocked(leaseReleaseStartWG *sync.WaitGroup, leaseReleaseFinishedWG *sync.WaitGroup) {
-	var (
-		leaseRequest          *leaseRequestStruct
-		leaseRequestOperation *leaseRequestOperationStruct
-	)
-
-	for _, leaseRequest = range mount.leaseRequestMap {
-		leaseRequestOperation = &leaseRequestOperationStruct{
-			mount:            mount,
-			inodeLease:       leaseRequest.inodeLease,
-			LeaseRequestType: LeaseRequestTypeRelease,
-			replyChan:        make(chan LeaseResponseType),
-		}
-
-		leaseReleaseFinishedWG.Add(1)
-
-		go func(leaseRequestOperation *leaseRequestOperationStruct) {
-			leaseReleaseStartWG.Wait()
-			leaseRequestOperation.inodeLease.requestChan <- leaseRequestOperation
-			<-leaseRequestOperation.replyChan
-			leaseReleaseFinishedWG.Done()
-		}(leaseRequestOperation)
-	}
 }

@@ -63,12 +63,18 @@ func performMountFUSE() (err error) {
 
 func performUnmountFUSE() (err error) {
 	err = globals.fissionVolume.DoUnmount()
+	if nil != err {
+		return
+	}
 
 	globals.fissionVolume = nil
+
+	// TODO: Here would be a great place to at least flush any dirty inodes
 
 	globals.fuseEntryValidDurationSec, globals.fuseEntryValidDurationNSec = 0, 0
 	globals.fuseAttrValidDurationSec, globals.fuseAttrValidDurationNSec = 0, 0
 
+	err = nil
 	return
 }
 
