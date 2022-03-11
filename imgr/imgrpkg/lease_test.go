@@ -55,7 +55,7 @@ func TestRPCLease(t *testing.T) {
 
 	// Setup test environment
 
-	testSetup(t, nil)
+	testSetup(t, nil, nil)
 
 	// Format testVolume
 

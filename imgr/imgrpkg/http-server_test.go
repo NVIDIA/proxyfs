@@ -29,7 +29,7 @@ func TestHTTPServer(t *testing.T) {
 		responseBodyExpectedStaticSuffix string
 	)
 
-	testSetup(t, nil)
+	testSetup(t, nil, nil)
 
 	_, _, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/config", nil, nil)
 	if nil != err {

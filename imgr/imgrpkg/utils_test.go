@@ -54,9 +54,9 @@ type testGlobalsStruct struct {
 
 var testGlobals *testGlobalsStruct
 
-func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
+func testSetup(t *testing.T, overrideConfStrings []string, retryrpcCallbacks interface{}) {
 	var (
-		confStrings                []string
+		defaultConfStrings         []string
 		err                        error
 		putAccountRequestHeaders   http.Header
 		putContainerRequestHeaders http.Header
@@ -118,7 +118,7 @@ func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 		t.Fatalf("icertpkg.GenEndpointCert() failed: %v", err)
 	}
 
-	confStrings = []string{
+	defaultConfStrings = []string{
 		"IMGR.PublicIPAddr=" + testIPAddr,
 		"IMGR.PrivateIPAddr=" + testIPAddr,
 		"IMGR.RetryRPCPort=" + fmt.Sprintf("%d", testRetryRPCPort),
@@ -174,9 +174,16 @@ func testSetup(t *testing.T, retryrpcCallbacks interface{}) {
 		"ISWIFT.ContainerListingLimit=10000",
 	}
 
-	testGlobals.confMap, err = conf.MakeConfMapFromStrings(confStrings)
+	testGlobals.confMap, err = conf.MakeConfMapFromStrings(defaultConfStrings)
 	if nil != err {
-		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) failed: %v", err)
+		t.Fatalf("conf.MakeConfMapFromStrings(defaultConfStrings) failed: %v", err)
+	}
+
+	if nil != overrideConfStrings {
+		err = testGlobals.confMap.UpdateFromStrings(overrideConfStrings)
+		if nil != err {
+			t.Fatalf("testGlobals.confMap.UpdateFromStrings(overrideConfStrings) failed: %v", err)
+		}
 	}
 
 	err = iswiftpkg.Start(testGlobals.confMap)

@@ -526,7 +526,7 @@ func TestRetryRPC(t *testing.T) {
 
 	// Setup test environment
 
-	testSetup(t, retryrpcClientCallbacks)
+	testSetup(t, nil, retryrpcClientCallbacks)
 
 	retryrpcClient, err = retryrpc.NewClient(testGlobals.retryrpcClientConfig)
 	if nil != err {
