@@ -855,7 +855,7 @@ Retry:
 
 	if inode.dirty {
 		// In this case, we know that we must currently hold an Exclusive Lease,
-		// so upgrade ourInodeLockRequest to indicate a Shared Lock
+		// so upgrade ourInodeLockRequest to indicate an Exclusive Lock
 
 		inodeHeldLock, ok = ourInodeLockRequest.locksHeld[inodeNumber]
 		if !ok {
@@ -1133,7 +1133,7 @@ func releaseAllLeases() {
 
 		wg.Add(1)
 
-		go demoteInodeLease(inode.inodeNumber, &wg)
+		go releaseInodeLease(inode.inodeNumber, &wg)
 
 		lruListElement = lruListElement.Next()
 	}

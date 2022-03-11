@@ -1393,6 +1393,7 @@ func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
 		inodeHeadObjectNumberInLayout bool
 		inodeHeadV1                   *ilayout.InodeHeadV1Struct
 		inodeHeadV1Buf                []byte
+		inodeLease                    *inodeLeaseStruct
 		inodeTableEntryValue          ilayout.InodeTableEntryValueV1Struct
 		inodeTableEntryValueRaw       sortedmap.Value
 		ok                            bool
@@ -1448,6 +1449,11 @@ func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
 	}
 	if !ok {
 		logFatalf("volume.inodeTable.DeleteByKey(inodeNumber: %016X) returned !ok", inodeNumber)
+	}
+
+	inodeLease, ok = volume.inodeLeaseMap[inodeNumber]
+	if ok {
+		close(inodeLease.stopChan)
 	}
 }
 
