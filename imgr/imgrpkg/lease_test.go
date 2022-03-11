@@ -447,9 +447,7 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) instanceGoroutine() {
 				}
 			} else {
 				if nil != err {
-					if !strings.HasPrefix(err.Error(), ETODO) {
-						testRpcLeaseClient.Fatalf("retryrpcClient.Send(\"Unmount\",,) failed: %v", err)
-					}
+					testRpcLeaseClient.Fatalf("retryrpcClient.Send(\"Unmount\",,) failed: %v", err)
 				}
 			}
 
