@@ -194,6 +194,8 @@ func testSetup(t *testing.T) {
 
 		"IMGR.FetchNonceRangeToReturn=100",
 
+		"IMGR.OpenFileLimit=100000",
+
 		"IMGR.MinLeaseDuration=250ms",
 		"IMGR.LeaseInterruptInterval=250ms",
 		"IMGR.LeaseInterruptLimit=5",
