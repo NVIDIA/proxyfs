@@ -185,6 +185,7 @@ func testSetup(t *testing.T, overrideConfStrings []string, retryrpcCallbacks int
 			t.Fatalf("testGlobals.confMap.UpdateFromStrings(overrideConfStrings) failed: %v", err)
 		}
 	}
+	fmt.Printf("UNDO: testGlobals.confMap.Dump():\n%s\n", testGlobals.confMap.Dump())
 
 	err = iswiftpkg.Start(testGlobals.confMap)
 	if nil != err {

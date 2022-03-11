@@ -17,13 +17,15 @@ import (
 )
 
 const (
-	testRpcLeaseDelayAfterSendingRequest         = 10 * time.Millisecond
-	testRpcLeaseDelayBeforeSendingRequest        = 10 * time.Millisecond
-	testRpcLeaseMultiFirstInodeNumber     uint64 = 1
-	testRpcLeaseMultiNumInstances         uint64 = 5
-	testRpcLeaseSingleInodeNumber         uint64 = 1
-	testRpcLeaseSingleNumInstances        uint64 = 21 // 101 // Must be >= 4
-	testRpcLeaseTimeFormat                       = "15:04:05.000"
+	testRpcLeaseOverrideConfIMGRLeaseEvictHighLimit        = 3
+	testRpcLeaseOverrideConfIMGRLeaseEvictLowLimit         = 2
+	testRpcLeaseDelayAfterSendingRequest                   = 10 * time.Millisecond
+	testRpcLeaseDelayBeforeSendingRequest                  = 10 * time.Millisecond
+	testRpcLeaseMultiFirstInodeNumber               uint64 = 1
+	testRpcLeaseMultiNumInstances                   uint64 = 5
+	testRpcLeaseSingleInodeNumber                   uint64 = 1
+	testRpcLeaseSingleNumInstances                  uint64 = 21 // 101 // Must be >= 4
+	testRpcLeaseTimeFormat                                 = "15:04:05.000"
 )
 
 var (
@@ -45,17 +47,23 @@ type testRpcLeaseClientStruct struct {
 
 func TestRPCLease(t *testing.T) {
 	var (
-		err                error
-		instance           uint64
-		postRequestBody    string
-		putRequestBody     string
-		testRpcLeaseClient []*testRpcLeaseClientStruct
-		wg                 sync.WaitGroup
+		err                 error
+		instance            uint64
+		overrideConfStrings []string
+		postRequestBody     string
+		putRequestBody      string
+		testRpcLeaseClient  []*testRpcLeaseClientStruct
+		wg                  sync.WaitGroup
 	)
 
 	// Setup test environment
 
-	testSetup(t, nil, nil)
+	overrideConfStrings = []string{
+		fmt.Sprintf("IMGR.LeaseEvictLowLimit=%d", testRpcLeaseOverrideConfIMGRLeaseEvictLowLimit),
+		fmt.Sprintf("IMGR.LeaseEvictHighLimit=%d", testRpcLeaseOverrideConfIMGRLeaseEvictHighLimit),
+	}
+
+	testSetup(t, overrideConfStrings, nil)
 
 	// Format testVolume
 
