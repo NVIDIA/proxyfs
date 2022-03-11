@@ -138,6 +138,8 @@ func testSetup(t *testing.T, overrideConfStrings []string, retryrpcCallbacks int
 
 		"IMGR.FetchNonceRangeToReturn=100",
 
+		"IMGR.OpenFileLimit=100000",
+
 		"IMGR.MinLeaseDuration=250ms",
 		"IMGR.LeaseInterruptInterval=250ms",
 		"IMGR.LeaseInterruptLimit=5",
@@ -185,7 +187,6 @@ func testSetup(t *testing.T, overrideConfStrings []string, retryrpcCallbacks int
 			t.Fatalf("testGlobals.confMap.UpdateFromStrings(overrideConfStrings) failed: %v", err)
 		}
 	}
-	fmt.Printf("UNDO: testGlobals.confMap.Dump():\n%s\n", testGlobals.confMap.Dump())
 
 	err = iswiftpkg.Start(testGlobals.confMap)
 	if nil != err {

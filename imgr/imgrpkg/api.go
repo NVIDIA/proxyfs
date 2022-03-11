@@ -43,6 +43,8 @@
 //
 //  FetchNonceRangeToReturn:              100
 //
+//  OpenFileLimit:                        100000
+//
 //  MinLeaseDuration:                     250ms
 //  LeaseInterruptInterval:               250ms
 //  LeaseInterruptLimit:                  20
@@ -196,6 +198,7 @@ const (
 	EBadOpenCountAdjustment = "EBadOpenCountAdjustment:"
 	ELeaseRequestDenied     = "ELeaseRequestDenied:"
 	EMissingLease           = "EMissingLease:"
+	ETooManyOpens           = "ETooManyOpens"
 	EVolumeBeingDeleted     = "EVolumeBeingDeleted:"
 	EUnknownInodeNumber     = "EUnknownInodeNumber:"
 	EUnknownMountID         = "EUnknownMountID:"

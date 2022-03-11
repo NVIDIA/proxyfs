@@ -50,6 +50,8 @@ type configStruct struct {
 
 	FetchNonceRangeToReturn uint64
 
+	OpenFileLimit uint64
+
 	MinLeaseDuration       time.Duration
 	LeaseInterruptInterval time.Duration
 	LeaseInterruptLimit    uint32
@@ -214,7 +216,7 @@ const (
 )
 
 type mountStruct struct {
-	volume              *volumeStruct                  // volume.{R|}Lock() also protects each mountStruct
+	volume              *volumeStruct                  //
 	mountID             string                         //
 	retryRPCClientID    uint64                         //
 	unmounting          bool                           //
@@ -271,6 +273,7 @@ type globalsStruct struct {
 	config               configStruct             //
 	logFile              *os.File                 // == nil if config.LogFilePath == ""
 	inodeTableCache      sortedmap.BPlusTreeCache //
+	inodeOpenCount       uint64                   //
 	inodeLeaseLRU        *list.List               // .Front() is the LRU inodeLeaseStruct.listElement
 	volumeMap            sortedmap.LLRBTree       // key == volumeStruct.name; value == *volumeStruct
 	mountMap             map[string]*mountStruct  // key == mountStruct.mountID
@@ -552,6 +555,11 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 
+	globals.config.OpenFileLimit, err = confMap.FetchOptionValueUint64("IMGR", "OpenFileLimit")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.MinLeaseDuration, err = confMap.FetchOptionValueDuration("IMGR", "MinLeaseDuration")
 	if nil != err {
 		logFatal(err)
@@ -680,6 +688,8 @@ func uninitializeGlobals() (err error) {
 	globals.config.AuthTokenCheckInterval = time.Duration(0)
 
 	globals.config.FetchNonceRangeToReturn = 0
+
+	globals.config.OpenFileLimit = 0
 
 	globals.config.MinLeaseDuration = time.Duration(0)
 	globals.config.LeaseInterruptInterval = time.Duration(0)

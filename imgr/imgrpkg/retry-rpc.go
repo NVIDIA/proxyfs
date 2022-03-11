@@ -720,11 +720,17 @@ func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *Adjus
 		if adjustInodeTableEntryOpenCountRequest.Adjustment < 0 {
 			logFatalf("adjustInodeTableEntryOpenCountRequest.Adjustment can't be < 0 if inodeOpenMapElement is missing")
 		}
+		if globals.inodeOpenCount >= globals.config.OpenFileLimit {
+			globals.Unlock()
+			err = fmt.Errorf("%s", ETooManyOpens)
+			return
+		}
 		inodeOpenMapElement = &inodeOpenMapElementStruct{
 			numMounts:         0,
 			markedForDeletion: false,
 		}
 		mount.volume.inodeOpenMap[adjustInodeTableEntryOpenCountRequest.InodeNumber] = inodeOpenMapElement
+		globals.inodeOpenCount++
 	}
 
 	if adjustInodeTableEntryOpenCountRequest.Adjustment > 0 {
@@ -741,6 +747,7 @@ func adjustInodeTableEntryOpenCount(adjustInodeTableEntryOpenCountRequest *Adjus
 			inodeOpenMapElement.numMounts--
 			if inodeOpenMapElement.numMounts == 0 {
 				delete(mount.volume.inodeOpenMap, adjustInodeTableEntryOpenCountRequest.InodeNumber)
+				globals.inodeOpenCount--
 				if inodeOpenMapElement.markedForDeletion {
 					mount.volume.removeInodeWhileLocked(adjustInodeTableEntryOpenCountRequest.InodeNumber)
 				}
