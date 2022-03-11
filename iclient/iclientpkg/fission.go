@@ -3007,7 +3007,8 @@ func (dummy *globalsStruct) DoFSyncDir(inHeader *fission.InHeader, fSyncDirIn *f
 		globals.stats.DoFSyncDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
+	// TODO: Anything to do here?
+
 	errno = syscall.ENOSYS
 	return
 }
@@ -3375,7 +3376,8 @@ func (dummy *globalsStruct) DoDestroy(inHeader *fission.InHeader) (errno syscall
 		globals.stats.DoDestroyUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO
+	// TODO: Anything to do here?
+
 	errno = syscall.ENOSYS
 	return
 }

@@ -247,9 +247,7 @@ func TestRPCLease(t *testing.T) {
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
 
-	// TODO: testRpcLeaseClient[0].alreadyUnmounted = true
-	//
-	//       The above expiration should ultimately trigger an implicit Unmount
+	testRpcLeaseClient[0].alreadyUnmounted = true
 
 	testRpcLeaseLogTestCase("2 Shared then 2 Promotions leading to Release", true)
 

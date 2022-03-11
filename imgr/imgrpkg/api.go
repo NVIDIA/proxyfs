@@ -396,7 +396,7 @@ type DeleteInodeTableEntryResponseStruct struct{}
 // unless/until the OpenCount for the Inode drops to zero, the Inode will
 // still exist.
 //
-// Possible errors: ETODO
+// Possible errors: EAuthTokenRejected EMissingLease EUnknownMountID
 //
 func (dummy *RetryRPCServerStruct) DeleteInodeTableEntry(deleteInodeTableEntryRequest *DeleteInodeTableEntryRequestStruct, deleteInodeTableEntryResponse *DeleteInodeTableEntryResponseStruct) (err error) {
 	return deleteInodeTableEntry(deleteInodeTableEntryRequest, deleteInodeTableEntryResponse)

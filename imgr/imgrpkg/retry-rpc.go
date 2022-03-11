@@ -309,25 +309,21 @@ func unmount(unmountRequest *UnmountRequestStruct, unmountResponse *UnmountRespo
 	globals.Lock()
 
 	mount, ok = globals.mountMap[unmountRequest.MountID]
-	if !ok {
+	if !ok || mount.unmounting {
 		globals.Unlock()
 		err = fmt.Errorf("%s %s", EUnknownMountID, unmountRequest.MountID)
 		return
 	}
 
-	if mount.unmounting {
-		globals.Unlock()
-	} else {
-		mount.unmounting = true
+	mount.unmounting = true
 
-		unmountFinishedWG.Add(1)
+	unmountFinishedWG.Add(1)
 
-		go mount.performUnmount(&unmountFinishedWG)
+	go mount.performUnmount(&unmountFinishedWG)
 
-		globals.Unlock()
+	globals.Unlock()
 
-		unmountFinishedWG.Wait()
-	}
+	unmountFinishedWG.Wait()
 
 	err = nil
 	return
