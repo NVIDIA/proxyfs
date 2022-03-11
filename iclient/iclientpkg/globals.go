@@ -115,7 +115,6 @@ type fileInodeFlusherStruct struct {
 type inodeStruct struct {
 	inodeNumber     uint64                                         //
 	dirty           bool                                           //
-	openCount       uint64                                         //
 	leaseState      inodeLeaseStateType                            //
 	listElement     *list.Element                                  // Maintains position in globalsStruct.{shared|exclusive}LeaseLRU
 	lockHolder      *inodeHeldLockStruct                           // If == nil, not locked

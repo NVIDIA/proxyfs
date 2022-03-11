@@ -118,7 +118,6 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 		inode = &inodeStruct{
 			inodeNumber:                              inodeLockRequest.inodeNumber,
 			dirty:                                    false,
-			openCount:                                0,
 			leaseState:                               inodeLeaseStateNone,
 			listElement:                              nil,
 			lockHolder:                               nil,

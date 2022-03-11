@@ -552,7 +552,6 @@ Retry:
 	symLinkInode = &inodeStruct{
 		inodeNumber:     symLinkInodeNumber,
 		dirty:           true,
-		openCount:       0,
 		leaseState:      inodeLeaseStateNone,
 		listElement:     nil,
 		lockHolder:      nil,
@@ -757,7 +756,6 @@ Retry:
 	childDirInode = &inodeStruct{
 		inodeNumber:     childDirInodeNumber,
 		dirty:           true,
-		openCount:       0,
 		leaseState:      inodeLeaseStateNone,
 		listElement:     nil,
 		lockHolder:      nil,
@@ -3219,7 +3217,6 @@ Retry:
 		fileInode = &inodeStruct{
 			inodeNumber:     fileInodeNumber,
 			dirty:           true,
-			openCount:       0,
 			leaseState:      inodeLeaseStateNone,
 			listElement:     nil,
 			lockHolder:      nil,
