@@ -553,7 +553,6 @@ Retry:
 		inodeNumber:     symLinkInodeNumber,
 		dirty:           true,
 		openCount:       0,
-		markedForDelete: false,
 		leaseState:      inodeLeaseStateNone,
 		listElement:     nil,
 		lockHolder:      nil,
@@ -759,7 +758,6 @@ Retry:
 		inodeNumber:     childDirInodeNumber,
 		dirty:           true,
 		openCount:       0,
-		markedForDelete: false,
 		leaseState:      inodeLeaseStateNone,
 		listElement:     nil,
 		lockHolder:      nil,
@@ -1047,8 +1045,6 @@ Retry:
 	flushInodesInSlice([]*inodeStruct{dirInode, targetInode})
 
 	if len(targetInode.linkSet) == 0 {
-		inodeLockRequest.markForDelete(targetInode.inodeNumber)
-
 		deleteInodeTableEntryRequest = &imgrpkg.DeleteInodeTableEntryRequestStruct{
 			MountID:     globals.mountID,
 			InodeNumber: targetInode.inodeNumber,
@@ -1215,8 +1211,6 @@ Retry:
 	}
 
 	flushInodesInSlice([]*inodeStruct{parentDirInode})
-
-	inodeLockRequest.markForDelete(childDirInode.inodeNumber)
 
 	deleteInodeTableEntryRequest = &imgrpkg.DeleteInodeTableEntryRequestStruct{
 		MountID:     globals.mountID,
@@ -3226,7 +3220,6 @@ Retry:
 			inodeNumber:     fileInodeNumber,
 			dirty:           true,
 			openCount:       0,
-			markedForDelete: false,
 			leaseState:      inodeLeaseStateNone,
 			listElement:     nil,
 			lockHolder:      nil,
@@ -4193,8 +4186,6 @@ Retry:
 		}
 
 		if len(replacedInode.linkSet) == 0 {
-			inodeLockRequest.markForDelete(replacedInode.inodeNumber)
-
 			deleteInodeTableEntryRequest = &imgrpkg.DeleteInodeTableEntryRequestStruct{
 				MountID:     globals.mountID,
 				InodeNumber: replacedInode.inodeNumber,

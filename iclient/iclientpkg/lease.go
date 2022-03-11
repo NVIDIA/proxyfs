@@ -25,32 +25,6 @@ func newLockRequest() (inodeLockRequest *inodeLockRequestStruct) {
 	return
 }
 
-// markForDelete is called to schedule an inode to be deleted from globals.inodeTable
-// upon last dereference. Note that an exclusive lock must be held for the specified
-// inodeNumber and that globals.Lock() must not be held.
-//
-func (inodeLockRequest *inodeLockRequestStruct) markForDelete(inodeNumber uint64) {
-	var (
-		inodeHeldLock *inodeHeldLockStruct
-		ok            bool
-	)
-
-	globals.Lock()
-
-	inodeHeldLock, ok = inodeLockRequest.locksHeld[inodeNumber]
-	if !ok {
-		logFatalf("inodeLockRequest.locksHeld[inodeNumber] returned !ok")
-	}
-
-	if !inodeHeldLock.exclusive {
-		logFatalf("inodeHeldLock.exclusive was false")
-	}
-
-	inodeHeldLock.inode.markedForDelete = true
-
-	globals.Unlock()
-}
-
 // performInodeLockRetryDelay simply delays the current goroutine for InodeLockRetryDelay
 // interval +/- InodeLockRetryDelayVariance (interpreted as a percentage).
 //
@@ -145,7 +119,6 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 			inodeNumber:                              inodeLockRequest.inodeNumber,
 			dirty:                                    false,
 			openCount:                                0,
-			markedForDelete:                          false,
 			leaseState:                               inodeLeaseStateNone,
 			listElement:                              nil,
 			lockHolder:                               nil,
@@ -493,14 +466,7 @@ func (inodeLockRequest *inodeLockRequestStruct) unlockAll() {
 
 		inode.lockHolder = nil
 
-		if inode.lockRequestList.Len() == 0 {
-			// No pending lock requests exist... should we delete inode?
-
-			if inode.markedForDelete {
-				releaseList = append(releaseList, inode)
-				delete(globals.inodeTable, inode.inodeNumber)
-			}
-		} else {
+		if inode.lockRequestList.Len() > 0 {
 			// We can unblock one lock request
 
 			blockedInodeLockRequest = inode.lockRequestList.Front().Value.(*inodeLockRequestStruct)
@@ -689,7 +655,7 @@ Retry:
 
 	if inode.dirty {
 		// In this case, we know that we must currently hold an Exclusive Lease,
-		// so upgrade ourInodeLockRequest to indicate a Shared Lock
+		// so upgrade ourInodeLockRequest to indicate an Exclusive Lock
 
 		inodeHeldLock, ok = ourInodeLockRequest.locksHeld[inodeNumber]
 		if !ok {

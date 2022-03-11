@@ -116,7 +116,6 @@ type inodeStruct struct {
 	inodeNumber     uint64                                         //
 	dirty           bool                                           //
 	openCount       uint64                                         //
-	markedForDelete bool                                           // If true, remove from globalsStruct.inodeTable once openCount == 0
 	leaseState      inodeLeaseStateType                            //
 	listElement     *list.Element                                  // Maintains position in globalsStruct.{shared|exclusive}LeaseLRU
 	lockHolder      *inodeHeldLockStruct                           // If == nil, not locked
