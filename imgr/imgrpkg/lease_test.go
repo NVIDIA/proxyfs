@@ -340,10 +340,8 @@ func TestRPCLease(t *testing.T) {
 
 	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeExclusive)
 
-	// TODO testRpcLeaseClient[0].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
-	// TODO testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
-	//
-	//      Above must be re-enabled once Lease Limits are enforced
+	testRpcLeaseClient[0].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
+	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
 
 	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)

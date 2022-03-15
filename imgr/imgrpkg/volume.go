@@ -110,6 +110,7 @@ func startVolumeManagement() (err error) {
 	globals.inodeTableCache = sortedmap.NewBPlusTreeCache(globals.config.InodeTableCacheEvictLowLimit, globals.config.InodeTableCacheEvictLowLimit)
 	globals.inodeOpenCount = 0
 	globals.inodeLeaseLRU = list.New()
+	globals.inodeLeaseExpirerWG = nil
 	globals.volumeMap = sortedmap.NewLLRBTree(sortedmap.CompareString, &globals)
 	globals.mountMap = make(map[string]*mountStruct)
 
@@ -179,6 +180,7 @@ func stopVolumeManagement() (err error) {
 	globals.inodeTableCache = nil
 	globals.inodeOpenCount = 0
 	globals.inodeLeaseLRU = nil
+	globals.inodeLeaseExpirerWG = nil
 	globals.volumeMap = nil
 	globals.mountMap = nil
 
@@ -1455,7 +1457,10 @@ func (volume *volumeStruct) removeInodeWhileLocked(inodeNumber uint64) {
 
 	inodeLease, ok = volume.inodeLeaseMap[inodeNumber]
 	if ok {
-		close(inodeLease.stopChan)
+		if !inodeLease.stopping {
+			inodeLease.stopping = true
+			close(inodeLease.stopChan)
+		}
 	}
 }
 

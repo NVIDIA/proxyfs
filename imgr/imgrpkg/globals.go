@@ -189,6 +189,7 @@ type inodeLeaseStruct struct {
 	//                             revoke/reject all leaseRequestStruct's in *Holder* & requestedList
 	//                             issue volume.leaseHandlerWG.Done()
 	//                             and exit
+	stopping bool //             use the flag to avoid double-closing (e.g. inode removal & forced expiration)
 
 	sharedHoldersList    *list.List          // each list.Element.Value.(*leaseRequestStruct).requestState == leaseRequestStateSharedGranted
 	promotingHolder      *leaseRequestStruct // leaseRequest.requestState == leaseRequestStateSharedPromoting
@@ -275,6 +276,7 @@ type globalsStruct struct {
 	inodeTableCache      sortedmap.BPlusTreeCache //
 	inodeOpenCount       uint64                   //
 	inodeLeaseLRU        *list.List               // .Front() is the LRU inodeLeaseStruct.listElement
+	inodeLeaseExpirerWG  *sync.WaitGroup          // != nil means there is an inodeLeaseExpirer running
 	volumeMap            sortedmap.LLRBTree       // key == volumeStruct.name; value == *volumeStruct
 	mountMap             map[string]*mountStruct  // key == mountStruct.mountID
 	checkPointHTTPClient *http.Client             //

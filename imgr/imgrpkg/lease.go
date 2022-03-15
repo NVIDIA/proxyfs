@@ -6,7 +6,9 @@ package imgrpkg
 import (
 	"container/list"
 	"encoding/json"
+	"fmt"
 	"runtime"
+	"sync"
 	"time"
 )
 
@@ -32,6 +34,7 @@ func (inodeLease *inodeLeaseStruct) handler() {
 func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *leaseRequestOperationStruct) {
 	var (
 		err                      error
+		inodeLeaseExpirerWG      *sync.WaitGroup
 		leaseRequest             *leaseRequestStruct
 		leaseRequestElement      *list.Element
 		ok                       bool
@@ -42,7 +45,13 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 	)
 
 	globals.Lock()
-	defer globals.Unlock()
+
+	if globals.inodeLeaseExpirerWG != nil {
+		inodeLeaseExpirerWG = globals.inodeLeaseExpirerWG
+		globals.Unlock()
+		inodeLeaseExpirerWG.Wait()
+		globals.Lock()
+	}
 
 	globals.inodeLeaseLRU.MoveToBack(inodeLease.lruElement)
 
@@ -409,6 +418,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 							leaseRequestElement = inodeLease.requestedList.Front()
 							if nil == leaseRequestElement {
 								delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+								_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 							} else { // nil != leaseRequestElement
 								leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
 								_ = inodeLease.requestedList.Remove(leaseRequestElement)
@@ -470,6 +480,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
 					if inodeLease.sharedHoldersList.Len() == 0 {
 						delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+						_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 					}
 				} else { // leaseRequestStateSharedGranted != leaseRequest.requestState
 					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
@@ -540,6 +551,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 					leaseRequestElement = inodeLease.requestedList.Front()
 					if nil == leaseRequestElement {
 						delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+						_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 					} else { // nil != leaseRequestElement
 						leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
 						_ = inodeLease.requestedList.Remove(leaseRequestElement)
@@ -578,6 +590,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
 					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
 					delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+					_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 				} else { // leaseRequestStateExclusiveGranted != leaseRequest.requestState
 					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 				}
@@ -663,6 +676,8 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 	default:
 		logFatalf("(*inodeLeaseStruct).handleOperation() found unexpected leaseRequestOperation.LeaseRequestType: %v", leaseRequestOperation.LeaseRequestType)
 	}
+
+	globals.Unlock()
 }
 
 func (inodeLease *inodeLeaseStruct) handleLongAgoTimerPop() {
@@ -1076,6 +1091,46 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 	}
 }
 
+func inodeLeaseExpirer() {
+	var (
+		inodeLease          *inodeLeaseStruct
+		inodeLeaseElement   *list.Element
+		inodeLeaseExpirerWG *sync.WaitGroup
+		stopCount           int
+		stopMax             int
+	)
+
+	globals.Lock()
+
+	stopCount = 0
+	stopMax = globals.inodeLeaseLRU.Len() - int(globals.config.LeaseEvictLowLimit)
+
+	inodeLeaseElement = globals.inodeLeaseLRU.Front()
+
+	for stopCount < stopMax {
+		if inodeLeaseElement == nil {
+			logFatalf("inodeLeaseExpirer() ran off the end of globals.inodeLeaseLRU before reaching stopMax")
+		}
+		inodeLease = inodeLeaseElement.Value.(*inodeLeaseStruct)
+		if inodeLease.stopping {
+			fmt.Printf("inodeLeaseExpirer() ran up against already stopping leases (stopCount: %v, stopMax: %v)\n", stopCount, stopMax)
+			break
+		}
+		fmt.Printf("inodeLeaseExpirer() will be stopping inodeLease: %+v\n", inodeLease)
+		stopCount++
+		inodeLease.stopping = true
+		close(inodeLease.stopChan)
+		inodeLeaseElement = inodeLeaseElement.Next()
+	}
+
+	inodeLeaseExpirerWG = globals.inodeLeaseExpirerWG
+	globals.inodeLeaseExpirerWG = nil
+
+	globals.Unlock()
+
+	inodeLeaseExpirerWG.Done()
+}
+
 func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 	var (
 		err                   error
@@ -1318,6 +1373,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 								inodeLease.interruptTimer = &time.Timer{}
 
 								delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+								_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 							}
 						} else {
 							leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
@@ -1342,6 +1398,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 							inodeLease.interruptTimer = &time.Timer{}
 
 							delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+							_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 						} else {
 							leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 						}
@@ -1366,6 +1423,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 							inodeLease.interruptTimer = &time.Timer{}
 
 							delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+							_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 						} else {
 							leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 						}
@@ -1406,6 +1464,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					inodeLease.leaseState = inodeLeaseStateNone
 
 					delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+					_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 				} else { // globals.config.LeaseInterruptLimit > inodeLease.interruptsSent {
 					leaseRequestElement = inodeLease.releasingHoldersList.Front()
 
@@ -1452,6 +1511,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					inodeLease.leaseState = inodeLeaseStateNone
 
 					delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+					_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 				} else { // globals.config.LeaseInterruptLimit > inodeLease.interruptsSent {
 					leaseRequest = inodeLease.demotingHolder
 
@@ -1492,6 +1552,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					inodeLease.leaseState = inodeLeaseStateNone
 
 					delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+					_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
 				} else { // globals.config.LeaseInterruptLimit > inodeLease.interruptsSent {
 					leaseRequestElement = inodeLease.releasingHoldersList.Front()
 					leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)

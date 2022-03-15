@@ -895,6 +895,7 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 				leaseState:           inodeLeaseStateNone,
 				requestChan:          make(chan *leaseRequestOperationStruct),
 				stopChan:             make(chan struct{}),
+				stopping:             false,
 				sharedHoldersList:    list.New(),
 				promotingHolder:      nil,
 				exclusiveHolder:      nil,
@@ -912,6 +913,12 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 
 			volume.leaseHandlerWG.Add(1)
 			go inodeLease.handler()
+
+			if (globals.inodeLeaseExpirerWG == nil) && (globals.inodeLeaseLRU.Len() > int(globals.config.LeaseEvictHighLimit)) {
+				globals.inodeLeaseExpirerWG = &sync.WaitGroup{}
+				globals.inodeLeaseExpirerWG.Add(1)
+				go inodeLeaseExpirer()
+			}
 		}
 	} else { // in.LeaseRequestType is one of LeaseRequestType{Promote|Demote|Release}
 		inodeLease, ok = volume.inodeLeaseMap[leaseRequest.InodeNumber]
