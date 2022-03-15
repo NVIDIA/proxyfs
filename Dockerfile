@@ -66,7 +66,7 @@ FROM alpine:3.15.0 as base
 RUN apk add --no-cache libc6-compat
 
 FROM base as dev
-ARG GolangVersion=1.17.5
+ARG GolangVersion=1.18
 RUN apk add --no-cache               \
                        bind-tools    \
                        curl          \
