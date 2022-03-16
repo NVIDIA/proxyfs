@@ -515,6 +515,8 @@ func TestRetryRPC(t *testing.T) {
 		renewMountResponse                     *RenewMountResponseStruct
 		retryrpcClient                         *retryrpc.Client
 		retryrpcClientCallbacks                *testRetryRPCClientCallbacksStruct
+		rpcInterrupt                           *RPCInterrupt
+		rpcInterruptPayload                    []byte
 		testFileInode                          *testFileInodeStruct
 		unmountRequest                         *UnmountRequestStruct
 		unmountResponse                        *UnmountResponseStruct
@@ -523,7 +525,7 @@ func TestRetryRPC(t *testing.T) {
 	// Setup RetryRPC Client
 
 	retryrpcClientCallbacks = &testRetryRPCClientCallbacksStruct{
-		interruptPayloadChan: make(chan []byte),
+		interruptPayloadChan: make(chan []byte, 1),
 	}
 
 	// Setup test environment
@@ -638,6 +640,14 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"RenewMount(,)\",,) failed: %v", err)
 	}
 
+	// Verify that no Leases are currently held
+
+	currentInodeNumberSet = fetchCurrentInodeNumberInInodeLeaseMapSet(t, mountResponse.MountID)
+
+	if len(currentInodeNumberSet) > 0 {
+		t.Fatalf("currentInodeNumberSet should have been empty")
+	}
+
 	// Fetch a Shared Lease on RootDirInode
 
 	leaseRequest = &LeaseRequestStruct{
@@ -650,6 +660,18 @@ func TestRetryRPC(t *testing.T) {
 	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
 	if nil != err {
 		t.Fatalf("retryrpcClient.Send(\"Lease(,ilayout.RootDirInodeNumber,LeaseRequestTypeShared)\",,) failed: %v", err)
+	}
+
+	// Verify that a Lease was granted on RootDirInode
+
+	currentInodeNumberSet = fetchCurrentInodeNumberInInodeLeaseMapSet(t, mountResponse.MountID)
+
+	if len(currentInodeNumberSet) != 1 {
+		t.Fatalf("currentInodeNumberSet should have had one element")
+	}
+	_, ok = currentInodeNumberSet[ilayout.RootDirInodeNumber]
+	if !ok {
+		t.Fatalf("ilayout.RootDirInodeNumber should have been present")
 	}
 
 	// Perform a GetInodeTableEntry() for RootDirInode
@@ -828,6 +850,22 @@ func TestRetryRPC(t *testing.T) {
 	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
 	if nil != err {
 		t.Fatalf("retryrpcClient.Send(\"Lease(,fileInodeNumber,LeaseRequestTypeExclusive)\",,) failed: %v", err)
+	}
+
+	// Verify that a Lease was granted on FileInode
+
+	currentInodeNumberSet = fetchCurrentInodeNumberInInodeLeaseMapSet(t, mountResponse.MountID)
+
+	if len(currentInodeNumberSet) != 2 {
+		t.Fatalf("currentInodeNumberSet should have had two elements")
+	}
+	_, ok = currentInodeNumberSet[ilayout.RootDirInodeNumber]
+	if !ok {
+		t.Fatalf("ilayout.RootDirInodeNumber should have been present")
+	}
+	_, ok = currentInodeNumberSet[fileInodeNumber]
+	if !ok {
+		t.Fatalf("fileInodeNumber should have been present")
 	}
 
 	// Perform a PutInodeTableEntries() for FileInode
@@ -1215,6 +1253,51 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"AdjustInodeTableEntryOpenCount(,fileInodeNumber,-1)\",,) failed: %v", err)
 	}
 
+	// Verify that we get an RPCInterrupt due to FileInode being deleted
+
+	rpcInterruptPayload = <-retryrpcClientCallbacks.interruptPayloadChan
+
+	rpcInterrupt = &RPCInterrupt{}
+
+	err = json.Unmarshal(rpcInterruptPayload, rpcInterrupt)
+	if nil != err {
+		t.Fatalf("json.Unmarshal(rpcInterruptPayload, rpcInterrupt) failed: %v", err)
+	}
+
+	if (rpcInterrupt.RPCInterruptType != RPCInterruptTypeRelease) || (rpcInterrupt.InodeNumber != fileInodeNumber) {
+		t.Fatalf("unexpected rpcInterrupt: %+v", rpcInterrupt)
+	}
+
+	// Perform a Lease Release on FileInode
+
+	leaseRequest = &LeaseRequestStruct{
+		MountID:          mountResponse.MountID,
+		InodeNumber:      fileInodeNumber,
+		LeaseRequestType: LeaseRequestTypeRelease,
+	}
+	leaseResponse = &LeaseResponseStruct{}
+
+	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"Lease(,fileInodeNumber,LeaseRequestTypeRelease)\",,) failed: %v", err)
+	}
+
+	// Verify that a Lease was released on fileInodeNumber
+
+	currentInodeNumberSet = fetchCurrentInodeNumberInInodeLeaseMapSet(t, mountResponse.MountID)
+
+	if len(currentInodeNumberSet) != 1 {
+		t.Fatalf("currentInodeNumberSet should have had two elements")
+	}
+	_, ok = currentInodeNumberSet[ilayout.RootDirInodeNumber]
+	if !ok {
+		t.Fatalf("ilayout.RootDirInodeNumber should have been present")
+	}
+	_, ok = currentInodeNumberSet[fileInodeNumber]
+	if ok {
+		t.Fatalf("fileInodeNumber should have been absent")
+	}
+
 	// Perform a Flush()
 
 	flushRequest = &FlushRequestStruct{
@@ -1244,20 +1327,6 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("fileInodeObjectC should have been absent")
 	}
 
-	// Perform a Lease Release on FileInode
-
-	leaseRequest = &LeaseRequestStruct{
-		MountID:          mountResponse.MountID,
-		InodeNumber:      fileInodeNumber,
-		LeaseRequestType: LeaseRequestTypeRelease,
-	}
-	leaseResponse = &LeaseResponseStruct{}
-
-	err = retryrpcClient.Send("Lease", leaseRequest, leaseResponse)
-	if nil != err {
-		t.Fatalf("retryrpcClient.Send(\"Lease(,fileInodeNumber,LeaseRequestTypeRelease)\",,) failed: %v", err)
-	}
-
 	// Perform an Unmount()... without first releasing Exclusive Lease on RootDirInode
 
 	unmountRequest = &UnmountRequestStruct{
@@ -1281,16 +1350,7 @@ func TestRetryRPC(t *testing.T) {
 
 	// Teardown RetryRPC Client
 
-	// TODO: Remove this early exit skipping of following TODOs
-
-	if !ok {
-		t.Logf("Exiting TestRetryRPC() early (to skip following TODOs")
-		return
-	}
-
-	fmt.Print("\n\nReached UNDO A\n")
 	retryrpcClient.Close()
-	fmt.Print("\n\nReached UNDO B\n")
 
 	// And teardown test environment
 
