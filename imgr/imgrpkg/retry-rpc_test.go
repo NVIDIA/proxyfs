@@ -5,12 +5,12 @@ package imgrpkg
 
 import (
 	"bytes"
+	"container/list"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -486,7 +486,6 @@ func TestRetryRPC(t *testing.T) {
 		adjustInodeTableEntryOpenCountRequest  *AdjustInodeTableEntryOpenCountRequestStruct
 		adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct
 		currentInodeNumberSet                  map[uint64]struct{}
-		currentObjectNumberSet                 map[uint64]struct{}
 		deleteInodeTableEntryRequest           *DeleteInodeTableEntryRequestStruct
 		deleteInodeTableEntryResponse          *DeleteInodeTableEntryResponseStruct
 		err                                    error
@@ -1142,18 +1141,15 @@ func TestRetryRPC(t *testing.T) {
 
 	// Verify that 1st Object for FileInode gets deleted... but not 2nd nor 3rd
 
-	currentObjectNumberSet = fetchCurrentObjectNumberSet(t, mountResponse.MountID)
-
-	_, ok = currentObjectNumberSet[fileInodeObjectA]
-	if ok {
+	if objectNumberIsPresent(t, mountResponse.MountID, fileInodeObjectA) {
 		t.Fatalf("fileInodeObjectA should have been absent")
 	}
-	_, ok = currentObjectNumberSet[fileInodeObjectB]
-	if !ok {
+
+	if !objectNumberIsPresent(t, mountResponse.MountID, fileInodeObjectB) {
 		t.Fatalf("fileInodeObjectB should have been present")
 	}
-	_, ok = currentObjectNumberSet[fileInodeObjectC]
-	if !ok {
+
+	if !objectNumberIsPresent(t, mountResponse.MountID, fileInodeObjectC) {
 		t.Fatalf("fileInodeObjectC should have been present")
 	}
 
@@ -1217,7 +1213,7 @@ func TestRetryRPC(t *testing.T) {
 	currentInodeNumberSet = fetchCurrentInodeNumberInInodeTableSet(t, mountResponse.MountID)
 
 	_, ok = currentInodeNumberSet[fileInodeNumber]
-	if ok {
+	if !ok {
 		t.Fatalf("fileInodeNumber should have been present")
 	}
 
@@ -1252,18 +1248,15 @@ func TestRetryRPC(t *testing.T) {
 	currentInodeNumberSet = fetchCurrentInodeNumberInInodeTableSet(t, mountResponse.MountID)
 
 	_, ok = currentInodeNumberSet[fileInodeNumber]
-	if !ok {
+	if ok {
 		t.Fatalf("fileInodeNumber should have been absent")
 	}
 
-	currentObjectNumberSet = fetchCurrentObjectNumberSet(t, mountResponse.MountID)
-
-	_, ok = currentObjectNumberSet[fileInodeObjectB]
-	if ok {
+	if objectNumberIsPresent(t, mountResponse.MountID, fileInodeObjectB) {
 		t.Fatalf("fileInodeObjectB should have been absent")
 	}
-	_, ok = currentObjectNumberSet[fileInodeObjectC]
-	if ok {
+
+	if objectNumberIsPresent(t, mountResponse.MountID, fileInodeObjectC) {
 		t.Fatalf("fileInodeObjectC should have been absent")
 	}
 
@@ -1375,17 +1368,17 @@ func fetchCurrentInodeNumberInInodeTableSet(t *testing.T, mountID string) (inode
 	return
 }
 
-func fetchCurrentObjectNumberSet(t *testing.T, mountID string) (objectNumberSet map[uint64]struct{}) {
+func objectNumberIsPresent(t *testing.T, mountID string, objectNumber uint64) (present bool) {
 	var (
-		activeDeleteObjectWG        *sync.WaitGroup
-		err                         error
-		getRequestHeaders           http.Header
-		getResponseBody             []byte
-		getResponseBodySplit        []string
-		getResponseBodySplitElement string
-		objectNumber                uint64
-		ok                          bool
-		testMount                   *mountStruct
+		activeDeleteObjectNumber             uint64
+		activeDeleteObjectNumberListElement  *list.Element
+		err                                  error
+		headRequestHeaders                   http.Header
+		objectURL                            string
+		ok                                   bool
+		pendingDeleteObjectNumber            uint64
+		pendingDeleteObjectNumberListElement *list.Element
+		testMount                            *mountStruct
 	)
 
 	globals.Lock()
@@ -1394,34 +1387,66 @@ func fetchCurrentObjectNumberSet(t *testing.T, mountID string) (objectNumberSet 
 	if !ok {
 		t.Fatal("globals.mountMap[mountID] returned !ok")
 	}
-	activeDeleteObjectWG = &testMount.volume.activeDeleteObjectWG
+
+	activeDeleteObjectNumberListElement = testMount.volume.activeDeleteObjectNumberList.Front()
+
+	for activeDeleteObjectNumberListElement != nil {
+		activeDeleteObjectNumber, ok = activeDeleteObjectNumberListElement.Value.(uint64)
+		if !ok {
+			t.Fatalf("activeDeleteObjectNumberListElement.Value.(uint64) returned !ok")
+		}
+
+		if objectNumber == activeDeleteObjectNumber {
+			globals.Unlock()
+			present = false
+			return
+		}
+
+		activeDeleteObjectNumberListElement = activeDeleteObjectNumberListElement.Next()
+	}
+
+	pendingDeleteObjectNumberListElement = testMount.volume.pendingDeleteObjectNumberList.Front()
+
+	for pendingDeleteObjectNumberListElement != nil {
+		pendingDeleteObjectNumber, ok = pendingDeleteObjectNumberListElement.Value.(uint64)
+		if !ok {
+			t.Fatalf("pendingDeleteObjectNumberListElement.Value.(uint64) returned !ok")
+		}
+
+		if objectNumber == pendingDeleteObjectNumber {
+			globals.Unlock()
+			present = false
+			return
+		}
+
+		pendingDeleteObjectNumberListElement = pendingDeleteObjectNumberListElement.Next()
+	}
 
 	globals.Unlock()
 
-	activeDeleteObjectWG.Wait()
+	headRequestHeaders = make(http.Header)
 
-	getRequestHeaders = make(http.Header)
+	headRequestHeaders["X-Auth-Token"] = []string{testGlobals.authToken}
 
-	getRequestHeaders["X-Auth-Token"] = []string{testGlobals.authToken}
+	objectURL = testGlobals.containerURL + "/" + ilayout.GetObjectNameAsString(objectNumber)
 
-	_, getResponseBody, err = testDoHTTPRequest("GET", testGlobals.containerURL, getRequestHeaders, nil, http.StatusOK)
-	if nil != err {
-		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL, getRequestHeaders, nil, http.StatusOK) failed: %v", err)
+	_, _, err = testDoHTTPRequest("HEAD", objectURL, headRequestHeaders, nil, http.StatusOK)
+	if nil == err {
+		present = true
+		return
+	}
+	_, _, err = testDoHTTPRequest("HEAD", objectURL, headRequestHeaders, nil, http.StatusNoContent)
+	if nil == err {
+		present = true
+		return
+	}
+	_, _, err = testDoHTTPRequest("HEAD", objectURL, headRequestHeaders, nil, http.StatusNotFound)
+	if nil == err {
+		present = false
+		return
 	}
 
-	objectNumberSet = make(map[uint64]struct{})
+	t.Fatalf("testDoHTTPRequest(\"HEAD\", objectURL, headRequestHeaders, nil, http.Status{OK|NoContent|NotFound}) all failed")
 
-	getResponseBodySplit = strings.Split(string(getResponseBody[:]), "\n")
-
-	for _, getResponseBodySplitElement = range getResponseBodySplit {
-		if len(getResponseBodySplitElement) == 16 {
-			objectNumber, err = ilayout.GetObjectNumberFromString(getResponseBodySplitElement)
-			if nil != err {
-				t.Fatalf("ilayout.GetObjectNumberFromString(getResponseBodySplitElement) failed: %v", err)
-			}
-			objectNumberSet[objectNumber] = struct{}{}
-		}
-	}
-
-	return
+	return // Though this will never be reached
 }
