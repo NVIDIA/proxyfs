@@ -485,6 +485,7 @@ func TestRetryRPC(t *testing.T) {
 	var (
 		adjustInodeTableEntryOpenCountRequest  *AdjustInodeTableEntryOpenCountRequestStruct
 		adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct
+		currentInodeNumberSet                  map[uint64]struct{}
 		currentObjectNumberSet                 map[uint64]struct{}
 		deleteInodeTableEntryRequest           *DeleteInodeTableEntryRequestStruct
 		deleteInodeTableEntryResponse          *DeleteInodeTableEntryResponseStruct
@@ -1145,15 +1146,15 @@ func TestRetryRPC(t *testing.T) {
 
 	_, ok = currentObjectNumberSet[fileInodeObjectA]
 	if ok {
-		t.Fatalf("fileInodeObjectA should have been deleted")
+		t.Fatalf("fileInodeObjectA should have been absent")
 	}
 	_, ok = currentObjectNumberSet[fileInodeObjectB]
 	if !ok {
-		t.Fatalf("fileInodeObjectB should not have been deleted")
+		t.Fatalf("fileInodeObjectB should have been present")
 	}
 	_, ok = currentObjectNumberSet[fileInodeObjectC]
 	if !ok {
-		t.Fatalf("fileInodeObjectC should not have been deleted")
+		t.Fatalf("fileInodeObjectC should have been present")
 	}
 
 	// Perform an AdjustInodeTableEntryOpenCount(+1) for FileInode
@@ -1211,7 +1212,14 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"Flush()\",,) failed: %v", err)
 	}
 
-	// TODO: Verify that FileInode is still in InodeTable
+	// Verify that FileInode is still in InodeTable
+
+	currentInodeNumberSet = fetchCurrentInodeNumberInInodeTableSet(t, mountResponse.MountID)
+
+	_, ok = currentInodeNumberSet[fileInodeNumber]
+	if ok {
+		t.Fatalf("fileInodeNumber should have been present")
+	}
 
 	// Perform an AdjustInodeTableEntryOpenCount(-1) for FileInode
 
@@ -1239,7 +1247,25 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"Flush()\",,) failed: %v", err)
 	}
 
-	// TODO: Verify that FileInode is no longer in InodeTable and 2nd and 3rd Objects are deleted
+	// Verify that FileInode is no longer in InodeTable and 2nd and 3rd Objects are deleted
+
+	currentInodeNumberSet = fetchCurrentInodeNumberInInodeTableSet(t, mountResponse.MountID)
+
+	_, ok = currentInodeNumberSet[fileInodeNumber]
+	if !ok {
+		t.Fatalf("fileInodeNumber should have been absent")
+	}
+
+	currentObjectNumberSet = fetchCurrentObjectNumberSet(t, mountResponse.MountID)
+
+	_, ok = currentObjectNumberSet[fileInodeObjectB]
+	if ok {
+		t.Fatalf("fileInodeObjectB should have been absent")
+	}
+	_, ok = currentObjectNumberSet[fileInodeObjectC]
+	if ok {
+		t.Fatalf("fileInodeObjectC should have been absent")
+	}
 
 	// Perform a Lease Release on FileInode
 
@@ -1267,7 +1293,14 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"Unmount()\",,) failed: %v", err)
 	}
 
-	// TODO: Verify that Exclusive Lease on RootDirInode is implicitly released
+	// Verify that Exclusive Lease on RootDirInode is implicitly released
+
+	currentInodeNumberSet = fetchCurrentInodeNumberInInodeLeaseMapSet(t, mountResponse.MountID)
+
+	_, ok = currentInodeNumberSet[ilayout.RootDirInodeNumber]
+	if ok {
+		t.Fatalf("ilayout.RootDirInodeNumber should have been absent")
+	}
 
 	// Teardown RetryRPC Client
 
@@ -1276,6 +1309,70 @@ func TestRetryRPC(t *testing.T) {
 	// And teardown test environment
 
 	testTeardown(t)
+}
+
+func fetchCurrentInodeNumberInInodeLeaseMapSet(t *testing.T, mountID string) (inodeNumberSet map[uint64]struct{}) {
+	var (
+		inodeNumber uint64
+		ok          bool
+		testMount   *mountStruct
+	)
+
+	inodeNumberSet = make(map[uint64]struct{})
+
+	globals.Lock()
+
+	testMount, ok = globals.mountMap[mountID]
+	if !ok {
+		t.Fatalf("globals.mountMap[mountID] returned !ok")
+	}
+
+	for inodeNumber = range testMount.volume.inodeLeaseMap {
+		inodeNumberSet[inodeNumber] = struct{}{}
+	}
+
+	globals.Unlock()
+
+	return
+}
+
+func fetchCurrentInodeNumberInInodeTableSet(t *testing.T, mountID string) (inodeNumberSet map[uint64]struct{}) {
+	var (
+		err              error
+		inodeNumber      uint64
+		inodeNumberAsKey sortedmap.Key
+		inodeTableIndex  int
+		inodeTableLen    int
+		ok               bool
+		testMount        *mountStruct
+	)
+
+	inodeNumberSet = make(map[uint64]struct{})
+
+	globals.Lock()
+
+	testMount, ok = globals.mountMap[mountID]
+	if !ok {
+		t.Fatalf("globals.mountMap[mountID] returned !ok")
+	}
+
+	inodeTableLen, err = testMount.volume.inodeTable.Len()
+	if nil != err {
+		t.Fatalf("testMount.volume.inodeTable.Len() failed: %v", err)
+	}
+
+	for inodeTableIndex = 0; inodeTableIndex < inodeTableLen; inodeTableIndex++ {
+		inodeNumberAsKey, _, ok, err = testMount.volume.inodeTable.GetByIndex(inodeTableIndex)
+		inodeNumber, ok = inodeNumberAsKey.(uint64)
+		if !ok {
+			t.Fatalf("inodeNumberAsKey.(uint64) returned !ok")
+		}
+		inodeNumberSet[inodeNumber] = struct{}{}
+	}
+
+	globals.Unlock()
+
+	return
 }
 
 func fetchCurrentObjectNumberSet(t *testing.T, mountID string) (objectNumberSet map[uint64]struct{}) {
