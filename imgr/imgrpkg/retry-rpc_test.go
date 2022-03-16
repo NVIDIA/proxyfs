@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -484,6 +485,7 @@ func TestRetryRPC(t *testing.T) {
 	var (
 		adjustInodeTableEntryOpenCountRequest  *AdjustInodeTableEntryOpenCountRequestStruct
 		adjustInodeTableEntryOpenCountResponse *AdjustInodeTableEntryOpenCountResponseStruct
+		currentObjectNumberSet                 map[uint64]struct{}
 		deleteInodeTableEntryRequest           *DeleteInodeTableEntryRequestStruct
 		deleteInodeTableEntryResponse          *DeleteInodeTableEntryResponseStruct
 		err                                    error
@@ -1137,6 +1139,37 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"Flush()\",,) failed: %v", err)
 	}
 
+	// Verify that 1st Object for FileInode gets deleted... but not 2nd nor 3rd
+
+	currentObjectNumberSet = fetchCurrentObjectNumberSet(t, mountResponse.MountID)
+
+	_, ok = currentObjectNumberSet[fileInodeObjectA]
+	if ok {
+		t.Fatalf("fileInodeObjectA should have been deleted")
+	}
+	_, ok = currentObjectNumberSet[fileInodeObjectB]
+	if !ok {
+		t.Fatalf("fileInodeObjectB should not have been deleted")
+	}
+	_, ok = currentObjectNumberSet[fileInodeObjectC]
+	if !ok {
+		t.Fatalf("fileInodeObjectC should not have been deleted")
+	}
+
+	// Perform an AdjustInodeTableEntryOpenCount(+1) for FileInode
+
+	adjustInodeTableEntryOpenCountRequest = &AdjustInodeTableEntryOpenCountRequestStruct{
+		MountID:     mountResponse.MountID,
+		InodeNumber: fileInodeNumber,
+		Adjustment:  +1,
+	}
+	adjustInodeTableEntryOpenCountResponse = &AdjustInodeTableEntryOpenCountResponseStruct{}
+
+	err = retryrpcClient.Send("AdjustInodeTableEntryOpenCount", adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
+	if nil != err {
+		t.Fatalf("retryrpcClient.Send(\"AdjustInodeTableEntryOpenCount(,fileInodeNumber,+1)\",,) failed: %v", err)
+	}
+
 	// TODO: Remove this early exit skipping of following TODOs
 
 	if nil == err {
@@ -1151,23 +1184,6 @@ func TestRetryRPC(t *testing.T) {
 			t.Fatalf("retryrpcClient.Send(\"Unmount()\",,) failed: %v", err)
 		}
 		return
-	}
-
-	// TODO: Verify that 1st Object for FileInode gets deleted... but not 2nd nor 3rd
-	//       Note that this requires a checkpoint & async deletes to have completed
-
-	// Perform an AdjustInodeTableEntryOpenCount(+1) for FileInode
-
-	adjustInodeTableEntryOpenCountRequest = &AdjustInodeTableEntryOpenCountRequestStruct{
-		MountID:     mountResponse.MountID,
-		InodeNumber: fileInodeNumber,
-		Adjustment:  +1,
-	}
-	adjustInodeTableEntryOpenCountResponse = &AdjustInodeTableEntryOpenCountResponseStruct{}
-
-	err = retryrpcClient.Send("AdjustInodeTableEntryOpenCount", adjustInodeTableEntryOpenCountRequest, adjustInodeTableEntryOpenCountResponse)
-	if nil != err {
-		t.Fatalf("retryrpcClient.Send(\"AdjustInodeTableEntryOpenCount(,fileInodeNumber,+1)\",,) failed: %v", err)
 	}
 
 	// Perform a DeleteInodeTableEntry() on FileInode
@@ -1260,4 +1276,55 @@ func TestRetryRPC(t *testing.T) {
 	// And teardown test environment
 
 	testTeardown(t)
+}
+
+func fetchCurrentObjectNumberSet(t *testing.T, mountID string) (objectNumberSet map[uint64]struct{}) {
+	var (
+		activeDeleteObjectWG        *sync.WaitGroup
+		err                         error
+		getRequestHeaders           http.Header
+		getResponseBody             []byte
+		getResponseBodySplit        []string
+		getResponseBodySplitElement string
+		objectNumber                uint64
+		ok                          bool
+		testMount                   *mountStruct
+	)
+
+	globals.Lock()
+
+	testMount, ok = globals.mountMap[mountID]
+	if !ok {
+		t.Fatal("globals.mountMap[mountID] returned !ok")
+	}
+	activeDeleteObjectWG = &testMount.volume.activeDeleteObjectWG
+
+	globals.Unlock()
+
+	activeDeleteObjectWG.Wait()
+
+	getRequestHeaders = make(http.Header)
+
+	getRequestHeaders["X-Auth-Token"] = []string{testGlobals.authToken}
+
+	_, getResponseBody, err = testDoHTTPRequest("GET", testGlobals.containerURL, getRequestHeaders, nil, http.StatusOK)
+	if nil != err {
+		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.containerURL, getRequestHeaders, nil, http.StatusOK) failed: %v", err)
+	}
+
+	objectNumberSet = make(map[uint64]struct{})
+
+	getResponseBodySplit = strings.Split(string(getResponseBody[:]), "\n")
+
+	for _, getResponseBodySplitElement = range getResponseBodySplit {
+		if len(getResponseBodySplitElement) == 16 {
+			objectNumber, err = ilayout.GetObjectNumberFromString(getResponseBodySplitElement)
+			if nil != err {
+				t.Fatalf("ilayout.GetObjectNumberFromString(getResponseBodySplitElement) failed: %v", err)
+			}
+			objectNumberSet[objectNumber] = struct{}{}
+		}
+	}
+
+	return
 }
