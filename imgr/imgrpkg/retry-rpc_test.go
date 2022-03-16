@@ -1167,22 +1167,6 @@ func TestRetryRPC(t *testing.T) {
 		t.Fatalf("retryrpcClient.Send(\"AdjustInodeTableEntryOpenCount(,fileInodeNumber,+1)\",,) failed: %v", err)
 	}
 
-	// TODO: Remove this early exit skipping of following TODOs
-
-	if nil == err {
-		t.Logf("Exiting TestRetryRPC() early (to skip following TODOs")
-		unmountRequest = &UnmountRequestStruct{
-			MountID: mountResponse.MountID,
-		}
-		unmountResponse = &UnmountResponseStruct{}
-
-		err = retryrpcClient.Send("Unmount", unmountRequest, unmountResponse)
-		if nil != err {
-			t.Fatalf("retryrpcClient.Send(\"Unmount()\",,) failed: %v", err)
-		}
-		return
-	}
-
 	// Perform a DeleteInodeTableEntry() on FileInode
 
 	deleteInodeTableEntryRequest = &DeleteInodeTableEntryRequestStruct{
@@ -1297,7 +1281,16 @@ func TestRetryRPC(t *testing.T) {
 
 	// Teardown RetryRPC Client
 
+	// TODO: Remove this early exit skipping of following TODOs
+
+	if !ok {
+		t.Logf("Exiting TestRetryRPC() early (to skip following TODOs")
+		return
+	}
+
+	fmt.Print("\n\nReached UNDO A\n")
 	retryrpcClient.Close()
+	fmt.Print("\n\nReached UNDO B\n")
 
 	// And teardown test environment
 
