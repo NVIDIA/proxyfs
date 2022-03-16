@@ -206,9 +206,9 @@ func (testFileInode *testFileInodeStruct) closeObject() (err error) {
 
 	putRequestHeaders["X-Auth-Token"] = []string{testGlobals.authToken}
 
-	_, _, err = testDoHTTPRequest("PUT", testGlobals.containerURL+"/"+ilayout.GetObjectNameAsString(testFileInode.putObjectNumber), putRequestHeaders, testFileInode.putObjectBuffer)
+	_, _, err = testDoHTTPRequest("PUT", testGlobals.containerURL+"/"+ilayout.GetObjectNameAsString(testFileInode.putObjectNumber), putRequestHeaders, testFileInode.putObjectBuffer, http.StatusCreated)
 	if nil != err {
-		err = fmt.Errorf("testDoHTTPRequest(\"PUT\", testGlobals.containerURL+\"/\"+ilayout.GetObjectNameAsString(testFileInode.putObjectNumber), putRequestHeaders, &testFileInode.putObjectBuffer) failed: %v", err)
+		err = fmt.Errorf("testDoHTTPRequest(\"PUT\", testGlobals.containerURL+\"/\"+ilayout.GetObjectNameAsString(testFileInode.putObjectNumber), putRequestHeaders, &testFileInode.putObjectBuffer, http.StatusCreated) failed: %v", err)
 		return
 	}
 
@@ -241,9 +241,9 @@ func (testFileInode *testFileInodeStruct) getObjectData(objectNumber uint64, obj
 		getRequestHeaders["X-Auth-Token"] = []string{testGlobals.authToken}
 		getRequestHeaders["Range"] = []string{fmt.Sprintf("bytes=%d-%d", objectOffset, (objectOffset + objectLength - 1))}
 
-		_, objectData, err = testDoHTTPRequest("GET", testGlobals.containerURL+"/"+ilayout.GetObjectNameAsString(objectNumber), getRequestHeaders, nil)
+		_, objectData, err = testDoHTTPRequest("GET", testGlobals.containerURL+"/"+ilayout.GetObjectNameAsString(objectNumber), getRequestHeaders, nil, http.StatusOK)
 		if nil != err {
-			err = fmt.Errorf("testDoHTTPRequest(\"GET\", testGlobals.containerURL+\"/\"+ilayout.GetObjectNameAsString(objectNumber: %v, Range: %v), getRequestHeaders, nil) failed: %v", objectNumber, getRequestHeaders["Range"][0], err)
+			err = fmt.Errorf("testDoHTTPRequest(\"GET\", testGlobals.containerURL+\"/\"+ilayout.GetObjectNameAsString(objectNumber: %v, Range: %v), getRequestHeaders, nil, http.StatusOK) failed: %v", objectNumber, getRequestHeaders["Range"][0], err)
 			return
 		}
 	}
@@ -537,18 +537,18 @@ func TestRetryRPC(t *testing.T) {
 
 	postRequestBody = fmt.Sprintf("{\"StorageURL\":\"%s\",\"AuthToken\":\"%s\"}", testGlobals.containerURL, testGlobals.authToken)
 
-	_, _, err = testDoHTTPRequest("POST", testGlobals.httpServerURL+"/volume", nil, strings.NewReader(postRequestBody))
+	_, _, err = testDoHTTPRequest("POST", testGlobals.httpServerURL+"/volume", nil, strings.NewReader(postRequestBody), http.StatusCreated)
 	if nil != err {
-		t.Fatalf("testDoHTTPRequest(\"POST\", testGlobals.httpServerURL+\"/volume\", nil, strings.NewReader(postRequestBody)) failed: %v", err)
+		t.Fatalf("testDoHTTPRequest(\"POST\", testGlobals.httpServerURL+\"/volume\", nil, strings.NewReader(postRequestBody), http.StatusCreated) failed: %v", err)
 	}
 
 	// Start serving testVolume
 
 	putRequestBody = fmt.Sprintf("{\"StorageURL\":\"%s\"}", testGlobals.containerURL)
 
-	_, _, err = testDoHTTPRequest("PUT", testGlobals.httpServerURL+"/volume/"+testVolume, nil, strings.NewReader(putRequestBody))
+	_, _, err = testDoHTTPRequest("PUT", testGlobals.httpServerURL+"/volume/"+testVolume, nil, strings.NewReader(putRequestBody), http.StatusCreated)
 	if nil != err {
-		t.Fatalf("testDoHTTPRequest(\"PUT\", testGlobals.httpServerURL+\"/volume\"+testVolume, nil, strings.NewReader(putRequestBody)) failed: %v", err)
+		t.Fatalf("testDoHTTPRequest(\"PUT\", testGlobals.httpServerURL+\"/volume\"+testVolume, nil, strings.NewReader(putRequestBody), http.StatusCreated) failed: %v", err)
 	}
 
 	// Attempt a FetchNonceRange() without a prior Mount()... which should fail (no Mount)
