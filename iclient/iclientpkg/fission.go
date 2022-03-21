@@ -98,6 +98,12 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 		globals.stats.DoLookupUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	if len(lookupIn.Name) > int(globals.config.FUSENameLenMax) {
+		lookupOut = nil
+		errno = syscall.ENAMETOOLONG
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -498,6 +504,12 @@ func (dummy *globalsStruct) DoSymLink(inHeader *fission.InHeader, symLinkIn *fis
 		globals.stats.DoSymLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	if (len(symLinkIn.Name) > int(globals.config.FUSENameLenMax)) || (len(symLinkIn.Data) > int(globals.config.FUSENameLenMax)) {
+		symLinkOut = nil
+		errno = syscall.ENAMETOOLONG
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -701,6 +713,12 @@ func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission
 	defer func() {
 		globals.stats.DoMkDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
+
+	if len(mkDirIn.Name) > int(globals.config.FUSENameLenMax) {
+		mkDirOut = nil
+		errno = syscall.ENAMETOOLONG
+		return
+	}
 
 Retry:
 	inodeLockRequest = newLockRequest()
@@ -931,6 +949,11 @@ func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fissi
 		globals.stats.DoUnlinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	if len(unlinkIn.Name) > int(globals.config.FUSENameLenMax) {
+		errno = syscall.ENAMETOOLONG
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -1084,6 +1107,11 @@ func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission
 	defer func() {
 		globals.stats.DoRmDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
+
+	if len(rmDirIn.Name) > int(globals.config.FUSENameLenMax) {
+		errno = syscall.ENAMETOOLONG
+		return
+	}
 
 Retry:
 	inodeLockRequest = newLockRequest()
@@ -1241,6 +1269,11 @@ func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fissi
 		globals.stats.DoRenameUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	if (len(renameIn.OldName) > int(globals.config.FUSENameLenMax)) || (len(renameIn.NewName) > int(globals.config.FUSENameLenMax)) {
+		errno = syscall.ENAMETOOLONG
+		return
+	}
+
 	errno = doRenameCommon(inHeader.NodeID, string(renameIn.OldName[:]), renameIn.NewDir, string(renameIn.NewName[:]), startTime)
 	return
 }
@@ -1263,6 +1296,12 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 	defer func() {
 		globals.stats.DoLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
+
+	if len(linkIn.Name) > int(globals.config.FUSENameLenMax) {
+		linkOut = nil
+		errno = syscall.ENAMETOOLONG
+		return
+	}
 
 Retry:
 	inodeLockRequest = newLockRequest()
@@ -2122,6 +2161,7 @@ func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fis
 			Files:   math.MaxUint64,
 			FFree:   math.MaxUint64,
 			BSize:   globals.config.FUSEBlockSize,
+			NameLen: globals.config.FUSENameLenMax,
 			FRSize:  globals.config.FUSEBlockSize,
 			Padding: 0,
 			Spare:   [6]uint32{0, 0, 0, 0, 0, 0},
@@ -3113,6 +3153,12 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 		globals.stats.DoCreateUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	if len(createIn.Name) > int(globals.config.FUSENameLenMax) {
+		createOut = nil
+		errno = syscall.ENAMETOOLONG
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -3640,6 +3686,11 @@ func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fis
 	defer func() {
 		globals.stats.DoRename2Usecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
+
+	if (len(rename2In.OldName) > int(globals.config.FUSENameLenMax)) || (len(rename2In.NewName) > int(globals.config.FUSENameLenMax)) {
+		errno = syscall.ENAMETOOLONG
+		return
+	}
 
 	errno = doRenameCommon(inHeader.NodeID, string(rename2In.OldName[:]), rename2In.NewDir, string(rename2In.NewName[:]), startTime)
 	return
