@@ -504,7 +504,9 @@ func (dummy *globalsStruct) DoSymLink(inHeader *fission.InHeader, symLinkIn *fis
 		globals.stats.DoSymLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	if (len(symLinkIn.Name) > int(globals.config.FUSENameLenMax)) || (len(symLinkIn.Data) > int(globals.config.FUSENameLenMax)) {
+	// TODO: Resolve why some (e.g. PJDFSTEST) tests insist .Data length should not be checked
+
+	if len(symLinkIn.Name) > int(globals.config.FUSENameLenMax) {
 		symLinkOut = nil
 		errno = syscall.ENAMETOOLONG
 		return
