@@ -19,7 +19,7 @@
 //  FUSEMaxWrite:                     1048576        # 1MiB == FUSEMaxPages(256) * 4KiB
 //  FUSEEntryValidDuration:           250ms
 //  FUSEAttrValidDuration:            250ms
-//  FUSENameLenMax:                   1024
+//  FUSENameLenMax:                   255
 //  AuthPlugInPath:                   iauth-swift.so
 //  AuthPlugInEnvName:                               # Only used if not defining AuthPlugInEnvValue here
 //  AuthPlugInEnvValue:               {"AuthURL":"http://swift:8080/auth/v1.0"\u002C"AuthUser":"test:tester"\u002C"AuthKey":"testing"\u002C"Account":"AUTH_test"\u002C"Container":"con"}

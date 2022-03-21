@@ -141,7 +141,7 @@ func testSetup(t *testing.T) {
 		"ICLIENT.FUSEMaxWrite=1048576",
 		"ICLIENT.FUSEEntryValidDuration=250ms",
 		"ICLIENT.FUSEAttrValidDuration=250ms",
-		"ICLIENT.FUSENameLenMax=1024",
+		"ICLIENT.FUSENameLenMax=255",
 		"ICLIENT.AuthPlugInPath=../../iauth/iauth-swift/iauth-swift.so",
 		"ICLIENT.AuthPlugInEnvName=",
 		"ICLIENT.AuthPlugInEnvValue=" + fmt.Sprintf("{\"AuthURL\":\"http://%s:%d/auth/v1.0\"\\u002C\"AuthUser\":\"%s\"\\u002C\"AuthKey\":\"%s\"\\u002C\"Account\":\"%s\"\\u002C\"Container\":\"%s\"}", testIPAddr, testSwiftProxyTCPPort, testSwiftAuthUser, testSwiftAuthKey, testAccount, testContainer),
