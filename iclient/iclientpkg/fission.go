@@ -4085,7 +4085,7 @@ Retry:
 
 		delete(oldDirInode.linkSet, ilayout.InodeLinkTableEntryStruct{
 			ParentDirInodeNumber: renamedInode.inodeNumber,
-			ParentDirEntryName:   oldName,
+			ParentDirEntryName:   "..",
 		})
 
 		ok, err = oldDirInode.payload.DeleteByKey(oldName)
