@@ -354,6 +354,7 @@ Retry:
 	if (setAttrIn.Valid & fission.SetAttrInValidSize) != 0 {
 		if setAttrIn.Size != inode.inodeHeadV1.Size {
 			inode.dirty = true
+
 			inode.inodeHeadV1.ModificationTime = startTime
 
 			if setAttrIn.Size < inode.inodeHeadV1.Size {
@@ -366,6 +367,7 @@ Retry:
 
 				inode.unmapExtent(setAttrIn.Size, 0)
 			}
+
 			inode.inodeHeadV1.Size = setAttrIn.Size
 		}
 	}
@@ -1399,6 +1401,7 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 		err                                    error
 		inode                                  *inodeStruct
 		inodeLockRequest                       *inodeLockRequestStruct
+		inodeToBeModified                      bool
 		openHandle                             *openHandleStruct
 		startTime                              time.Time = time.Now()
 	)
@@ -1412,13 +1415,28 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 		globals.stats.DoOpenUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO: Validate simply ignoring openIn.Flags containing fission.FOpenRequestEXCL is ok
-	// TODO: Need to handle openIn.Flags containing fission.FOpenRequestCREAT
+	switch openIn.Flags & syscall.O_ACCMODE {
+	case fission.FOpenRequestRDONLY:
+		if (openIn.Flags & fission.FOpenRequestTRUNC) == fission.FOpenRequestTRUNC {
+			openOut = nil
+			errno = syscall.EACCES
+			return
+		}
+		inodeToBeModified = false
+	case fission.FOpenRequestWRONLY:
+		inodeToBeModified = ((openIn.Flags & fission.FOpenRequestTRUNC) == fission.FOpenRequestTRUNC)
+	case fission.FOpenRequestRDWR:
+		inodeToBeModified = ((openIn.Flags & fission.FOpenRequestTRUNC) == fission.FOpenRequestTRUNC)
+	default:
+		openOut = nil
+		errno = syscall.EACCES
+		return
+	}
 
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
-	inodeLockRequest.exclusive = false
+	inodeLockRequest.exclusive = inodeToBeModified
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
 		performInodeLockRetryDelay()
@@ -1455,7 +1473,16 @@ Retry:
 			}
 		}
 
+		inode.dirty = true
+
+		inode.inodeHeadV1.ModificationTime = startTime
+		inode.inodeHeadV1.StatusChangeTime = startTime
+
 		inode.unmapExtent(0, 0)
+
+		inode.inodeHeadV1.Size = 0
+
+		flushInodesInSlice([]*inodeStruct{inode})
 	}
 
 	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
