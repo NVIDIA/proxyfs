@@ -1419,7 +1419,7 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 	case fission.FOpenRequestRDONLY:
 		if (openIn.Flags & fission.FOpenRequestTRUNC) == fission.FOpenRequestTRUNC {
 			openOut = nil
-			errno = syscall.EACCES
+			errno = syscall.EINVAL
 			return
 		}
 		inodeToBeModified = false
@@ -1429,7 +1429,7 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 		inodeToBeModified = ((openIn.Flags & fission.FOpenRequestTRUNC) == fission.FOpenRequestTRUNC)
 	default:
 		openOut = nil
-		errno = syscall.EACCES
+		errno = syscall.EINVAL
 		return
 	}
 
