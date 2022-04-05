@@ -113,6 +113,7 @@ func startVolumeManagement() (err error) {
 	globals.inodeLeaseExpirerWG = nil
 	globals.volumeMap = sortedmap.NewLLRBTree(sortedmap.CompareString, &globals)
 	globals.mountMap = make(map[string]*mountStruct)
+	globals.unmountsInProgress = 0
 
 	err = nil
 	return
@@ -183,6 +184,7 @@ func stopVolumeManagement() (err error) {
 	globals.inodeLeaseExpirerWG = nil
 	globals.volumeMap = nil
 	globals.mountMap = nil
+	globals.unmountsInProgress = 0
 
 	err = nil
 	return
@@ -2010,16 +2012,18 @@ func (volume *volumeStruct) checkPointWrite(body io.ReadSeeker) (authOK bool, er
 	return
 }
 
-func (mount *mountStruct) performUnmount(unmountFinishedWG *sync.WaitGroup) {
+func (mount *mountStruct) performUnmount() {
 	var (
-		inodeNumber            uint64
-		inodeNumberList        *list.List
-		inodeNumberListElement *list.Element
-		inodeOpenMapElement    *inodeOpenMapElementStruct
-		leaseReleaseFinishedWG sync.WaitGroup
-		leaseRequest           *leaseRequestStruct
-		leaseRequestOperation  *leaseRequestOperationStruct
-		ok                     bool
+		inodeNumber                  uint64
+		inodeNumberList              *list.List
+		inodeNumberListElement       *list.Element
+		inodeOpenMapElement          *inodeOpenMapElementStruct
+		leaseReleaseFinishedWG       sync.WaitGroup
+		leaseRequest                 *leaseRequestStruct
+		leaseRequestOperation        *leaseRequestOperationStruct
+		ok                           bool
+		unmountFinishedWG            *sync.WaitGroup
+		unmountFinishedWGListElement *list.Element
 	)
 
 	globals.Lock()
@@ -2093,11 +2097,24 @@ func (mount *mountStruct) performUnmount(unmountFinishedWG *sync.WaitGroup) {
 		logFatalf("mount.mountListMembership (%v) not one of on{Healthy|AuthTokenExpired|LeasesExpired}MountList")
 	}
 
+	globals.unmountsInProgress--
+
+	unmountFinishedWGListElement = mount.unmountWGList.Front()
+
+	for unmountFinishedWGListElement != nil {
+		unmountFinishedWG, ok = unmountFinishedWGListElement.Value.(*sync.WaitGroup)
+		if !ok {
+			logFatalf("unmountFinishedWGListElement.Value.(*sync.WaitGroup) returned !ok")
+		}
+
+		unmountFinishedWG.Done()
+
+		mount.unmountWGList.Remove(unmountFinishedWGListElement)
+
+		unmountFinishedWGListElement = mount.unmountWGList.Front()
+	}
+
 	mount.volume.mountMapWG.Done()
 
 	globals.Unlock()
-
-	if unmountFinishedWG != nil {
-		unmountFinishedWG.Done()
-	}
 }

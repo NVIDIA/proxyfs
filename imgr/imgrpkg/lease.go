@@ -825,10 +825,12 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 				delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
 
-				if !leaseRequest.mount.unmounting {
-					leaseRequest.mount.unmounting = true
+				if leaseRequest.mount.unmountWGList == nil {
+					leaseRequest.mount.unmountWGList = list.New()
 
-					go leaseRequest.mount.performUnmount(nil)
+					globals.unmountsInProgress++
+
+					go leaseRequest.mount.performUnmount()
 				}
 
 				inodeLease.releasingHoldersList.Remove(leaseRequestElement)
@@ -858,10 +860,12 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 				delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
 
-				if !leaseRequest.mount.unmounting {
-					leaseRequest.mount.unmounting = true
+				if leaseRequest.mount.unmountWGList == nil {
+					leaseRequest.mount.unmountWGList = list.New()
 
-					go leaseRequest.mount.performUnmount(nil)
+					globals.unmountsInProgress++
+
+					go leaseRequest.mount.performUnmount()
 				}
 
 				inodeLease.releasingHoldersList.Remove(leaseRequestElement)
@@ -898,10 +902,12 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 			delete(inodeLease.demotingHolder.mount.leaseRequestMap, inodeLease.inodeNumber)
 
-			if !inodeLease.demotingHolder.mount.unmounting {
-				inodeLease.demotingHolder.mount.unmounting = true
+			if inodeLease.demotingHolder.mount.unmountWGList == nil {
+				inodeLease.demotingHolder.mount.unmountWGList = list.New()
 
-				go inodeLease.demotingHolder.mount.performUnmount(nil)
+				globals.unmountsInProgress++
+
+				go inodeLease.demotingHolder.mount.performUnmount()
 			}
 
 			inodeLease.demotingHolder = nil
@@ -948,10 +954,12 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 			delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
 
-			if !leaseRequest.mount.unmounting {
-				leaseRequest.mount.unmounting = true
+			if leaseRequest.mount.unmountWGList == nil {
+				leaseRequest.mount.unmountWGList = list.New()
 
-				go leaseRequest.mount.performUnmount(nil)
+				globals.unmountsInProgress++
+
+				go leaseRequest.mount.performUnmount()
 			}
 
 			inodeLease.releasingHoldersList.Remove(leaseRequestElement)
