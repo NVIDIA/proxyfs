@@ -605,6 +605,7 @@ func postVolume(storageURL string, authToken string) (err error) {
 			InodeType:   ilayout.InodeTypeDir,
 		})
 	if nil != err {
+		err = fmt.Errorf("rootDirDirectory.Put(\".\",) failed: %v", err)
 		return
 	}
 	if !ok {
@@ -619,15 +620,17 @@ func postVolume(storageURL string, authToken string) (err error) {
 			InodeType:   ilayout.InodeTypeDir,
 		})
 	if nil != err {
+		err = fmt.Errorf("rootDirDirectory.Put(\"..\",) failed: %v", err)
 		return
 	}
 	if !ok {
-		err = fmt.Errorf("rootDirDirectory.Put(\".\",) returned !ok")
+		err = fmt.Errorf("rootDirDirectory.Put(\"..\",) returned !ok")
 		return
 	}
 
 	_, rootDirInodeObjectOffset, rootDirInodeObjectLength, err = rootDirDirectory.Flush(false)
 	if nil != err {
+		err = fmt.Errorf("rootDirDirectory.Flush(false) failed: %v", err)
 		return
 	}
 
@@ -666,6 +669,7 @@ func postVolume(storageURL string, authToken string) (err error) {
 
 	rootDirInodeHeadV1Buf, err = rootDirInodeHeadV1.MarshalInodeHeadV1()
 	if nil != err {
+		err = fmt.Errorf("rootDirInodeHeadV1.MarshalInodeHeadV1() failed: %v", err)
 		return
 	}
 
@@ -673,6 +677,7 @@ func postVolume(storageURL string, authToken string) (err error) {
 
 	err = swiftObjectPut(storageURL, authToken, rootDirInodeObjectNumber, postVolumeRootDirDirectoryCallbacks)
 	if nil != err {
+		err = fmt.Errorf("swiftObjectPut(storageURL, authToken, rootDirInodeObjectNumber, postVolumeRootDirDirectoryCallbacks) failed: %v", err)
 		return
 	}
 
@@ -697,15 +702,17 @@ func postVolume(storageURL string, authToken string) (err error) {
 			InodeHeadLength:       uint64(len(rootDirInodeHeadV1Buf)),
 		})
 	if nil != err {
+		err = fmt.Errorf("inodeTable.Put(ilayout.RootDirInodeNumber,) failed: %v", err)
 		return
 	}
 	if !ok {
-		err = fmt.Errorf("inodeTable.Put(RootDirInodeNumber,) returned !ok")
+		err = fmt.Errorf("inodeTable.Put(ilayout.RootDirInodeNumber,) returned !ok")
 		return
 	}
 
 	_, superBlockObjectOffset, superBlockObjectLength, err = inodeTable.Flush(false)
 	if nil != err {
+		err = fmt.Errorf("inodeTable.Flush(false) failed: %v", err)
 		return
 	}
 
@@ -727,6 +734,7 @@ func postVolume(storageURL string, authToken string) (err error) {
 
 	superBlockV1Buf, err = superBlockV1.MarshalSuperBlockV1()
 	if nil != err {
+		err = fmt.Errorf("superBlockV1.MarshalSuperBlockV1() failed: %v", err)
 		return
 	}
 
@@ -734,6 +742,7 @@ func postVolume(storageURL string, authToken string) (err error) {
 
 	err = swiftObjectPut(storageURL, authToken, superBlockObjectNumber, postVolumeSuperBlockInodeTableCallbacks)
 	if nil != err {
+		err = fmt.Errorf("swiftObjectPut(storageURL, authToken, superBlockObjectNumber, postVolumeSuperBlockInodeTableCallbacks) failed: %v", err)
 		return
 	}
 
@@ -748,11 +757,13 @@ func postVolume(storageURL string, authToken string) (err error) {
 
 	checkPointV1String, err = checkPointV1.MarshalCheckPointV1()
 	if nil != err {
+		err = fmt.Errorf("checkPointV1.MarshalCheckPointV1() failed: %v", err)
 		return
 	}
 
 	err = checkPointWrite(storageURL, authToken, strings.NewReader(checkPointV1String))
 	if nil != err {
+		err = fmt.Errorf("checkPointWrite(storageURL, authToken, strings.NewReader(checkPointV1String)) failed: %v", err)
 		return
 	}
 
