@@ -138,6 +138,7 @@ func testSetup(t *testing.T, overrideConfStrings []string, retryrpcCallbacks int
 
 		"IMGR.FetchNonceRangeToReturn=100",
 
+		"IMGR.MountLimit=10000",
 		"IMGR.OpenFileLimit=100000",
 
 		"IMGR.MinLeaseDuration=250ms",

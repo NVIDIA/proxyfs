@@ -1,5 +1,13 @@
 # ProxyFS Release Notes
 
+## 2.02.0 (May 6, 2022)
+
+### Notes:
+
+This release marks the functional completeness point for ProxyFS. It is also notable in that the supported portions of popular file system test suites (most recently [PJDFSTEST](https://github.com/pjd/pjdfstest)) now verify correctness. It is important to point out the limitations of this functionality, however. While ProxyFS provides a form of network attached storage, it has focused on traditional hierarchical file systems presented over a network. Thus, directories and files, along with symbolic links, are fully supported. Other inode types, however are not. Further, concepts like SETUID and SETGID are explicitly disabled as is the Sticky Bit (traits normally maintained in an inode's MODE attribute). As might be imagined, excluding test cases reliant on special inode attributes as well as inote types other than these three was a non-trivial exercise. But the result has been well worth it.
+
+Enjoy this distributed file system atop your OpenStack Swift scale out storage!
+
 ## 2.01.0 (March 16, 2022)
 
 ### Notes:

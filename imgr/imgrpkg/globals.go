@@ -50,6 +50,7 @@ type configStruct struct {
 
 	FetchNonceRangeToReturn uint64
 
+	MountLimit    uint64
 	OpenFileLimit uint64
 
 	MinLeaseDuration       time.Duration
@@ -220,7 +221,7 @@ type mountStruct struct {
 	volume              *volumeStruct                  //
 	mountID             string                         //
 	retryRPCClientID    uint64                         //
-	unmounting          bool                           //
+	unmountWGList       *list.List                     // if nil, not currently unmounting; if non-nil, elements are *sync.WaitGroup of any unmount waiters
 	leaseRequestMap     map[uint64]*leaseRequestStruct // key == leaseRequestStruct.inodeLease.inodeNumber
 	authToken           string                         //
 	lastAuthTime        time.Time                      // used to periodically check TTL of authToken
@@ -279,6 +280,7 @@ type globalsStruct struct {
 	inodeLeaseExpirerWG  *sync.WaitGroup          // != nil means there is an inodeLeaseExpirer running
 	volumeMap            sortedmap.LLRBTree       // key == volumeStruct.name; value == *volumeStruct
 	mountMap             map[string]*mountStruct  // key == mountStruct.mountID
+	unmountsInProgress   uint64                   //
 	checkPointHTTPClient *http.Client             //
 	checkPointURL        []string                 //
 	swiftHTTPClient      *http.Client             //
@@ -557,6 +559,10 @@ func initializeGlobals(confMap conf.ConfMap) (err error) {
 		logFatal(err)
 	}
 
+	globals.config.MountLimit, err = confMap.FetchOptionValueUint64("IMGR", "MountLimit")
+	if nil != err {
+		logFatal(err)
+	}
 	globals.config.OpenFileLimit, err = confMap.FetchOptionValueUint64("IMGR", "OpenFileLimit")
 	if nil != err {
 		logFatal(err)
@@ -691,6 +697,7 @@ func uninitializeGlobals() (err error) {
 
 	globals.config.FetchNonceRangeToReturn = 0
 
+	globals.config.MountLimit = 0
 	globals.config.OpenFileLimit = 0
 
 	globals.config.MinLeaseDuration = time.Duration(0)

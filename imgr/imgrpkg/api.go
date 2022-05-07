@@ -43,6 +43,7 @@
 //
 //  FetchNonceRangeToReturn:              100
 //
+//  MountLimit:                           10000
 //  OpenFileLimit:                        100000
 //
 //  MinLeaseDuration:                     250ms
@@ -198,13 +199,12 @@ const (
 	EBadOpenCountAdjustment = "EBadOpenCountAdjustment:"
 	ELeaseRequestDenied     = "ELeaseRequestDenied:"
 	EMissingLease           = "EMissingLease:"
+	ETooManyMounts          = "ETooManyMounts"
 	ETooManyOpens           = "ETooManyOpens"
 	EVolumeBeingDeleted     = "EVolumeBeingDeleted:"
 	EUnknownInodeNumber     = "EUnknownInodeNumber:"
 	EUnknownMountID         = "EUnknownMountID:"
 	EUnknownVolumeName      = "EUnknownVolumeName:"
-
-	ETODO = "ETODO:"
 )
 
 type RetryRPCServerStruct struct{}

@@ -4,6 +4,7 @@
 package iclientpkg
 
 import (
+	"bytes"
 	"container/list"
 	"fmt"
 	"math"
@@ -98,6 +99,12 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 		globals.stats.DoLookupUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	errno = checkName(lookupIn.Name)
+	if errno != 0 {
+		lookupOut = nil
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -119,10 +126,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			lookupOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -136,10 +140,7 @@ Retry:
 	if nil == inode.payload {
 		err = inode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			lookupOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -244,10 +245,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			getAttrOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -325,10 +323,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			setAttrOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -359,6 +354,7 @@ Retry:
 	if (setAttrIn.Valid & fission.SetAttrInValidSize) != 0 {
 		if setAttrIn.Size != inode.inodeHeadV1.Size {
 			inode.dirty = true
+
 			inode.inodeHeadV1.ModificationTime = startTime
 
 			if setAttrIn.Size < inode.inodeHeadV1.Size {
@@ -371,6 +367,7 @@ Retry:
 
 				inode.unmapExtent(setAttrIn.Size, 0)
 			}
+
 			inode.inodeHeadV1.Size = setAttrIn.Size
 		}
 	}
@@ -450,10 +447,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			readLinkOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -498,6 +492,14 @@ func (dummy *globalsStruct) DoSymLink(inHeader *fission.InHeader, symLinkIn *fis
 		globals.stats.DoSymLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	// TODO: Resolve why some (e.g. PJDFSTEST) tests insist .Data length should not be checked
+
+	errno = checkName(symLinkIn.Name)
+	if errno != 0 {
+		symLinkOut = nil
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -519,20 +521,14 @@ Retry:
 	if nil == dirInode.inodeHeadV1 {
 		err = dirInode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			symLinkOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("dirInode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
 	if dirInode.payload == nil {
 		err = dirInode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			symLinkOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("dirInode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -702,6 +698,12 @@ func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission
 		globals.stats.DoMkDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	errno = checkName(mkDirIn.Name)
+	if errno != 0 {
+		mkDirOut = nil
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -723,20 +725,14 @@ Retry:
 	if nil == parentDirInode.inodeHeadV1 {
 		err = parentDirInode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			mkDirOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("parentDirInode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
 	if parentDirInode.payload == nil {
 		err = parentDirInode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			mkDirOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("parentDirInode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -931,6 +927,11 @@ func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fissi
 		globals.stats.DoUnlinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	errno = checkName(unlinkIn.Name)
+	if errno != 0 {
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -951,9 +952,7 @@ Retry:
 	if nil == dirInode.inodeHeadV1 {
 		err = dirInode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("dirInode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -966,9 +965,7 @@ Retry:
 	if dirInode.payload == nil {
 		err = dirInode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("dirInode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -1005,9 +1002,7 @@ Retry:
 	if nil == targetInode.inodeHeadV1 {
 		err = targetInode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("targetInode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -1085,6 +1080,11 @@ func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission
 		globals.stats.DoRmDirUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	errno = checkName(rmDirIn.Name)
+	if errno != 0 {
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -1105,9 +1105,7 @@ Retry:
 	if nil == parentDirInode.inodeHeadV1 {
 		err = parentDirInode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("parentDirInode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -1120,9 +1118,7 @@ Retry:
 	if parentDirInode.payload == nil {
 		err = parentDirInode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("parentDirInode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -1159,9 +1155,7 @@ Retry:
 	if nil == childDirInode.inodeHeadV1 {
 		err = childDirInode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("childDirInode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -1174,9 +1168,7 @@ Retry:
 	if childDirInode.payload == nil {
 		err = childDirInode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("childDirInode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -1241,6 +1233,15 @@ func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fissi
 		globals.stats.DoRenameUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	errno = checkName(renameIn.OldName)
+	if errno != 0 {
+		return
+	}
+	errno = checkName(renameIn.NewName)
+	if errno != 0 {
+		return
+	}
+
 	errno = doRenameCommon(inHeader.NodeID, string(renameIn.OldName[:]), renameIn.NewDir, string(renameIn.NewName[:]), startTime)
 	return
 }
@@ -1264,6 +1265,12 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 		globals.stats.DoLinkUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	errno = checkName(linkIn.Name)
+	if errno != 0 {
+		linkOut = nil
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -1285,10 +1292,7 @@ Retry:
 	if nil == dirInode.inodeHeadV1 {
 		err = dirInode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			linkOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("dirInode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -1302,10 +1306,7 @@ Retry:
 	if dirInode.payload == nil {
 		err = dirInode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			linkOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("dirInode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -1400,6 +1401,7 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 		err                                    error
 		inode                                  *inodeStruct
 		inodeLockRequest                       *inodeLockRequestStruct
+		inodeToBeModified                      bool
 		openHandle                             *openHandleStruct
 		startTime                              time.Time = time.Now()
 	)
@@ -1413,13 +1415,28 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 		globals.stats.DoOpenUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
-	// TODO: Validate simply ignoring openIn.Flags containing fission.FOpenRequestEXCL is ok
-	// TODO: Need to handle openIn.Flags containing fission.FOpenRequestCREAT
+	switch openIn.Flags & syscall.O_ACCMODE {
+	case fission.FOpenRequestRDONLY:
+		if (openIn.Flags & fission.FOpenRequestTRUNC) == fission.FOpenRequestTRUNC {
+			openOut = nil
+			errno = syscall.EINVAL
+			return
+		}
+		inodeToBeModified = false
+	case fission.FOpenRequestWRONLY:
+		inodeToBeModified = ((openIn.Flags & fission.FOpenRequestTRUNC) == fission.FOpenRequestTRUNC)
+	case fission.FOpenRequestRDWR:
+		inodeToBeModified = ((openIn.Flags & fission.FOpenRequestTRUNC) == fission.FOpenRequestTRUNC)
+	default:
+		openOut = nil
+		errno = syscall.EINVAL
+		return
+	}
 
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
-	inodeLockRequest.exclusive = false
+	inodeLockRequest.exclusive = inodeToBeModified
 	inodeLockRequest.addThisLock()
 	if len(inodeLockRequest.locksHeld) == 0 {
 		performInodeLockRetryDelay()
@@ -1437,10 +1454,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			openOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -1459,7 +1473,16 @@ Retry:
 			}
 		}
 
+		inode.dirty = true
+
+		inode.inodeHeadV1.ModificationTime = startTime
+		inode.inodeHeadV1.StatusChangeTime = startTime
+
 		inode.unmapExtent(0, 0)
+
+		inode.inodeHeadV1.Size = 0
+
+		flushInodesInSlice([]*inodeStruct{inode})
 	}
 
 	adjustInodeTableEntryOpenCountRequest = &imgrpkg.AdjustInodeTableEntryOpenCountRequestStruct{
@@ -1578,10 +1601,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			readOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -1634,13 +1654,13 @@ Retry:
 	if nil == inode.payload {
 		err = inode.oldPayload()
 		if nil != err {
-			logFatal(err)
+			logFatalf("inode.oldPayload() failed: %v", err)
 		}
 	}
 
 	extentMapEntryIndexV1, _, err = inode.payload.BisectLeft(curOffset)
 	if nil != err {
-		logFatal(err)
+		logFatalf("inode.payload.BisectLeft(curOffset) failed: %v", err)
 	}
 	if extentMapEntryIndexV1 < 0 {
 		// Correct for case where curOffset is to the left of the first extent
@@ -1999,10 +2019,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			writeOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -2122,6 +2139,7 @@ func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fis
 			Files:   math.MaxUint64,
 			FFree:   math.MaxUint64,
 			BSize:   globals.config.FUSEBlockSize,
+			NameLen: globals.config.FUSENameLenMax,
 			FRSize:  globals.config.FUSEBlockSize,
 			Padding: 0,
 			Spare:   [6]uint32{0, 0, 0, 0, 0, 0},
@@ -2182,9 +2200,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -2269,9 +2285,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -2329,9 +2343,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -2413,10 +2425,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			getXAttrOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -2501,10 +2510,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			listXAttrOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -2587,9 +2593,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -2712,10 +2716,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			openDirOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -2814,10 +2815,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			readDirOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -2831,10 +2829,7 @@ Retry:
 	if nil == inode.payload {
 		err = inode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			readDirOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -2962,9 +2957,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -3113,6 +3106,12 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 		globals.stats.DoCreateUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	errno = checkName(createIn.Name)
+	if errno != 0 {
+		createOut = nil
+		return
+	}
+
 Retry:
 	inodeLockRequest = newLockRequest()
 	inodeLockRequest.inodeNumber = inHeader.NodeID
@@ -3134,10 +3133,7 @@ Retry:
 	if nil == dirInode.inodeHeadV1 {
 		err = dirInode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			createOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("dirInode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -3151,10 +3147,7 @@ Retry:
 	if dirInode.payload == nil {
 		err = dirInode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			createOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("dirInode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -3501,10 +3494,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			readDirPlusOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -3518,10 +3508,7 @@ Retry:
 	if nil == inode.payload {
 		err = inode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			readDirPlusOut = nil
-			errno = syscall.ENOENT
-			return
+			logFatalf("inode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -3641,6 +3628,15 @@ func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fis
 		globals.stats.DoRename2Usecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 	}()
 
+	errno = checkName(rename2In.OldName)
+	if errno != 0 {
+		return
+	}
+	errno = checkName(rename2In.NewName)
+	if errno != 0 {
+		return
+	}
+
 	errno = doRenameCommon(inHeader.NodeID, string(rename2In.OldName[:]), rename2In.NewDir, string(rename2In.NewName[:]), startTime)
 	return
 }
@@ -3740,9 +3736,7 @@ Retry:
 	if nil == inode.inodeHeadV1 {
 		err = inode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			err = fmt.Errorf("inode.populateInodeHeadV1() failed: %v", err)
-			return
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -3797,6 +3791,20 @@ func fixAttrSizes(attr *fission.Attr) {
 	}
 }
 
+func checkName(name []byte) (errno syscall.Errno) {
+	if bytes.Compare(name, []byte{'.'}) == 0 {
+		errno = syscall.EINVAL
+	} else if bytes.Compare(name, []byte{'.', '.'}) == 0 {
+		errno = syscall.EINVAL
+	} else if len(name) > int(globals.config.FUSENameLenMax) {
+		errno = syscall.ENAMETOOLONG
+	} else {
+		errno = 0
+	}
+
+	return
+}
+
 func doRenameCommon(oldDirInodeNumber uint64, oldName string, newDirInodeNumber uint64, newName string, startTime time.Time) (errno syscall.Errno) {
 	var (
 		deleteInodeTableEntryRequest  *imgrpkg.DeleteInodeTableEntryRequestStruct
@@ -3810,6 +3818,7 @@ func doRenameCommon(oldDirInodeNumber uint64, oldName string, newDirInodeNumber 
 		oldDirInode                   *inodeStruct
 		renamedInode                  *inodeStruct
 		replacedInode                 *inodeStruct
+		replacedInodePayloadLen       int
 	)
 
 Retry:
@@ -3832,9 +3841,7 @@ Retry:
 	if nil == oldDirInode.inodeHeadV1 {
 		err = oldDirInode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("oldDirInode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -3847,9 +3854,7 @@ Retry:
 	if oldDirInode.payload == nil {
 		err = oldDirInode.oldPayload()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("oldDirInode.oldPayload() failed: %v", err)
 		}
 	}
 
@@ -3885,9 +3890,7 @@ Retry:
 	if nil == renamedInode.inodeHeadV1 {
 		err = renamedInode.populateInodeHeadV1()
 		if nil != err {
-			inodeLockRequest.unlockAll()
-			errno = syscall.ENOENT
-			return
+			logFatalf("renamedInode.populateInodeHeadV1() failed: %v", err)
 		}
 	}
 
@@ -3923,18 +3926,14 @@ Retry:
 		if nil == newDirInode.inodeHeadV1 {
 			err = newDirInode.populateInodeHeadV1()
 			if nil != err {
-				inodeLockRequest.unlockAll()
-				errno = syscall.ENOENT
-				return
+				logFatalf("newDirInode.populateInodeHeadV1() failed: %v", err)
 			}
 		}
 
 		if newDirInode.payload == nil {
 			err = newDirInode.oldPayload()
 			if nil != err {
-				inodeLockRequest.unlockAll()
-				errno = syscall.ENOENT
-				return
+				logFatalf("newDirInode.oldPayload() failed: %v", err)
 			}
 		}
 	}
@@ -3967,106 +3966,264 @@ Retry:
 		if nil == replacedInode.inodeHeadV1 {
 			err = replacedInode.populateInodeHeadV1()
 			if nil != err {
-				inodeLockRequest.unlockAll()
-				goto Retry
+				logFatalf("replacedInode.populateInodeHeadV1() failed: %v", err)
 			}
 		}
 
-		if replacedInode.inodeHeadV1.InodeType == ilayout.InodeTypeDir {
-			inodeLockRequest.unlockAll()
-			errno = syscall.EISDIR
-			return
+		if renamedInode.inodeHeadV1.InodeType == ilayout.InodeTypeDir {
+			if replacedInode.inodeHeadV1.InodeType == ilayout.InodeTypeDir {
+				if replacedInode.payload == nil {
+					err = replacedInode.oldPayload()
+					if nil != err {
+						logFatalf("replacedInode.oldPayload() failed: %v", err)
+					}
+				}
+
+				replacedInodePayloadLen, err = replacedInode.payload.Len()
+				if nil != err {
+					logFatalf("replacedInode.payload.Len() failed: %v", err)
+				}
+				if replacedInodePayloadLen != 2 {
+					inodeLockRequest.unlockAll()
+					errno = syscall.ENOTEMPTY
+					return
+				}
+			} else { // replacedInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir
+				inodeLockRequest.unlockAll()
+				errno = syscall.ENOTDIR
+				return
+			}
+		} else { // renamedInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir
+			if replacedInode.inodeHeadV1.InodeType == ilayout.InodeTypeDir {
+				inodeLockRequest.unlockAll()
+				errno = syscall.EISDIR
+				return
+			}
 		}
 	} else {
 		replacedInode = nil
 	}
 
 	if renamedInode.inodeHeadV1.InodeType == ilayout.InodeTypeDir {
-		if replacedInode != nil {
-			inodeLockRequest.unlockAll()
-			errno = syscall.EISDIR
-			return
-		}
+		if replacedInode == nil {
+			if renamedInode.payload == nil {
+				err = renamedInode.oldPayload()
+				if nil != err {
+					logFatalf("renamedInode.oldPayload() failed: %v", err)
+				}
+			}
 
-		if renamedInode.payload == nil {
-			err = renamedInode.oldPayload()
+			renamedInode.dirty = true
+
+			renamedInode.inodeHeadV1.ModificationTime = startTime
+			renamedInode.inodeHeadV1.StatusChangeTime = startTime
+
+			delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: oldDirInodeNumber,
+				ParentDirEntryName:   oldName,
+			})
+
+			renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: newDirInodeNumber,
+				ParentDirEntryName:   newName,
+			}] = struct{}{}
+
+			ok, err = renamedInode.payload.PatchByKey(
+				"..",
+				&ilayout.DirectoryEntryValueV1Struct{
+					InodeNumber: newDirInodeNumber,
+					InodeType:   ilayout.InodeTypeDir,
+				})
 			if nil != err {
-				inodeLockRequest.unlockAll()
-				errno = syscall.ENOENT
-				return
+				logFatalf("renamedInode.payload.PatchByKey(\"..\",) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("renamedInode.payload.PatchByKey(\"..\",) returned !ok")
+			}
+
+			oldDirInode.dirty = true
+
+			oldDirInode.inodeHeadV1.ModificationTime = startTime
+			oldDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+			delete(oldDirInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: renamedInode.inodeNumber,
+				ParentDirEntryName:   "..",
+			})
+
+			ok, err = oldDirInode.payload.DeleteByKey(oldName)
+			if nil != err {
+				logFatalf("oldDirInode.payload.DeleteByKey(oldName) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("oldDirInode.payload.DeleteByKey(oldName) returned !ok")
+			}
+
+			newDirInode.dirty = true
+
+			newDirInode.inodeHeadV1.ModificationTime = startTime
+			newDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+			newDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: renamedInode.inodeNumber,
+				ParentDirEntryName:   "..",
+			}] = struct{}{}
+
+			ok, err = newDirInode.payload.Put(
+				newName,
+				&ilayout.DirectoryEntryValueV1Struct{
+					InodeNumber: renamedInode.inodeNumber,
+					InodeType:   ilayout.InodeTypeDir,
+				})
+			if nil != err {
+				logFatalf("newDirInode.payload.Put(newName,) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("newDirInode.payload.Put(newName,) returned !ok")
+			}
+		} else { // replacedInode != nil
+			replacedInode.dirty = true
+
+			replacedInode.inodeHeadV1.ModificationTime = startTime
+			replacedInode.inodeHeadV1.StatusChangeTime = startTime
+
+			delete(replacedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: replacedInode.inodeNumber,
+				ParentDirEntryName:   ".",
+			})
+			delete(replacedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: newDirInodeNumber,
+				ParentDirEntryName:   newName,
+			})
+
+			if renamedInode.payload == nil {
+				err = renamedInode.oldPayload()
+				if nil != err {
+					logFatalf("renamedInode.oldPayload() failed: %v", err)
+				}
+			}
+
+			renamedInode.dirty = true
+
+			renamedInode.inodeHeadV1.ModificationTime = startTime
+			renamedInode.inodeHeadV1.StatusChangeTime = startTime
+
+			delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: oldDirInodeNumber,
+				ParentDirEntryName:   oldName,
+			})
+
+			renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: newDirInodeNumber,
+				ParentDirEntryName:   newName,
+			}] = struct{}{}
+
+			ok, err = renamedInode.payload.PatchByKey(
+				"..",
+				&ilayout.DirectoryEntryValueV1Struct{
+					InodeNumber: newDirInodeNumber,
+					InodeType:   ilayout.InodeTypeDir,
+				})
+			if nil != err {
+				logFatalf("renamedInode.payload.PatchByKey(\"..\",) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("renamedInode.payload.PatchByKey(\"..\",) returned !ok")
+			}
+
+			oldDirInode.dirty = true
+
+			oldDirInode.inodeHeadV1.ModificationTime = startTime
+			oldDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+			delete(oldDirInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: renamedInode.inodeNumber,
+				ParentDirEntryName:   "..",
+			})
+
+			ok, err = oldDirInode.payload.DeleteByKey(oldName)
+			if nil != err {
+				logFatalf("oldDirInode.payload.DeleteByKey(oldName) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("oldDirInode.payload.DeleteByKey(oldName) returned !ok")
+			}
+
+			newDirInode.dirty = true
+
+			newDirInode.inodeHeadV1.ModificationTime = startTime
+			newDirInode.inodeHeadV1.StatusChangeTime = startTime
+
+			delete(newDirInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: replacedInode.inodeNumber,
+				ParentDirEntryName:   "..",
+			})
+			newDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: renamedInode.inodeNumber,
+				ParentDirEntryName:   "..",
+			}] = struct{}{}
+
+			ok, err = newDirInode.payload.PatchByKey(
+				newName,
+				&ilayout.DirectoryEntryValueV1Struct{
+					InodeNumber: renamedInode.inodeNumber,
+					InodeType:   ilayout.InodeTypeDir,
+				})
+			if nil != err {
+				logFatalf("newDirInode.payload.PatchByKey(newName,) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("newDirInode.payload.PatchByKey(newName,) returned !ok")
 			}
 		}
+	} else { // renamedInode.inodeHeadV1.InodeType != ilayout.InodeTypeDir
+		if replacedInode == nil {
+			renamedInode.dirty = true
 
-		renamedInode.dirty = true
+			renamedInode.inodeHeadV1.ModificationTime = startTime
+			renamedInode.inodeHeadV1.StatusChangeTime = startTime
 
-		renamedInode.inodeHeadV1.ModificationTime = startTime
-		renamedInode.inodeHeadV1.StatusChangeTime = startTime
-
-		delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
-			ParentDirInodeNumber: oldDirInodeNumber,
-			ParentDirEntryName:   oldName,
-		})
-
-		renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
-			ParentDirInodeNumber: newDirInodeNumber,
-			ParentDirEntryName:   newName,
-		}] = struct{}{}
-
-		ok, err = renamedInode.payload.PatchByKey(
-			"..",
-			&ilayout.DirectoryEntryValueV1Struct{
-				InodeNumber: newDirInodeNumber,
-				InodeType:   ilayout.InodeTypeDir,
+			delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: oldDirInodeNumber,
+				ParentDirEntryName:   oldName,
 			})
-		if nil != err {
-			logFatalf("renamedInode.payload.PatchByKey(\"..\",) failed: %v", err)
-		}
-		if !ok {
-			logFatalf("renamedInode.payload.PatchByKey(\"..\",) returned !ok")
-		}
 
-		oldDirInode.dirty = true
+			renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
+				ParentDirInodeNumber: newDirInodeNumber,
+				ParentDirEntryName:   newName,
+			}] = struct{}{}
 
-		oldDirInode.inodeHeadV1.ModificationTime = startTime
-		oldDirInode.inodeHeadV1.StatusChangeTime = startTime
+			oldDirInode.dirty = true
 
-		delete(oldDirInode.linkSet, ilayout.InodeLinkTableEntryStruct{
-			ParentDirInodeNumber: renamedInode.inodeNumber,
-			ParentDirEntryName:   oldName,
-		})
+			oldDirInode.inodeHeadV1.ModificationTime = startTime
+			oldDirInode.inodeHeadV1.StatusChangeTime = startTime
 
-		ok, err = oldDirInode.payload.DeleteByKey(oldName)
-		if nil != err {
-			logFatalf("oldDirInode.payload.DeleteByKey(oldName) failed: %v", err)
-		}
-		if !ok {
-			logFatalf("oldDirInode.payload.DeleteByKey(oldName) returned !ok")
-		}
+			ok, err = oldDirInode.payload.DeleteByKey(oldName)
+			if nil != err {
+				logFatalf("oldDirInode.payload.DeleteByKey(oldName) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("oldDirInode.payload.DeleteByKey(oldName) returned !ok")
+			}
 
-		newDirInode.dirty = true
+			newDirInode.dirty = true
 
-		newDirInode.inodeHeadV1.ModificationTime = startTime
-		newDirInode.inodeHeadV1.StatusChangeTime = startTime
+			newDirInode.inodeHeadV1.ModificationTime = startTime
+			newDirInode.inodeHeadV1.StatusChangeTime = startTime
 
-		newDirInode.linkSet[ilayout.InodeLinkTableEntryStruct{
-			ParentDirInodeNumber: renamedInode.inodeNumber,
-			ParentDirEntryName:   "..",
-		}] = struct{}{}
-
-		ok, err = newDirInode.payload.Put(
-			newName,
-			&ilayout.DirectoryEntryValueV1Struct{
-				InodeNumber: renamedInode.inodeNumber,
-				InodeType:   ilayout.InodeTypeDir,
-			})
-		if nil != err {
-			logFatalf("newDirInode.payload.Put(newName,) failed: %v", err)
-		}
-		if !ok {
-			logFatalf("newDirInode.payload.Put(newName,) returned !ok")
-		}
-	} else {
-		if replacedInode != nil {
+			ok, err = newDirInode.payload.Put(
+				newName,
+				&ilayout.DirectoryEntryValueV1Struct{
+					InodeNumber: renamedInode.inodeNumber,
+					InodeType:   ilayout.InodeTypeDir,
+				})
+			if nil != err {
+				logFatalf("newDirInode.payload.Put(newName,) failed: %v", err)
+			}
+			if !ok {
+				logFatalf("newDirInode.payload.Put(newName,) returned !ok")
+			}
+		} else { // replacedInode != nil
 			replacedInode.dirty = true
 
 			replacedInode.inodeHeadV1.ModificationTime = startTime
@@ -4121,52 +4278,6 @@ Retry:
 			}
 			if !ok {
 				logFatalf("newDirInode.payload.PatchByKey(newName,) returned !ok")
-			}
-		} else {
-			renamedInode.dirty = true
-
-			renamedInode.inodeHeadV1.ModificationTime = startTime
-			renamedInode.inodeHeadV1.StatusChangeTime = startTime
-
-			delete(renamedInode.linkSet, ilayout.InodeLinkTableEntryStruct{
-				ParentDirInodeNumber: oldDirInodeNumber,
-				ParentDirEntryName:   oldName,
-			})
-
-			renamedInode.linkSet[ilayout.InodeLinkTableEntryStruct{
-				ParentDirInodeNumber: newDirInodeNumber,
-				ParentDirEntryName:   newName,
-			}] = struct{}{}
-
-			oldDirInode.dirty = true
-
-			oldDirInode.inodeHeadV1.ModificationTime = startTime
-			oldDirInode.inodeHeadV1.StatusChangeTime = startTime
-
-			ok, err = oldDirInode.payload.DeleteByKey(oldName)
-			if nil != err {
-				logFatalf("oldDirInode.payload.DeleteByKey(oldName) failed: %v", err)
-			}
-			if !ok {
-				logFatalf("oldDirInode.payload.DeleteByKey(oldName) returned !ok")
-			}
-
-			newDirInode.dirty = true
-
-			newDirInode.inodeHeadV1.ModificationTime = startTime
-			newDirInode.inodeHeadV1.StatusChangeTime = startTime
-
-			ok, err = newDirInode.payload.Put(
-				newName,
-				&ilayout.DirectoryEntryValueV1Struct{
-					InodeNumber: renamedInode.inodeNumber,
-					InodeType:   ilayout.InodeTypeDir,
-				})
-			if nil != err {
-				logFatalf("newDirInode.payload.Put(newName,) failed: %v", err)
-			}
-			if !ok {
-				logFatalf("newDirInode.payload.Put(newName,) returned !ok")
 			}
 		}
 	}

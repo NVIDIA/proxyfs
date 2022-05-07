@@ -34,6 +34,7 @@ type configStruct struct {
 	FUSEMaxWrite                     uint32
 	FUSEEntryValidDuration           time.Duration
 	FUSEAttrValidDuration            time.Duration
+	FUSENameLenMax                   uint32
 	AuthPlugInPath                   string
 	AuthPlugInEnvName                string
 	AuthPlugInEnvValue               string
@@ -334,6 +335,10 @@ func initializeGlobals(confMap conf.ConfMap, fissionErrChan chan error) (err err
 	if nil != err {
 		logFatal(err)
 	}
+	globals.config.FUSENameLenMax, err = confMap.FetchOptionValueUint32("ICLIENT", "FUSENameLenMax")
+	if nil != err {
+		logFatal(err)
+	}
 	globals.config.AuthPlugInPath, err = confMap.FetchOptionValueString("ICLIENT", "AuthPlugInPath")
 	if nil != err {
 		logFatal(err)
@@ -562,6 +567,7 @@ func uninitializeGlobals() (err error) {
 	globals.config.FUSEMaxWrite = 0
 	globals.config.FUSEEntryValidDuration = time.Duration(0)
 	globals.config.FUSEAttrValidDuration = time.Duration(0)
+	globals.config.FUSENameLenMax = 0
 	globals.config.AuthPlugInPath = ""
 	globals.config.AuthPlugInEnvName = ""
 	globals.config.AuthPlugInEnvValue = ""

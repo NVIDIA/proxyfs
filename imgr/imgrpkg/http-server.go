@@ -1307,9 +1307,11 @@ type serveHTTPPostOfVolumeRequestBodyAsJSONStruct struct {
 
 func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestBody []byte) {
 	var (
-		err               error
-		requestBodyAsJSON serveHTTPPostOfVolumeRequestBodyAsJSONStruct
-		startTime         time.Time = time.Now()
+		conflictReason         []byte
+		confligtReasonWriteErr error
+		err                    error
+		requestBodyAsJSON      serveHTTPPostOfVolumeRequestBodyAsJSONStruct
+		startTime              time.Time = time.Now()
 	)
 
 	defer func() {
@@ -1326,7 +1328,17 @@ func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Req
 	if nil == err {
 		responseWriter.WriteHeader(http.StatusCreated)
 	} else {
+		conflictReason = []byte(fmt.Sprintf("%v\n", err))
+
+		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(conflictReason)))
+		responseWriter.Header().Set("Content-Type", "text/html")
+
 		responseWriter.WriteHeader(http.StatusConflict)
+
+		_, confligtReasonWriteErr = responseWriter.Write(conflictReason)
+		if nil != confligtReasonWriteErr {
+			logWarnf("responseWriter.Write(conflictReason) failed: %v", confligtReasonWriteErr)
+		}
 	}
 }
 
@@ -1346,10 +1358,12 @@ type serveHTTPPutOfVolumeRequestBodyAsJSONStruct struct {
 
 func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
 	var (
-		err               error
-		pathSplit         []string
-		requestBodyAsJSON serveHTTPPutOfVolumeRequestBodyAsJSONStruct
-		startTime         time.Time = time.Now()
+		conflictReason         []byte
+		confligtReasonWriteErr error
+		err                    error
+		pathSplit              []string
+		requestBodyAsJSON      serveHTTPPutOfVolumeRequestBodyAsJSONStruct
+		startTime              time.Time = time.Now()
 	)
 
 	pathSplit = strings.Split(requestPath, "/")
@@ -1370,7 +1384,17 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		if nil == err {
 			responseWriter.WriteHeader(http.StatusCreated)
 		} else {
+			conflictReason = []byte(fmt.Sprintf("%v\n", err))
+
+			responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(conflictReason)))
+			responseWriter.Header().Set("Content-Type", "text/html")
+
 			responseWriter.WriteHeader(http.StatusConflict)
+
+			_, confligtReasonWriteErr = responseWriter.Write(conflictReason)
+			if nil != confligtReasonWriteErr {
+				logWarnf("responseWriter.Write(conflictReason) failed: %v", confligtReasonWriteErr)
+			}
 		}
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
