@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	testIPAddr             = "127.0.0.1" // Don't use IPv6... the code doesn't properly "join" this with :port #s
+	testIPAddr             = "127.0.0.1"
 	testRetryRPCPort       = 32356
 	testHTTPServerPort     = 15346
 	testSwiftProxyTCPPort  = 8080
@@ -31,6 +31,7 @@ const (
 	testVolume             = "testVolume"
 	testRPCDeadlineIO      = "60s"
 	testRPCKeepAlivePeriod = "60s"
+	testStartupDelay       = 100 * time.Millisecond
 )
 
 type testGlobalsStruct struct {
@@ -76,8 +77,8 @@ func testSetup(t *testing.T, overrideConfStrings []string, retryrpcCallbacks int
 		caKeyFile:        tempDir + "/caKeyFile",
 		endpointCertFile: tempDir + "/endpoingCertFile",
 		endpointKeyFile:  tempDir + "/endpointKeyFile",
-		httpServerURL:    fmt.Sprintf("http://%s:%d", testIPAddr, testHTTPServerPort),
-		authURL:          fmt.Sprintf("http://%s:%d/auth/v1.0", testIPAddr, testSwiftProxyTCPPort),
+		httpServerURL:    "http://" + net.JoinHostPort(testIPAddr, fmt.Sprintf("%d", testHTTPServerPort)),
+		authURL:          "http://" + net.JoinHostPort(testIPAddr, fmt.Sprintf("%d", testSwiftProxyTCPPort)) + "/auth/v1.0",
 	}
 
 	testGlobals.caCertPEMBlock, testGlobals.caKeyPEMBlock, err = icertpkg.GenCACert(
@@ -194,9 +195,12 @@ func testSetup(t *testing.T, overrideConfStrings []string, retryrpcCallbacks int
 		t.Fatalf("iswiftpkg.Start(testGlobals.confMap) failed: %v", err)
 	}
 
-	err = testDoAuth()
-	if nil != err {
-		t.Fatalf("testDoAuth() failed: %v", err)
+	for {
+		err = testDoAuth()
+		if nil == err {
+			break
+		}
+		time.Sleep(testStartupDelay)
 	}
 
 	testGlobals.containerURL = testGlobals.accountURL + "/" + testContainer
@@ -222,6 +226,14 @@ func testSetup(t *testing.T, overrideConfStrings []string, retryrpcCallbacks int
 	err = Start(testGlobals.confMap)
 	if nil != err {
 		t.Fatalf("Start(testGlobals.confMap) failed: %v", err)
+	}
+
+	for {
+		_, _, err = testDoHTTPRequest("GET", testGlobals.httpServerURL+"/version", nil, nil, http.StatusOK)
+		if nil == err {
+			break
+		}
+		time.Sleep(testStartupDelay)
 	}
 
 	retryrpcDeadlineIO, err = time.ParseDuration(testRPCDeadlineIO)

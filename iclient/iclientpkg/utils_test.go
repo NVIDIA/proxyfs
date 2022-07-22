@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	testIPAddr               = "127.0.0.1" // Don't use IPv6... the code doesn't properly "join" this with :port #s
+	testIPAddr               = "127.0.0.1"
 	testRetryRPCPort         = 32356
 	testMgrHTTPServerPort    = 15346
 	testClientHTTPServerPort = 15347
@@ -34,6 +34,7 @@ const (
 	testVolume               = "testvol"
 	testRPCDeadlineIO        = "60s"
 	testRPCKeepAlivePeriod   = "60s"
+	testStartupDelay         = 100 * time.Millisecond
 )
 
 type testGlobalsStruct struct {
@@ -82,8 +83,8 @@ func testSetup(t *testing.T) {
 		caKeyFile:         tempDir + "/caKeyFile",
 		endpointCertFile:  tempDir + "/endpoingCertFile",
 		endpointKeyFile:   tempDir + "/endpointKeyFile",
-		imgrHTTPServerURL: fmt.Sprintf("http://%s:%d", testIPAddr, testMgrHTTPServerPort),
-		authURL:           fmt.Sprintf("http://%s:%d/auth/v1.0", testIPAddr, testSwiftProxyTCPPort),
+		imgrHTTPServerURL: "http://" + net.JoinHostPort(testIPAddr, fmt.Sprintf("%d", testMgrHTTPServerPort)),
+		authURL:           "http://" + net.JoinHostPort(testIPAddr, fmt.Sprintf("%d", testSwiftProxyTCPPort)) + "/auth/v1.0",
 	}
 
 	testGlobals.caCertPEMBlock, testGlobals.caKeyPEMBlock, err = icertpkg.GenCACert(
@@ -244,14 +245,18 @@ func testSetup(t *testing.T) {
 		t.Fatalf("iswiftpkg.Start(testGlobals.confMap) failed: %v", err)
 	}
 
-	authRequestHeaders = make(http.Header)
+	for {
+		authRequestHeaders = make(http.Header)
 
-	authRequestHeaders["X-Auth-User"] = []string{testSwiftAuthUser}
-	authRequestHeaders["X-Auth-Key"] = []string{testSwiftAuthKey}
+		authRequestHeaders["X-Auth-User"] = []string{testSwiftAuthUser}
+		authRequestHeaders["X-Auth-Key"] = []string{testSwiftAuthKey}
 
-	authResponseHeaders, _, err = testDoHTTPRequest("GET", testGlobals.authURL, authRequestHeaders, nil)
-	if nil != err {
-		t.Fatalf("testDoHTTPRequest(\"GET\", testGlobals.authURL, authRequestHeaders, nil) failed: %v", err)
+		authResponseHeaders, _, err = testDoHTTPRequest("GET", testGlobals.authURL, authRequestHeaders, nil)
+		if nil == err {
+			break
+		}
+
+		time.Sleep(testStartupDelay)
 	}
 
 	testGlobals.authToken = authResponseHeaders.Get("X-Auth-Token")
@@ -286,6 +291,14 @@ func testSetup(t *testing.T) {
 	err = imgrpkg.Start(testGlobals.confMap)
 	if nil != err {
 		t.Fatalf("imgrpkg.Start(testGlobals.confMap) failed: %v", err)
+	}
+
+	for {
+		_, _, err = testDoHTTPRequest("GET", testGlobals.imgrHTTPServerURL+"/version", nil, nil)
+		if nil == err {
+			break
+		}
+		time.Sleep(testStartupDelay)
 	}
 
 	postAndPutVolumePayload = fmt.Sprintf("{\"StorageURL\":\"%s\",\"AuthToken\":\"%s\"}", testGlobals.containerURL, testGlobals.authToken)
