@@ -100,7 +100,7 @@ services:
     container_name: proxyfs_ickpt
     depends_on:
       - swift
-    privileged: true
+    privileged: true                          # Only needed if an iclient wants to be run from here
     expose:
       - 33123                                 # ICKPT.Port
     ports:
@@ -117,6 +117,7 @@ services:
     depends_on:
       - swift
       - ickpt
+    privileged: true                          # Only needed if an iclient wants to be run from here
     expose:
       - 32356                                 # IMGR.RetryRPCPort
       - 15346                                 # IMGR.HTTPServerPort
