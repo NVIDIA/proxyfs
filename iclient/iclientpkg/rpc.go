@@ -356,10 +356,12 @@ func rpcLease(leaseRequest *imgrpkg.LeaseRequestStruct, leaseResponse *imgrpkg.L
 		startTime time.Time = time.Now()
 	)
 
-	logTracef("==> rpcLease(leaseRequest: %+v)", leaseRequest)
-	defer func() {
-		logTracef("<== rpcLease(leaseResponse: %+v, err: %v)", leaseResponse, err)
-	}()
+	if globals.config.TraceEnabled {
+		logTracef("==> rpcLease(leaseRequest: %v)", leaseRequest)
+		defer func() {
+			logTracef("<== rpcLease(leaseResponse: %v, err: %v)", leaseResponse, err)
+		}()
+	}
 
 	defer func() {
 		globals.stats.LeaseUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -479,10 +481,12 @@ func (dummy *globalsStruct) Interrupt(payload []byte) {
 		logFatalf("json.Unmarshal(payload, rpcInterrupt) failed: %v", err)
 	}
 
-	logTracef("==> Interrupt(rpcInterrupt: %+v)", rpcInterrupt)
-	defer func() {
-		logTracef("<== Interrupt(rpcInterrupt: %+v)", rpcInterrupt)
-	}()
+	if globals.config.TraceEnabled {
+		logTracef("==> Interrupt(rpcInterrupt: %v)", rpcInterrupt)
+		defer func() {
+			logTracef("<== Interrupt(rpcInterrupt: %v)", rpcInterrupt)
+		}()
+	}
 
 	switch rpcInterrupt.RPCInterruptType {
 	case imgrpkg.RPCInterruptTypeUnmount:

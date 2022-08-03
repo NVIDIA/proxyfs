@@ -274,6 +274,41 @@ func TestRPCLease(t *testing.T) {
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
 
+	testRpcLeaseLogTestCase("Exclusive/Shared toggle followed by a 2nd Exclusive", true)
+
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeExclusive)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeExclusive)
+
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeShared)
+	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeDemote)
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeDemote)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeDemoted)
+	testRpcLeaseClient[2].validateChOutValueIsLeaseResponseType(LeaseResponseTypeShared)
+
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypePromote)
+	testRpcLeaseClient[2].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeRelease)
+	testRpcLeaseClient[2].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypePromoted)
+
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeShared)
+	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeDemote)
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeDemote)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeDemoted)
+	testRpcLeaseClient[2].validateChOutValueIsLeaseResponseType(LeaseResponseTypeShared)
+
+	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeExclusive)
+	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
+	testRpcLeaseClient[2].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeRelease)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
+	testRpcLeaseClient[2].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
+	testRpcLeaseClient[3].validateChOutValueIsLeaseResponseType(LeaseResponseTypeExclusive)
+
+	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeRelease)
+	testRpcLeaseClient[3].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
+
 	testRpcLeaseLogTestCase(fmt.Sprintf("%v Shared", testRpcLeaseSingleNumInstances-1), false)
 
 	for instance = 1; instance < testRpcLeaseSingleNumInstances; instance++ {
