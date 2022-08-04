@@ -1670,15 +1670,15 @@ func (leaseRequest *leaseRequestStruct) okToWrite() (ok bool) {
 func (leaseRequest *LeaseRequestStruct) String() (str string) {
 	switch leaseRequest.LeaseRequestType {
 	case LeaseRequestTypeShared:
-		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Shared", leaseRequest.MountID, leaseRequest.InodeNumber)
+		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Shared}", leaseRequest.MountID, leaseRequest.InodeNumber)
 	case LeaseRequestTypePromote:
-		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Promote", leaseRequest.MountID, leaseRequest.InodeNumber)
+		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Promote}", leaseRequest.MountID, leaseRequest.InodeNumber)
 	case LeaseRequestTypeExclusive:
-		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Exclusive", leaseRequest.MountID, leaseRequest.InodeNumber)
+		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Exclusive}", leaseRequest.MountID, leaseRequest.InodeNumber)
 	case LeaseRequestTypeDemote:
-		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Demote", leaseRequest.MountID, leaseRequest.InodeNumber)
+		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Demote}", leaseRequest.MountID, leaseRequest.InodeNumber)
 	case LeaseRequestTypeRelease:
-		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Release", leaseRequest.MountID, leaseRequest.InodeNumber)
+		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Release}", leaseRequest.MountID, leaseRequest.InodeNumber)
 	default:
 		logFatalf("(*LeaseRequestStruct).String() unable to interpret leaseRequest.LeaseRequestType [%v]", leaseRequest.LeaseRequestType)
 	}
@@ -1689,17 +1689,17 @@ func (leaseRequest *LeaseRequestStruct) String() (str string) {
 func (leaseResponse *LeaseResponseStruct) String() (str string) {
 	switch leaseResponse.LeaseResponseType {
 	case LeaseResponseTypeDenied:
-		str = fmt.Sprintf("&{LeaseResponseType:...Denied")
+		str = fmt.Sprintf("&{LeaseResponseType:...Denied}")
 	case LeaseResponseTypeShared:
-		str = fmt.Sprintf("&{LeaseResponseType:...Shared")
+		str = fmt.Sprintf("&{LeaseResponseType:...Shared}")
 	case LeaseResponseTypePromoted:
-		str = fmt.Sprintf("&{LeaseResponseType:...Promoted")
+		str = fmt.Sprintf("&{LeaseResponseType:...Promoted}")
 	case LeaseResponseTypeExclusive:
-		str = fmt.Sprintf("&{LeaseResponseType:...Exclusive")
+		str = fmt.Sprintf("&{LeaseResponseType:...Exclusive}")
 	case LeaseResponseTypeDemoted:
-		str = fmt.Sprintf("&{LeaseResponseType:...Demoted")
+		str = fmt.Sprintf("&{LeaseResponseType:...Demoted}")
 	case LeaseResponseTypeReleased:
-		str = fmt.Sprintf("&{LeaseResponseType:...Released")
+		str = fmt.Sprintf("&{LeaseResponseType:...Released}")
 	default:
 		logFatalf("(*LeaseResponseStruct).String() unable to interpret leaseResponse.LeaseResponseType [%v]", leaseResponse.LeaseResponseType)
 	}
@@ -1710,11 +1710,11 @@ func (leaseResponse *LeaseResponseStruct) String() (str string) {
 func (rpcInterrupt *RPCInterrupt) String() (str string) {
 	switch rpcInterrupt.RPCInterruptType {
 	case RPCInterruptTypeUnmount:
-		str = fmt.Sprintf("&{RPCInterruptType:...Unmount")
+		str = fmt.Sprintf("&{RPCInterruptType:...Unmount}")
 	case RPCInterruptTypeDemote:
-		str = fmt.Sprintf("&{RPCInterruptType:...Demote InodeNumber:%v", rpcInterrupt.InodeNumber)
+		str = fmt.Sprintf("&{RPCInterruptType:...Demote InodeNumber:%v}", rpcInterrupt.InodeNumber)
 	case RPCInterruptTypeRelease:
-		str = fmt.Sprintf("&{RPCInterruptType:...Release InodeNumber:%v", rpcInterrupt.InodeNumber)
+		str = fmt.Sprintf("&{RPCInterruptType:...Release InodeNumber:%v}", rpcInterrupt.InodeNumber)
 	default:
 		logFatalf("(*RPCInterrupt).String() unable to interpret rpcInterrupt.RPCInterruptType [%v]", rpcInterrupt.RPCInterruptType)
 	}

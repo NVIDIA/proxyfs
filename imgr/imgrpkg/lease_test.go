@@ -274,7 +274,7 @@ func TestRPCLease(t *testing.T) {
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
 
-	testRpcLeaseLogTestCase("Exclusive/Shared toggle followed by a 2nd Exclusive", true)
+	testRpcLeaseLogTestCase("Exlusive then Shared leading to Demotion then 2nd Exclusive leading to 2 Releases", true)
 
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeExclusive)
 	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeExclusive)
@@ -285,26 +285,17 @@ func TestRPCLease(t *testing.T) {
 	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeDemoted)
 	testRpcLeaseClient[2].validateChOutValueIsLeaseResponseType(LeaseResponseTypeShared)
 
-	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypePromote)
-	testRpcLeaseClient[2].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
-	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeRelease)
-	testRpcLeaseClient[2].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
-	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypePromoted)
+	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeShared)
+	testRpcLeaseClient[3].validateChOutValueIsLeaseResponseType(LeaseResponseTypeShared)
 
-	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeShared)
-	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeDemote)
-	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeDemote)
-	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeDemoted)
-	testRpcLeaseClient[2].validateChOutValueIsLeaseResponseType(LeaseResponseTypeShared)
-
-	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeExclusive)
+	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypePromote) // HANGS
 	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
 	testRpcLeaseClient[2].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
-	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
-	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeRelease)
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease) // HANGS
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeRelease) // HANGS
 	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
 	testRpcLeaseClient[2].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
-	testRpcLeaseClient[3].validateChOutValueIsLeaseResponseType(LeaseResponseTypeExclusive)
+	testRpcLeaseClient[3].validateChOutValueIsLeaseResponseType(LeaseResponseTypePromoted)
 
 	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[3].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
