@@ -20,8 +20,6 @@ import (
 const (
 	testRpcLeaseOverrideConfIMGRLeaseEvictHighLimit        = 3
 	testRpcLeaseOverrideConfIMGRLeaseEvictLowLimit         = 2
-	testRpcLeaseDelayAfterSendingRequest                   = 10 * time.Millisecond
-	testRpcLeaseDelayBeforeSendingRequest                  = 10 * time.Millisecond
 	testRpcLeaseMultiFirstInodeNumber               uint64 = 1
 	testRpcLeaseMultiNumInstances                   uint64 = 5
 	testRpcLeaseSingleInodeNumber                   uint64 = 1
@@ -288,11 +286,11 @@ func TestRPCLease(t *testing.T) {
 	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeShared)
 	testRpcLeaseClient[3].validateChOutValueIsLeaseResponseType(LeaseResponseTypeShared)
 
-	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypePromote) // HANGS
+	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypePromote)
 	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
 	testRpcLeaseClient[2].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
-	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease) // HANGS
-	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeRelease) // HANGS
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
 	testRpcLeaseClient[2].validateChOutValueIsLeaseResponseType(LeaseResponseTypeReleased)
 	testRpcLeaseClient[3].validateChOutValueIsLeaseResponseType(LeaseResponseTypePromoted)
@@ -358,28 +356,27 @@ func TestRPCLease(t *testing.T) {
 	testRpcLeaseLogTestCase(fmt.Sprintf("%v Unique InodeNumber Exclusives", testRpcLeaseMultiNumInstances), true)
 
 	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeExclusive)
-	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeExclusive)
-	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeExclusive)
-
 	testRpcLeaseClient[0].validateChOutValueIsLeaseResponseType(LeaseResponseTypeExclusive)
+
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeExclusive)
 	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseType(LeaseResponseTypeExclusive)
+
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeExclusive)
 	testRpcLeaseClient[2].validateChOutValueIsLeaseResponseType(LeaseResponseTypeExclusive)
 
 	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeExclusive)
 
 	testRpcLeaseClient[0].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
-	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
-
 	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeRelease)
-	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
-
 	testRpcLeaseClient[0].validateChOutValueIsLeaseResponseTypeIgnoringRPCInterruptType(LeaseResponseTypeReleased, RPCInterruptTypeRelease)
+
+	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[1].validateChOutValueIsLeaseResponseTypeIgnoringRPCInterruptType(LeaseResponseTypeReleased, RPCInterruptTypeRelease)
 
 	testRpcLeaseClient[3].validateChOutValueIsLeaseResponseType(LeaseResponseTypeExclusive)
 
 	testRpcLeaseClient[4].sendLeaseRequest(LeaseRequestTypeExclusive)
-
 	testRpcLeaseClient[4].validateChOutValueIsLeaseResponseType(LeaseResponseTypeExclusive)
 
 	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeRelease)
@@ -528,9 +525,7 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) Fatalf(format string, args .
 }
 
 func (testRpcLeaseClient *testRpcLeaseClientStruct) sendLeaseRequest(leaseRequestType LeaseRequestType) {
-	time.Sleep(testRpcLeaseDelayBeforeSendingRequest)
 	testRpcLeaseClient.chIn <- leaseRequestType
-	time.Sleep(testRpcLeaseDelayAfterSendingRequest)
 }
 
 func (testRpcLeaseClient *testRpcLeaseClientStruct) sendLeaseRequestPromptly(leaseRequestType LeaseRequestType) {
