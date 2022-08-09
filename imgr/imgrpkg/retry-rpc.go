@@ -902,7 +902,8 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 				volume:               volume,
 				inodeNumber:          leaseRequest.InodeNumber,
 				leaseState:           inodeLeaseStateNone,
-				requestChan:          make(chan *leaseRequestOperationStruct),
+				requestChan:          make(chan struct{}, 1),
+				requestList:          list.New(),
 				stopChan:             make(chan struct{}),
 				stopping:             false,
 				sharedHoldersList:    list.New(),
@@ -950,7 +951,14 @@ func lease(leaseRequest *LeaseRequestStruct, leaseResponse *LeaseResponseStruct)
 		replyChan:        make(chan LeaseResponseType),
 	}
 
-	inodeLease.requestChan <- leaseRequestOperation
+	_ = inodeLease.requestList.PushBack(leaseRequestOperation)
+
+	select {
+	case inodeLease.requestChan <- struct{}{}:
+		// handler() needed to be signaled to service inodeLease.requestList
+	default:
+		// handler() has already been signaled to service inodeLease.requestList
+	}
 
 	globals.Unlock()
 

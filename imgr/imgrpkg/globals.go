@@ -185,7 +185,8 @@ type inodeLeaseStruct struct {
 	lruElement  *list.Element // link into globals.inodeLeaseLRU
 	leaseState  inodeLeaseStateType
 
-	requestChan chan *leaseRequestOperationStruct
+	requestChan chan struct{} // Used to signal handler() to service .requestList
+	requestList *list.List    // FIFO of leaseRequestOperationStruct's
 	stopChan    chan struct{} // closing this chan will trigger *inodeLeaseStruct.handler() to:
 	//                             revoke/reject all leaseRequestStruct's in *Holder* & requestedList
 	//                             issue volume.leaseHandlerWG.Done()

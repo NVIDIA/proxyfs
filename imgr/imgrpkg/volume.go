@@ -2082,10 +2082,12 @@ func (mount *mountStruct) performUnmount() {
 			replyChan:        make(chan LeaseResponseType, 1),
 		}
 
+		_ = leaseRequestOperation.inodeLease.requestList.PushBack(leaseRequestOperation)
+
 		leaseReleaseFinishedWG.Add(1)
 
 		go func(leaseRequestOperation *leaseRequestOperationStruct) {
-			leaseRequestOperation.inodeLease.handleOperation(leaseRequestOperation)
+			leaseRequestOperation.inodeLease.handleRequestList()
 			<-leaseRequestOperation.replyChan
 			leaseReleaseFinishedWG.Done()
 		}(leaseRequestOperation)
