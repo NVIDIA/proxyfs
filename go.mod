@@ -8,7 +8,7 @@ require (
 	github.com/google/btree v1.0.1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.7.1
-	golang.org/x/sys v0.0.0-20220803195053-6e608f9ce704
+	golang.org/x/sys v0.0.0-20220808155132-1c4a2a72c664
 )
 
 require (
