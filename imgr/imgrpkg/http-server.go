@@ -123,11 +123,23 @@ func (dummy *globalsStruct) ServeHTTP(responseWriter http.ResponseWriter, reques
 
 func serveHTTPDelete(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
 	switch {
+	case "/keepalive" == requestPath:
+		serveHTTPDeleteOfKeepAlive(responseWriter, request, requestPath)
 	case strings.HasPrefix(requestPath, "/volume"):
 		serveHTTPDeleteOfVolume(responseWriter, request, requestPath)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
+}
+
+func serveHTTPDeleteOfKeepAlive(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
+	var (
+		startTime time.Time = time.Now()
+	)
+
+	globals.stats.DeleteKeepAliveUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+
+	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
 }
 
 func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
@@ -1344,10 +1356,41 @@ func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Req
 
 func serveHTTPPut(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
 	switch {
+	case strings.HasPrefix(requestPath, "/keepalive"):
+		serveHTTPPutOfKeepAlive(responseWriter, request, requestPath, requestBody)
 	case strings.HasPrefix(requestPath, "/volume"):
 		serveHTTPPutOfVolume(responseWriter, request, requestPath, requestBody)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func serveHTTPPutOfKeepAlive(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
+	var (
+		err               error
+		keepAliveDuration time.Duration
+		pathSplit         []string
+		startTime         time.Time = time.Now()
+	)
+
+	pathSplit = strings.Split(requestPath, "/")
+
+	switch len(pathSplit) {
+	case 3:
+		defer func() {
+			globals.stats.PutKeepAliveUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+		}()
+
+		keepAliveDuration, err = time.ParseDuration(pathSplit[2])
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		fmt.Printf("UNDO: keepAliveDuration: %v\n", keepAliveDuration)
+		responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+	default:
+		responseWriter.WriteHeader(http.StatusBadRequest)
 	}
 }
 

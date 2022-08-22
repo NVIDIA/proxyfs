@@ -85,6 +85,10 @@
 // The RESTful API is provided by an embedded HTTP Server
 // (at URL http://<PrivateIPAddr>:<HTTPServerPort>) responds to the following:
 //
+//  DELETE /keapalive
+//
+// This will disable the keep alive mechanism.
+//
 //  DELETE /volume/<volumeName>
 //
 // This will cause the specified <volumeName> to no longer be served. Note that
@@ -125,6 +129,14 @@
 // specified in the JSON document content identifies the Container for format.
 // The AuthToken in the JSON document content provides the authentication to
 // use during the formatting process.
+//
+//  PUT /keepalive/<duration>
+//
+// This will configure the keep alive mechanism to start a count down timer
+// for the specified duration after which all served volumes will no longer
+// be served. The expiration of this count down timer can be avoided by
+// issuing a fresh keep alive duration or by disabling the keep alive
+// mechanism by issuing a DELETE /keepalive.
 //
 //  PUT /volume/<volumeName>
 //  Content-Type: application/json
