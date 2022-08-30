@@ -94,6 +94,7 @@ RUN go build github.com/go-delve/delve/cmd/dlv
 RUN cp dlv /usr/local/go/bin/.
 VOLUME /src
 WORKDIR /src
+RUN git config --global --add safe.directory /src
 
 FROM dev as build
 ARG MakeTarget
