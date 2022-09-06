@@ -102,7 +102,9 @@
 //  GET /keepalive
 //
 // This will return the configured keepalive duration if any. If the keepalive
-// mechanism has not been enabled, a 404 Not Found will be returned.
+// mechanism has not been enabled, a 404 Not Found will be returned. If the
+// keepalive mechanism has been enabled, this is the highest performing way to
+// reset the countdown timer.
 //
 //  GET /stats
 //
@@ -140,9 +142,9 @@
 // This will configure the keep alive mechanism to start a count down timer
 // for the specified duration after which all served volumes will no longer
 // be served. The expiration of this count down timer can be avoided by
-// issuing a fresh keep alive duration, fetching the list of volumes currently
-// served by issuing a GET /volume, or by disabling the keep alive mechanism
-// by issuing a DELETE /keepalive.
+// GETing (/keepalive) the current duration, PUTting (/keepalive/<duration)
+// a fresh keep alive duration, GETting (/volume) the list of volumes currently
+// served, or by DELETE-ing (/keepalive) the keep alive mechanism.
 //
 //  PUT /volume/<volumeName>
 //  Content-Type: application/json
