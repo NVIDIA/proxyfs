@@ -99,6 +99,11 @@
 // This will return a JSON document that matches the conf.ConfMap used to
 // launch this package.
 //
+//  GET /keepalive
+//
+// This will return the configured keepalive duration if any. If the keepalive
+// mechanism has not been enabled, a 404 Not Found will be returned.
+//
 //  GET /stats
 //
 // This will return a raw bucketstats dump.
@@ -135,8 +140,9 @@
 // This will configure the keep alive mechanism to start a count down timer
 // for the specified duration after which all served volumes will no longer
 // be served. The expiration of this count down timer can be avoided by
-// issuing a fresh keep alive duration or by disabling the keep alive
-// mechanism by issuing a DELETE /keepalive.
+// issuing a fresh keep alive duration, fetching the list of volumes currently
+// served by issuing a GET /volume, or by disabling the keep alive mechanism
+// by issuing a DELETE /keepalive.
 //
 //  PUT /volume/<volumeName>
 //  Content-Type: application/json
