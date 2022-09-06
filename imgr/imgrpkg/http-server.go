@@ -1579,7 +1579,6 @@ func (keepAliveControl *keepAliveControlStruct) daemon() {
 	var (
 		keepAliveTimer *time.Timer
 	)
-	fmt.Printf("TODO: started (*keepAliveControlStruct).daemon() with duration: %v\n", keepAliveControl.duration)
 
 	keepAliveTimer = time.NewTimer(keepAliveControl.duration)
 
@@ -1587,12 +1586,10 @@ func (keepAliveControl *keepAliveControlStruct) daemon() {
 	case <-keepAliveTimer.C:
 		fmt.Println("TODO: timeout occurred - time to expire all /volume/* volumes")
 	case <-keepAliveControl.stopChan:
-		fmt.Println("TODO: timer cancelled")
 		if !keepAliveTimer.Stop() {
 			<-keepAliveTimer.C
 		}
 	}
 
 	keepAliveControl.Done()
-	fmt.Println("TODO: exiting (*keepAliveControlStruct).daemon()")
 }
