@@ -145,9 +145,23 @@ func serveHTTPDeleteOfKeepAlive(responseWriter http.ResponseWriter) {
 		startTime time.Time = time.Now()
 	)
 
-	globals.stats.DeleteKeepAliveUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	defer func() {
+		globals.stats.DeleteKeepAliveUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
 
-	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+	globals.Lock()
+
+	if globals.keepAliveDuration == time.Duration(0) {
+		responseWriter.WriteHeader(http.StatusNotFound)
+	} else {
+		fmt.Println("TODO: cancel countdown timer - avoid race with expired timer")
+
+		globals.keepAliveDuration = time.Duration(0)
+
+		responseWriter.WriteHeader(http.StatusOK)
+	}
+
+	globals.Unlock()
 }
 
 func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, requestPath string) {
@@ -246,12 +260,35 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, requestHTML bool) 
 
 func serveHTTPGetOfKeepAlive(responseWriter http.ResponseWriter) {
 	var (
-		startTime time.Time = time.Now()
+		err                       error
+		keepAliveDurationAsString string
+		startTime                 time.Time = time.Now()
 	)
 
-	globals.stats.GetKeepAliveUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	defer func() {
+		globals.stats.GetKeepAliveUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
 
-	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+	globals.Lock()
+
+	if globals.keepAliveDuration == time.Duration(0) {
+		responseWriter.WriteHeader(http.StatusNotFound)
+	} else {
+		keepAliveDurationAsString = fmt.Sprintf("%v", globals.keepAliveDuration)
+		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(keepAliveDurationAsString)))
+		responseWriter.Header().Set("Content-Type", "text/plain")
+		responseWriter.WriteHeader(http.StatusOK)
+		_, err = responseWriter.Write([]byte(keepAliveDurationAsString))
+		if nil != err {
+			logWarnf("responseWriter.Write([]byte(keepAliveDurationAsString)) failed: %v", err)
+		}
+
+		fmt.Println("TODO: cancel countdown timer - avoid race with expired timer")
+
+		fmt.Println("TODO: start countdown timer")
+	}
+
+	globals.Unlock()
 }
 
 func serveHTTPGetOfStats(responseWriter http.ResponseWriter) {
@@ -756,6 +793,12 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, requestPath string
 				AuthTokenExpiredMounts: uint64(volumeAsStruct.authTokenExpiredMountList.Len()),
 				LeasesExpiredMounts:    uint64(volumeAsStruct.leasesExpiredMountList.Len()),
 			}
+		}
+
+		if globals.keepAliveDuration != time.Duration(0) {
+			fmt.Println("TODO: cancel countdown timer - avoid race with expired timer")
+
+			fmt.Println("TODO: start countdown timer")
 		}
 
 		globals.Unlock()
@@ -1397,8 +1440,21 @@ func serveHTTPPutOfKeepAlive(responseWriter http.ResponseWriter, requestPath str
 			return
 		}
 
-		fmt.Printf("UNDO: keepAliveDuration: %v\n", keepAliveDuration)
-		responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+		globals.Lock()
+
+		if globals.keepAliveDuration != time.Duration(0) {
+			fmt.Println("TODO: cancel countdown timer - avoid race with expired timer")
+		}
+
+		globals.keepAliveDuration = keepAliveDuration
+
+		if globals.keepAliveDuration != time.Duration(0) {
+			fmt.Println("TODO: start countdown timer")
+		}
+
+		globals.Unlock()
+
+		responseWriter.WriteHeader(http.StatusOK)
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
 	}
