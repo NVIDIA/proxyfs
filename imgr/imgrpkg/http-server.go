@@ -43,7 +43,7 @@ func startHTTPServer() (err error) {
 
 	ipAddrTCPPort = net.JoinHostPort(globals.config.PrivateIPAddr, strconv.Itoa(int(globals.config.HTTPServerPort)))
 
-	globals.keepAliveDuration = time.Duration(0)
+	globals.keepAliveControl = nil
 
 	globals.httpServer = &http.Server{
 		Addr:    ipAddrTCPPort,
@@ -79,9 +79,22 @@ func startHTTPServer() (err error) {
 }
 
 func stopHTTPServer() (err error) {
+	var (
+		keepAliveControl *keepAliveControlStruct
+	)
+
 	err = globals.httpServer.Shutdown(context.TODO())
 	if nil == err {
 		globals.httpServerWG.Wait()
+	}
+
+	globals.Lock()
+	keepAliveControl = globals.keepAliveControl
+	globals.keepAliveControl = nil
+	globals.Unlock()
+
+	if keepAliveControl != nil {
+		keepAliveControl.cancel()
 	}
 
 	return
@@ -142,7 +155,8 @@ func serveHTTPDelete(responseWriter http.ResponseWriter, requestPath string) {
 
 func serveHTTPDeleteOfKeepAlive(responseWriter http.ResponseWriter) {
 	var (
-		startTime time.Time = time.Now()
+		keepAliveControl *keepAliveControlStruct
+		startTime        time.Time = time.Now()
 	)
 
 	defer func() {
@@ -150,18 +164,17 @@ func serveHTTPDeleteOfKeepAlive(responseWriter http.ResponseWriter) {
 	}()
 
 	globals.Lock()
+	keepAliveControl = globals.keepAliveControl
+	globals.keepAliveControl = nil // Avoid race
+	globals.Unlock()
 
-	if globals.keepAliveDuration == time.Duration(0) {
+	if keepAliveControl == nil {
 		responseWriter.WriteHeader(http.StatusNotFound)
 	} else {
-		fmt.Println("TODO: cancel countdown timer - avoid race with expired timer")
-
-		globals.keepAliveDuration = time.Duration(0)
+		keepAliveControl.cancel()
 
 		responseWriter.WriteHeader(http.StatusOK)
 	}
-
-	globals.Unlock()
 }
 
 func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, requestPath string) {
@@ -261,6 +274,7 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, requestHTML bool) 
 func serveHTTPGetOfKeepAlive(responseWriter http.ResponseWriter) {
 	var (
 		err                       error
+		keepAliveControl          *keepAliveControlStruct
 		keepAliveDurationAsString string
 		startTime                 time.Time = time.Now()
 	)
@@ -270,25 +284,32 @@ func serveHTTPGetOfKeepAlive(responseWriter http.ResponseWriter) {
 	}()
 
 	globals.Lock()
+	keepAliveControl = globals.keepAliveControl
+	globals.keepAliveControl = nil // Avoid race
+	globals.Unlock()
 
-	if globals.keepAliveDuration == time.Duration(0) {
+	if keepAliveControl == nil {
 		responseWriter.WriteHeader(http.StatusNotFound)
 	} else {
-		keepAliveDurationAsString = fmt.Sprintf("%v", globals.keepAliveDuration)
+		keepAliveControl.cancel()
+
+		keepAliveDurationAsString = fmt.Sprintf("%v", keepAliveControl.duration)
+
 		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(keepAliveDurationAsString)))
 		responseWriter.Header().Set("Content-Type", "text/plain")
 		responseWriter.WriteHeader(http.StatusOK)
+
 		_, err = responseWriter.Write([]byte(keepAliveDurationAsString))
 		if nil != err {
 			logWarnf("responseWriter.Write([]byte(keepAliveDurationAsString)) failed: %v", err)
 		}
 
-		fmt.Println("TODO: cancel countdown timer - avoid race with expired timer")
-
-		fmt.Println("TODO: start countdown timer")
+		globals.Lock()
+		if globals.keepAliveControl == nil { // Avoid race
+			globals.keepAliveControl = keepAliveStart(keepAliveControl.duration)
+		}
+		globals.Unlock()
 	}
-
-	globals.Unlock()
 }
 
 func serveHTTPGetOfStats(responseWriter http.ResponseWriter) {
@@ -732,6 +753,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, requestPath string
 		inodeTableIndex                    int
 		inodeTableLayoutIndex              int
 		inodeTableWrapper                  *httpServerInodeTableWrapperStruct
+		keepAliveControl                   *keepAliveControlStruct
 		mustBeInode                        string
 		ok                                 bool
 		pathSplit                          []string
@@ -795,13 +817,14 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, requestPath string
 			}
 		}
 
-		if globals.keepAliveDuration != time.Duration(0) {
-			fmt.Println("TODO: cancel countdown timer - avoid race with expired timer")
-
-			fmt.Println("TODO: start countdown timer")
-		}
+		keepAliveControl = globals.keepAliveControl
+		globals.keepAliveControl = nil // Avoid race
 
 		globals.Unlock()
+
+		if keepAliveControl != nil {
+			keepAliveControl.cancel()
+		}
 
 		volumeListGETAsJSON, err = json.Marshal(volumeListGET)
 		if nil != err {
@@ -829,6 +852,12 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, requestPath string
 				logWarnf("responseWriter.Write(volumeListGETAsJSON) failed: %v", err)
 			}
 		}
+
+		globals.Lock()
+		if globals.keepAliveControl == nil { // Avoid race
+			globals.keepAliveControl = keepAliveStart(keepAliveControl.duration)
+		}
+		globals.Unlock()
 	case 3:
 		// Form: /volume/<VolumeName>
 
@@ -1421,6 +1450,7 @@ func serveHTTPPut(responseWriter http.ResponseWriter, requestPath string, reques
 func serveHTTPPutOfKeepAlive(responseWriter http.ResponseWriter, requestPath string) {
 	var (
 		err               error
+		keepAliveControl  *keepAliveControlStruct
 		keepAliveDuration time.Duration
 		pathSplit         []string
 		startTime         time.Time = time.Now()
@@ -1440,21 +1470,22 @@ func serveHTTPPutOfKeepAlive(responseWriter http.ResponseWriter, requestPath str
 			return
 		}
 
+		responseWriter.WriteHeader(http.StatusOK)
+
 		globals.Lock()
-
-		if globals.keepAliveDuration != time.Duration(0) {
-			fmt.Println("TODO: cancel countdown timer - avoid race with expired timer")
-		}
-
-		globals.keepAliveDuration = keepAliveDuration
-
-		if globals.keepAliveDuration != time.Duration(0) {
-			fmt.Println("TODO: start countdown timer")
-		}
-
+		keepAliveControl = globals.keepAliveControl
+		globals.keepAliveControl = nil // Avoid race
 		globals.Unlock()
 
-		responseWriter.WriteHeader(http.StatusOK)
+		if keepAliveControl != nil {
+			keepAliveControl.cancel()
+		}
+
+		globals.Lock()
+		if globals.keepAliveControl == nil { // Avoid race
+			globals.keepAliveControl = keepAliveStart(keepAliveDuration)
+		}
+		globals.Unlock()
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
 	}
@@ -1470,6 +1501,7 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, requestPath string
 		conflictReason         []byte
 		confligtReasonWriteErr error
 		err                    error
+		keepAliveControl       *keepAliveControlStruct
 		pathSplit              []string
 		requestBodyAsJSON      serveHTTPPutOfVolumeRequestBodyAsJSONStruct
 		startTime              time.Time = time.Now()
@@ -1482,6 +1514,15 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, requestPath string
 		defer func() {
 			globals.stats.PutVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 		}()
+
+		globals.Lock()
+		keepAliveControl = globals.keepAliveControl
+		globals.keepAliveControl = nil // Avoid race
+		globals.Unlock()
+
+		if keepAliveControl != nil {
+			keepAliveControl.cancel()
+		}
 
 		err = json.Unmarshal(requestBody, &requestBodyAsJSON)
 		if nil != err {
@@ -1505,7 +1546,53 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, requestPath string
 				logWarnf("responseWriter.Write(conflictReason) failed: %v", confligtReasonWriteErr)
 			}
 		}
+
+		globals.Lock()
+		if globals.keepAliveControl == nil { // Avoid race
+			globals.keepAliveControl = keepAliveStart(keepAliveControl.duration)
+		}
+		globals.Unlock()
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
 	}
+}
+
+func (keepAliveControl *keepAliveControlStruct) cancel() {
+	close(keepAliveControl.stopChan)
+	keepAliveControl.Wait()
+}
+
+func keepAliveStart(keepAliveDuration time.Duration) (keepAliveControl *keepAliveControlStruct) {
+	keepAliveControl = &keepAliveControlStruct{
+		duration: keepAliveDuration,
+		stopChan: make(chan struct{}),
+	}
+
+	keepAliveControl.Add(1)
+
+	go keepAliveControl.daemon()
+
+	return
+}
+
+func (keepAliveControl *keepAliveControlStruct) daemon() {
+	var (
+		keepAliveTimer *time.Timer
+	)
+	fmt.Printf("TODO: started (*keepAliveControlStruct).daemon() with duration: %v\n", keepAliveControl.duration)
+
+	keepAliveTimer = time.NewTimer(keepAliveControl.duration)
+
+	select {
+	case <-keepAliveTimer.C:
+		fmt.Println("TODO: timeout occurred - time to expire all /volume/* volumes")
+	case <-keepAliveControl.stopChan:
+		fmt.Println("TODO: timer cancelled")
+		if !keepAliveTimer.Stop() {
+			<-keepAliveTimer.C
+		}
+	}
+
+	keepAliveControl.Done()
+	fmt.Println("TODO: exiting (*keepAliveControlStruct).daemon()")
 }

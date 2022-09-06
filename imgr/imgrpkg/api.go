@@ -142,9 +142,11 @@
 // This will configure the keep alive mechanism to start a count down timer
 // for the specified duration after which all served volumes will no longer
 // be served. The expiration of this count down timer can be avoided by
-// GETing (/keepalive) the current duration, PUTting (/keepalive/<duration)
-// a fresh keep alive duration, GETting (/volume) the list of volumes currently
-// served, or by DELETE-ing (/keepalive) the keep alive mechanism.
+// GET-ing (/keepalive) the current duration, PUT-ing (/keepalive/<duration)
+// a fresh keep alive duration, GET-ing (/volume) the list of volumes currently
+// served, PUT-ing (/volume/<volumeName>) a new volume, or by DELETE-ing
+// (/keepalive) the keep alive mechanism. Note that if tje keep alive mechanism
+// ever expired, the current duratiom will be reset to zero (i.e. no expiration).
 //
 //  PUT /volume/<volumeName>
 //  Content-Type: application/json

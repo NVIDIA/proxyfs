@@ -274,6 +274,12 @@ type volumeStruct struct {
 	//                                                                         .Done() each inodeLease after it is removed from inodeLeaseMap
 }
 
+type keepAliveControlStruct struct {
+	sync.WaitGroup
+	duration time.Duration
+	stopChan chan struct{}
+}
+
 type globalsStruct struct {
 	sync.Mutex                                    //
 	config               configStruct             //
@@ -291,7 +297,7 @@ type globalsStruct struct {
 	retryrpcServer       *retryrpc.Server         //
 	httpServer           *http.Server             //
 	httpServerWG         sync.WaitGroup           //
-	keepAliveDuration    time.Duration            // TODO
+	keepAliveControl     *keepAliveControlStruct  // if != nil, represents a possibly active (or recently exited) (*keepAliveControl).daemon()
 	stats                *statsStruct             //
 }
 
