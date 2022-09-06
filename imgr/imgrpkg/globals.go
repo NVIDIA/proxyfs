@@ -84,6 +84,7 @@ type statsStruct struct {
 	DeleteKeepAliveUsecs bucketstats.BucketLog2Round // DELETE /keepalive
 	DeleteVolumeUsecs    bucketstats.BucketLog2Round // DELETE /volume/<VolumeName>
 	GetConfigUsecs       bucketstats.BucketLog2Round // GET /config
+	GetKeepAliveUsecs    bucketstats.BucketLog2Round // GET /keepalive
 	GetStatsUsecs        bucketstats.BucketLog2Round // GET /stats
 	GetVersionUsecs      bucketstats.BucketLog2Round // GET /version
 	GetVolumeInodeUsecs  bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumber>
@@ -290,6 +291,7 @@ type globalsStruct struct {
 	retryrpcServer       *retryrpc.Server         //
 	httpServer           *http.Server             //
 	httpServerWG         sync.WaitGroup           //
+	keepAliveDuration    time.Duration            // TODO
 	stats                *statsStruct             //
 }
 
