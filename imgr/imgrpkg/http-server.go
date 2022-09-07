@@ -1622,7 +1622,7 @@ func (keepAliveControl *keepAliveControlStruct) daemon() {
 		if nil != err {
 			logFatal(err)
 		}
-		logWarnf("KeepAlive expired - resetting and deleting %v volumes", volumeMapLen)
+		logWarnf("KeepAlive expired - resetting and deleting %v volume(s)", volumeMapLen)
 		volumeList = make([]string, volumeMapLen)
 		for volumeListIndex = 0; volumeListIndex < volumeMapLen; volumeListIndex++ {
 			volumeNameAsKey, _, ok, err = globals.volumeMap.GetByIndex(volumeListIndex)
