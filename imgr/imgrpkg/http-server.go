@@ -174,6 +174,8 @@ func serveHTTPDeleteOfKeepAlive(responseWriter http.ResponseWriter) {
 		keepAliveControl.cancel()
 
 		responseWriter.WriteHeader(http.StatusOK)
+
+		logInfof("KeepAlive disabled")
 	}
 }
 
@@ -1451,11 +1453,12 @@ func serveHTTPPut(responseWriter http.ResponseWriter, requestPath string, reques
 
 func serveHTTPPutOfKeepAlive(responseWriter http.ResponseWriter, requestPath string) {
 	var (
-		err               error
-		keepAliveControl  *keepAliveControlStruct
-		keepAliveDuration time.Duration
-		pathSplit         []string
-		startTime         time.Time = time.Now()
+		err                  error
+		keepAliveControl     *keepAliveControlStruct
+		keepAliveDurationNew time.Duration
+		keepAliveDurationOld time.Duration
+		pathSplit            []string
+		startTime            time.Time = time.Now()
 	)
 
 	pathSplit = strings.Split(requestPath, "/")
@@ -1466,7 +1469,7 @@ func serveHTTPPutOfKeepAlive(responseWriter http.ResponseWriter, requestPath str
 			globals.stats.PutKeepAliveUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 		}()
 
-		keepAliveDuration, err = time.ParseDuration(pathSplit[2])
+		keepAliveDurationNew, err = time.ParseDuration(pathSplit[2])
 		if nil != err {
 			responseWriter.WriteHeader(http.StatusBadRequest)
 			return
@@ -1479,15 +1482,31 @@ func serveHTTPPutOfKeepAlive(responseWriter http.ResponseWriter, requestPath str
 		globals.keepAliveControl = nil // Avoid race
 		globals.Unlock()
 
-		if keepAliveControl != nil {
+		if keepAliveControl == nil {
+			keepAliveDurationOld = time.Duration(0)
+		} else {
 			keepAliveControl.cancel()
+			keepAliveDurationOld = keepAliveControl.duration
 		}
 
 		globals.Lock()
 		if globals.keepAliveControl == nil { // Avoid race
-			globals.keepAliveControl = keepAliveStart(keepAliveDuration)
+			if keepAliveDurationNew == time.Duration(0) {
+				if keepAliveDurationOld != time.Duration(0) {
+					logInfof("KeepAlive disabled")
+				}
+			} else {
+				if keepAliveDurationOld == time.Duration(0) {
+					logInfof("KeepAlive enabled with duration %v", keepAliveDurationNew)
+				} else if keepAliveDurationOld != keepAliveDurationNew {
+					logInfof("KeepAlive duration updated from %v to %v", keepAliveDurationOld, keepAliveDurationNew)
+				} else {
+					// KeepAlive duration unchanged
+				}
+				globals.keepAliveControl = keepAliveStart(keepAliveDurationNew)
+			}
+			globals.Unlock()
 		}
-		globals.Unlock()
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
 	}
@@ -1581,18 +1600,65 @@ func keepAliveStart(keepAliveDuration time.Duration) (keepAliveControl *keepAliv
 
 func (keepAliveControl *keepAliveControlStruct) daemon() {
 	var (
-		keepAliveTimer *time.Timer
+		err             error
+		keepAliveTimer  *time.Timer
+		ok              bool
+		volumeMapLen    int
+		volumeList      []string
+		volumeListIndex int
+		volumeNameAsKey sortedmap.Key
 	)
 
 	keepAliveTimer = time.NewTimer(keepAliveControl.duration)
 
 	select {
 	case <-keepAliveTimer.C:
-		fmt.Println("TODO: timeout occurred - time to expire all /volume/* volumes")
+		globals.Lock()
+		if globals.keepAliveControl == keepAliveControl {
+			globals.keepAliveControl = nil
+			close(keepAliveControl.stopChan)
+		}
+		volumeMapLen, err = globals.volumeMap.Len()
+		if nil != err {
+			logFatal(err)
+		}
+		logWarnf("KeepAlive expired - resetting and deleting %v volumes", volumeMapLen)
+		volumeList = make([]string, volumeMapLen)
+		for volumeListIndex = 0; volumeListIndex < volumeMapLen; volumeListIndex++ {
+			volumeNameAsKey, _, ok, err = globals.volumeMap.GetByIndex(volumeListIndex)
+			if nil != err {
+				logFatal(err)
+			}
+			if !ok {
+				logFatalf("globals.volumeMap[] len (%d) is wrong", volumeMapLen)
+			}
+			volumeList[volumeListIndex], ok = volumeNameAsKey.(string)
+			if !ok {
+				logFatalf("globals.volumeMap did not have a string Key at index %d", volumeListIndex)
+			}
+		}
+		globals.Unlock()
+		for volumeListIndex = 0; volumeListIndex < volumeMapLen; volumeListIndex++ {
+			keepAliveControl.Add(1)
+			go keepAliveControl.deleteVolume(volumeList[volumeListIndex])
+		}
 	case <-keepAliveControl.stopChan:
 		if !keepAliveTimer.Stop() {
 			<-keepAliveTimer.C
 		}
+	}
+
+	keepAliveControl.Done()
+}
+
+func (keepAliveControl *keepAliveControlStruct) deleteVolume(volumeName string) {
+	var (
+		err error
+	)
+
+	err = deleteVolume(volumeName)
+	if nil != err {
+		logFatalf("deleteVolume(\"%s\") failed: %v", volumeName, err)
 	}
 
 	keepAliveControl.Done()
