@@ -85,7 +85,7 @@
 // The RESTful API is provided by an embedded HTTP Server
 // (at URL http://<PrivateIPAddr>:<HTTPServerPort>) responds to the following:
 //
-//  DELETE /keapalive
+//  DELETE /keepalive
 //
 // This will disable the keep alive mechanism.
 //
