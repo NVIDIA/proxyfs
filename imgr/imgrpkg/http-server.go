@@ -853,11 +853,13 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, requestPath string
 			}
 		}
 
-		globals.Lock()
-		if globals.keepAliveControl == nil { // Avoid race
-			globals.keepAliveControl = keepAliveStart(keepAliveControl.duration)
+		if keepAliveControl != nil {
+			globals.Lock()
+			if globals.keepAliveControl == nil { // Avoid race
+				globals.keepAliveControl = keepAliveStart(keepAliveControl.duration)
+			}
+			globals.Unlock()
 		}
-		globals.Unlock()
 	case 3:
 		// Form: /volume/<VolumeName>
 
@@ -1481,11 +1483,13 @@ func serveHTTPPutOfKeepAlive(responseWriter http.ResponseWriter, requestPath str
 			keepAliveControl.cancel()
 		}
 
-		globals.Lock()
-		if globals.keepAliveControl == nil { // Avoid race
-			globals.keepAliveControl = keepAliveStart(keepAliveDuration)
+		if keepAliveControl != nil {
+			globals.Lock()
+			if globals.keepAliveControl == nil { // Avoid race
+				globals.keepAliveControl = keepAliveStart(keepAliveDuration)
+			}
+			globals.Unlock()
 		}
-		globals.Unlock()
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
 	}
@@ -1547,11 +1551,13 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, requestPath string
 			}
 		}
 
-		globals.Lock()
-		if globals.keepAliveControl == nil { // Avoid race
-			globals.keepAliveControl = keepAliveStart(keepAliveControl.duration)
+		if keepAliveControl != nil {
+			globals.Lock()
+			if globals.keepAliveControl == nil { // Avoid race
+				globals.keepAliveControl = keepAliveStart(keepAliveControl.duration)
+			}
+			globals.Unlock()
 		}
-		globals.Unlock()
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
 	}
