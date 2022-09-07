@@ -1483,13 +1483,11 @@ func serveHTTPPutOfKeepAlive(responseWriter http.ResponseWriter, requestPath str
 			keepAliveControl.cancel()
 		}
 
-		if keepAliveControl != nil {
-			globals.Lock()
-			if globals.keepAliveControl == nil { // Avoid race
-				globals.keepAliveControl = keepAliveStart(keepAliveDuration)
-			}
-			globals.Unlock()
+		globals.Lock()
+		if globals.keepAliveControl == nil { // Avoid race
+			globals.keepAliveControl = keepAliveStart(keepAliveDuration)
 		}
+		globals.Unlock()
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
 	}
