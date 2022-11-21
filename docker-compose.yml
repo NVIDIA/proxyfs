@@ -39,7 +39,7 @@ version: '3.8'
 
 services:
   swift:
-    image: dockerswiftaio/docker-swift:2.27.0
+    image: dockerswiftaio/docker-swift:2.29.0
     container_name: proxyfs_swift
     expose:
       - 8080                                  # curl http://swift:8080/info
@@ -55,7 +55,10 @@ services:
     container_name: proxyfs_dev
     depends_on:
       - swift
-    privileged: true
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - '/dev/fuse'
     expose:
       - 33123                                 # ICKPT.Port
       - 32356                                 # IMGR.RetryRPCPort
@@ -100,7 +103,6 @@ services:
     container_name: proxyfs_ickpt
     depends_on:
       - swift
-    privileged: true                          # Only needed if an iclient wants to be run from here
     expose:
       - 33123                                 # ICKPT.Port
     ports:
@@ -117,7 +119,6 @@ services:
     depends_on:
       - swift
       - ickpt
-    privileged: true                          # Only needed if an iclient wants to be run from here
     expose:
       - 32356                                 # IMGR.RetryRPCPort
       - 15346                                 # IMGR.HTTPServerPort
@@ -139,7 +140,10 @@ services:
     depends_on:
       - swift
       - imgr
-    privileged: true
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - '/dev/fuse'
     expose:
       - 15347                                 # ICLIENT.HTTPServerPort
     ports:
