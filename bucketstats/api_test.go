@@ -364,7 +364,6 @@ func TestTotaler(t *testing.T) {
 }
 
 // Test Bucketer specific functionality (which is mostly buckets)
-//
 func TestBucketer(t *testing.T) {
 
 	var (
@@ -553,7 +552,6 @@ func TestSprintStats(t *testing.T) {
 //
 // If panic() is called with a nil argument then this function also returns the
 // empty string.
-//
 func catchAPanic(aFunc func()) (panicStr string) {
 
 	defer func() {

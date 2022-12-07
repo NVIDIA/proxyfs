@@ -354,7 +354,6 @@ func lookupInode(inodeNumber uint64) (inode *inodeStruct) {
 //
 // Note that fissionFlags{Read|Write} are forced to be TRUE per the behavior of Linux VFS
 // and/or fuse.ko choosing to mask these during Do{Create|Open|OpenDir}() upcalls.
-//
 func createOpenHandle(inodeNumber uint64, fissionFlagsAppend bool, fissionFlagsRead bool, fissionFlagsWrite bool) (openHandle *openHandleStruct) {
 	openHandle = &openHandleStruct{
 		inodeNumber:        inodeNumber,
@@ -738,7 +737,6 @@ func (fileFlusher *fileInodeFlusherStruct) cancel() {
 //
 // The caller is assumed to mark the inode clean and reset the .superBlockInode*,
 // .dereferencedObjectNumberArray, and .putObject{Number|Buffer} fields.
-//
 func (inode *inodeStruct) flush() (inodeHeadLength uint64) {
 	var (
 		err            error
@@ -880,7 +878,6 @@ func flushInodesInSlice(inodeSlice []*inodeStruct) {
 // updated to reflect the dereferenced extent. Similarly, the fileInode's pending
 // updates for superBlockInode{BytesReferencedAdjustment|Object{Count|Size}} will
 // be updated.
-//
 func (fileInode *inodeStruct) recordExtent(startingFileOffset uint64, length uint64) {
 	var (
 		err                          error
@@ -994,7 +991,6 @@ func (fileInode *inodeStruct) recordExtent(startingFileOffset uint64, length uin
 // updated to reflect the dereferenced extent. Similarly, the fileInode's pending
 // updates for superBlockInode{BytesReferencedAdjustment|Object{Count|Size}} will
 // be updated.
-//
 func (fileInode *inodeStruct) unmapExtent(startingFileOffset uint64, length uint64) {
 	var (
 		err                          error

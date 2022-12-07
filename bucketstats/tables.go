@@ -17,7 +17,6 @@ import (
 // values they hold.
 
 // generate the tables for BucketStatsLogRoot2
-//
 func genLogRoot2Table() {
 
 	logRoot2Index := func(val int) (logRoot2_x float64, idx uint) {
@@ -41,7 +40,6 @@ func genLogRoot2Table() {
 }
 
 // generate the tables for BucketStatsLog2
-//
 func genLog2Table() {
 
 	log2Index := func(val int) (log2_x float64, idx uint) {
@@ -68,7 +66,6 @@ func genLog2Table() {
 // indexFunc() is either our tweaked version of log2(x) or logRoot2(x) with
 // float64 being the actual value and int being the bucket index its mapped
 // to.
-//
 func genIdxTable(name string, indexFunc func(int) (float64, uint)) {
 	var (
 		indent  int = 8
@@ -115,7 +112,6 @@ func genIdxTable(name string, indexFunc func(int) (float64, uint)) {
 // indexFunc() is either our tweaked version of log2(x) or logRoot2(x) for the
 // table with float64 being the actual value and int being the bucket index its
 // mapped to.
-//
 func genBucketTable(name string, indexFunc func(int) (float64, uint),
 	nBucket uint, bucketsPerBit uint) {
 
@@ -209,7 +205,6 @@ func genBucketTable(name string, indexFunc func(int) (float64, uint),
 
 // Compute round(sqrt(2)^n) for 0 <= n < 128 and return as a uint64 accurate in
 // all 64 bits.
-//
 func powRoot2(n uint) (pow64 uint64) {
 	var (
 		bigBase  big.Float
@@ -236,7 +231,6 @@ func powRoot2(n uint) (pow64 uint64) {
 
 // print a list of which bucket the first 256 values go in and the average
 // value represented by the bucket
-//
 func showDistr(bucketTable []uint8) {
 
 	// track info for each bucket
@@ -283,7 +277,6 @@ func showDistr(bucketTable []uint8) {
 //
 // One consequence is that the log base 2 statistics require 65 buckets for 64
 // bit numbers instead of 64 buckets.
-//
 var log2RoundIdxTable = [256]uint8{
 	//    0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15
 	// -Inf  0.0  1.0  1.6  2.0  2.3  2.6  2.8  3.0  3.2  3.3  3.5  3.6  3.7  3.8  3.9

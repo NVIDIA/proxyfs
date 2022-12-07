@@ -8,7 +8,6 @@
 // work with either on-disk PEM files and/or in-memory PEM blocks (byte slices).
 //
 // Inspired by https://shaneutt.com/blog/golang-ca-and-signed-cert-go/
-//
 package icertpkg
 
 import (
@@ -49,7 +48,6 @@ const (
 // certFile (if not "") and/or keyPEMBlock will be written to keyFile (if not "").
 // If certFile and keyFile are the same, both the CA Certificate and its Private
 // Key will be written to the common file.
-//
 func GenCACert(generateKeyAlgorithm string, subject pkix.Name, ttl time.Duration, certFile string, keyFile string) (certPEMBlock []byte, keyPEMBlock []byte, err error) {
 	certPEMBlock, keyPEMBlock, err = genCACert(generateKeyAlgorithm, subject, ttl, certFile, keyFile)
 	return
@@ -68,7 +66,6 @@ func GenCACert(generateKeyAlgorithm string, subject pkix.Name, ttl time.Duration
 // and/or endpointKeyPEMBlock will be written to endpointKeyFile (if not "").
 // If endpointCertFile and endpointKeyFile are the same, both the Endpoint
 // Certificate and its Private Key will be written to the common file.
-//
 func GenEndpointCert(generateKeyAlgorithm string, subject pkix.Name, dnsNames []string, ipAddresses []net.IP, ttl time.Duration, caCert interface{}, caKey interface{}, endpointCertFile string, endpointKeyFile string) (endpointCertPEMBlock []byte, endpointKeyPEMBlock []byte, err error) {
 	endpointCertPEMBlock, endpointKeyPEMBlock, err = genEndpointCert(generateKeyAlgorithm, subject, dnsNames, ipAddresses, ttl, caCert, caKey, endpointCertFile, endpointKeyFile)
 	return

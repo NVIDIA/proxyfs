@@ -169,7 +169,6 @@ func PathToAcctContObj(path string) (accountName string, containerName string, o
 }
 
 // Return the stack track of the caller, including this function.
-//
 func MyStackTrace() (stackTrace string) {
 
 	stackTraceBuf := make([]byte, 16384, 16384)
@@ -183,7 +182,6 @@ func MyStackTrace() (stackTrace string) {
 //
 // This function really should have some error checking to insure it matched
 // "goroutine" though there's no way to log a failure.
-//
 func StackTraceToGoId(buf []byte) uint64 {
 	buf = bytes.TrimPrefix(buf, []byte("goroutine "))
 	buf = buf[:bytes.IndexByte(buf, ' ')]
@@ -211,7 +209,6 @@ func StackTraceToGoId(buf []byte) uint64 {
 // /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/NVIDIA/proxyfs/stacktrace.go:9
 // created by main.main
 // /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/NVIDIA/proxyfs/stacktrace.go:16 +0x77
-//
 func StackTracesToMap(buf []byte) (traceMap map[uint64]string, stateMap map[uint64]string) {
 
 	var (
@@ -239,7 +236,6 @@ func StackTracesToMap(buf []byte) (traceMap map[uint64]string, stateMap map[uint
 // like locking.
 //
 // Intent is to have this now and hopefully remove it once we've gotten debugged.
-//
 func GetGID() uint64 {
 	b := make([]byte, 64)
 	_ = runtime.Stack(b, false)
@@ -264,7 +260,6 @@ func GetAFnName(level int) string {
 // Return separage strings containing calling function and package
 //
 // XXX TODO TEMPORARY: also return goroutine id
-//
 func GetFuncPackage(level int) (fn string, pkg string, gid uint64) {
 	// Get the combined function and package names of our caller
 	funcPkg := GetAFnName(level + 1)

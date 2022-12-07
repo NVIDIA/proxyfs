@@ -13,7 +13,6 @@ import (
 )
 
 // newLockRequest is called to create and initialize an inodeLockRequestStruct.
-//
 func newLockRequest() (inodeLockRequest *inodeLockRequestStruct) {
 	inodeLockRequest = &inodeLockRequestStruct{
 		inodeNumber: 0,
@@ -30,7 +29,6 @@ func newLockRequest() (inodeLockRequest *inodeLockRequestStruct) {
 //
 // It is expected that a caller to addThisLock(), when noticing locksHeld map is empty,
 // will call performInodeLockRetryDelay() before re-attempting a lock sequence.
-//
 func performInodeLockRetryDelay() {
 	var (
 		delay    time.Duration
@@ -70,25 +68,24 @@ func performInodeLockRetryDelay() {
 // holding a lock, attempting to acquire a lock, or releasing a lock). Hence, the only valid values
 // for inode.leaseState are:
 //
-//   inodeLeaseStateNone               - no lock requests may be granted
-//   inodeLeaseStateSharedGranted      - shared lock requests may be granted
-//   inodeLeaseStateExclusiveGranted   - either shared or exclusive lock requests may be granted
+//	inodeLeaseStateNone               - no lock requests may be granted
+//	inodeLeaseStateSharedGranted      - shared lock requests may be granted
+//	inodeLeaseStateExclusiveGranted   - either shared or exclusive lock requests may be granted
 //
 // During lock ownership transitions, other values should be expected:
 //
-//   inodeLeaseStateSharedRequested    - we are trying to grant a shared lock request
-//   inodeLeaseStateSharedPromoting    - we are trying to grant an exclusive lock request
-//   inodeLeaseStateExclusiveRequested - we are trying to grant an exclusive lock request
+//	inodeLeaseStateSharedRequested    - we are trying to grant a shared lock request
+//	inodeLeaseStateSharedPromoting    - we are trying to grant an exclusive lock request
+//	inodeLeaseStateExclusiveRequested - we are trying to grant an exclusive lock request
 //
 // The other inode.leaseState values occur during Unmount or some Lease Demote/Expired/Release
 // handling:
 //
-//   inodeLeaseStateSharedReleasing    - we are responding to an Unmount or Lease Release RPCInterrupt
-//   inodeLeaseStateSharedExpired      - upon learning our Shared Lease has expired
-//   inodeLeaseStateExclusiveDemoting  - we are responding to a Lease Demote RPCInterrupt
-//   inodeLeaseStateExclusiveReleasing - we are responding to an Unmount or Lease Release RPCInterrupt
-//   inodeLeaseStateExclusiveExpired   - upon learning our Exclusive Lease has expired
-//
+//	inodeLeaseStateSharedReleasing    - we are responding to an Unmount or Lease Release RPCInterrupt
+//	inodeLeaseStateSharedExpired      - upon learning our Shared Lease has expired
+//	inodeLeaseStateExclusiveDemoting  - we are responding to a Lease Demote RPCInterrupt
+//	inodeLeaseStateExclusiveReleasing - we are responding to an Unmount or Lease Release RPCInterrupt
+//	inodeLeaseStateExclusiveExpired   - upon learning our Exclusive Lease has expired
 func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 	var (
 		err           error
@@ -446,7 +443,6 @@ func (inodeLockRequest *inodeLockRequestStruct) addThisLock() {
 }
 
 // unlockAll is called to explicitly release all locks listed in the locksHeld map.
-//
 func (inodeLockRequest *inodeLockRequestStruct) unlockAll() {
 	var (
 		blockedInodeLockRequest *inodeLockRequestStruct
@@ -620,7 +616,6 @@ func (inodeLockRequest *inodeLockRequestStruct) unlockAll() {
 // the inode indicated by the specified inodeNumber and, if an Exclusive Lease is currently
 // held, demote it. It is expected that this is called in a goroutine and, thus, signals
 // completion via the specified wg (if non-nil).
-//
 func demoteInodeLease(inodeNumber uint64, wg *sync.WaitGroup) {
 	var (
 		blockedInodeLockRequest            *inodeLockRequestStruct
@@ -786,7 +781,6 @@ Retry:
 // the inode indicated by the specified inodeNumber and, if a Lease is currently held,
 // release it. It is expected that this is called in a goroutine and, thus, signals
 // completion via the specified wg (if non-nil).
-//
 func releaseInodeLease(inodeNumber uint64, wg *sync.WaitGroup) {
 	var (
 		blockedInodeLockRequest            *inodeLockRequestStruct
@@ -1029,7 +1023,6 @@ Retry:
 
 // demoteAllExclusiveLeases will schedule all inodeStructs in the globals.exclusiveLeaseLRU
 // to demote their Exclusive Lease.
-//
 func demoteAllExclusiveLeases() {
 	var (
 		inode          *inodeStruct
@@ -1062,7 +1055,6 @@ func demoteAllExclusiveLeases() {
 
 // releaseAllLeases will schedule all inodeStructs in either the globals.sharedLeaseLRU
 // or globals.exclusiveLeaseLRU to release their Lease.
-//
 func releaseAllLeases() {
 	var (
 		inode          *inodeStruct

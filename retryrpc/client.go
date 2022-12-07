@@ -45,14 +45,13 @@ type clientSideStatsInfo struct {
 // This is outside of our initial requirements but something we should
 // review.
 
-//
 // Send algorithm is:
-// 1. Build ctx including channel for reply struct
-// 2. Call goroutine to do marshalling and sending of
-//    request to server
-// 3. Wait on channel in reply struct for result
-// 4. readResponses goroutine will read response on socket
-//    and call a goroutine to do unmarshalling and notification
+//  1. Build ctx including channel for reply struct
+//  2. Call goroutine to do marshalling and sending of
+//     request to server
+//  3. Wait on channel in reply struct for result
+//  4. readResponses goroutine will read response on socket
+//     and call a goroutine to do unmarshalling and notification
 func (client *Client) send(method string, rpcRequest interface{}, rpcReply interface{}) (err error) {
 	var (
 		connectionRetryCount int
@@ -574,7 +573,7 @@ func (client *Client) reDial() (err error) {
 
 // readClientID reads unique client ID response from server
 //
-// Client lock is held
+// # Client lock is held
 //
 // NOTE: Client lock is held
 func (client *Client) readClientID(callingGenNum uint64) (myUniqueID uint64, err error) {

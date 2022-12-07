@@ -9,16 +9,15 @@
 // To configure an iswiftpkg instance, Start() is called passing, as the sole
 // argument, a package conf ConfMap. Here is a sample .conf file:
 //
-//  [ISWIFT]
-//  SwiftProxyIPAddr:       127.0.0.1
-//  SwiftProxyTCPPort:      8080
+//	[ISWIFT]
+//	SwiftProxyIPAddr:       127.0.0.1
+//	SwiftProxyTCPPort:      8080
 //
-//  MaxAccountNameLength:   256
-//  MaxContainerNameLength: 256
-//  MaxObjectNameLength:    1024
-//  AccountListingLimit:    10000
-//  ContainerListingLimit:  10000
-//
+//	MaxAccountNameLength:   256
+//	MaxContainerNameLength: 256
+//	MaxObjectNameLength:    1024
+//	AccountListingLimit:    10000
+//	ContainerListingLimit:  10000
 package iswiftpkg
 
 import (
@@ -27,14 +26,12 @@ import (
 
 // Start is called to start serving the NoAuth Swift Proxy Port and,
 // optionally, the Auth Swift Proxy Port.
-//
 func Start(confMap conf.ConfMap) (err error) {
 	err = start(confMap)
 	return
 }
 
 // Stop is called to stop serving.
-//
 func Stop() (err error) {
 	err = stop()
 	return
@@ -42,7 +39,6 @@ func Stop() (err error) {
 
 // ForceReAuth is called to force a "401 Unauthorized" response to a
 // client's subsequent request forcing the client to reauthenticate.
-//
 func ForceReAuth() {
 	forceReAuth()
 }

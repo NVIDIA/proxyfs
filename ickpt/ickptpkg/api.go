@@ -29,32 +29,32 @@
 // operations of deleting and setting/updating a ProxyFS Volume's CheckPoint.
 // The Path should simply be empty for all other operations.
 //
-//  DELETE /
+//	DELETE /
 //
 // Following a successful GET of the X-Storage-Url specifying the X-Auth-Token
 // received, the local ilayout.CheckPointV*Struct value retained for that X-Storage-Url
 // will be marked for deletion committed via a corresponding POST. The linkage between
 // DELETE and POST requests is that they must share a common Path value.
 //
-//  GET /
+//	GET /
 //
 // Following a successful GET of the X-Storage-Url specifying the X-Auth-Token
 // received, the local ilayout.CheckPointV*Struct value retained for that X-Storage-Url
 // will be returned. If no such value has been retained, the value returned in the GET
 // will be returned instead. An uncommitted prior DELETE or PUT is ignored and discarded.
 //
-//  HEAD /
+//	HEAD /
 //
 // A successful 204 No Content response indicates the package instance is in operation.
 //
-//  POST /
+//	POST /
 //
 // Following a successful GET of the X-Storage-Url specifying the X-Auth-Token
 // received, the prior as-yet uncommitted DELETE or PUT will be committed. In
 // order to align this POST with the uncommitted DELETE or PUT, their Path values
 // must match.
 //
-//  PUT /
+//	PUT /
 //
 // Following a successful GET of the X-Storage-Url specifying the X-Auth-Token
 // received, the local ilayout.CheckPointV*Struct value for that X-Storage-Url
@@ -64,17 +64,16 @@
 // To configure an ickptpkg instance, Start() is called passing, as the sole
 // argument, a package conf ConfMap. Here is a sample .conf file:
 //
-//  [ICKPT]
-//  IPAddr:                  ickpt
-//  Port:                    33123        # TCP or TLS as determined by:
-//  CertFilePath:                         #  TCP: if all of {Cert|Key|CACert}FilePath are missing or empty
-//  KeyFilePath:                          #   - or -
-//  CACertFilePath:                       #  TLS: if all of {Cert|Key|CACert}FilePath are present
-//  DataBasePath:            /tmp/ickptDB # Implicitly created if if non-existent
-//  SwiftTimeout:            10m
-//  SwiftConnectionPoolSize: 128
-//  TransactionTimeout:      10s
-//
+//	[ICKPT]
+//	IPAddr:                  ickpt
+//	Port:                    33123        # TCP or TLS as determined by:
+//	CertFilePath:                         #  TCP: if all of {Cert|Key|CACert}FilePath are missing or empty
+//	KeyFilePath:                          #   - or -
+//	CACertFilePath:                       #  TLS: if all of {Cert|Key|CACert}FilePath are present
+//	DataBasePath:            /tmp/ickptDB # Implicitly created if if non-existent
+//	SwiftTimeout:            10m
+//	SwiftConnectionPoolSize: 128
+//	TransactionTimeout:      10s
 package ickptpkg
 
 import (
@@ -82,14 +81,12 @@ import (
 )
 
 // Start is called to start serving.
-//
 func Start(confMap conf.ConfMap) (err error) {
 	err = start(confMap)
 	return
 }
 
 // Stop is called to stop serving.
-//
 func Stop() (err error) {
 	err = stop()
 	return

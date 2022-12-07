@@ -349,7 +349,6 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 //
 // To enable efficient comparisons, the elements of the ConfMap will be
 // sorted in the output (both by sectionName and by optionName).
-//
 func (confMap ConfMap) Dump() (confMapString string) {
 	var (
 		confOption                ConfMapOption
@@ -835,29 +834,29 @@ func (confMap ConfMap) FetchOptionValueDuration(sectionName string, optionName s
 //
 // From RFC 4122, a UUID string is defined as follows:
 //
-//   UUID                   = time-low "-" time-mid "-" time-high-and-version "-" clock-seq-and-reserved clock-seq-low "-" node
-//   time-low               = 4hexOctet
-//   time-mid               = 2hexOctet
-//   time-high-and-version  = 2hexOctet
-//   clock-seq-and-reserved = hexOctet
-//   clock-seq-low          = hexOctet
-//   node                   = 6hexOctet
-//   hexOctet               = hexDigit hexDigit
-//   hexDigit               = "0" / "1" / "2" / "3" / "4" / "5" / "6" / "7" / "8" / "9" / "a" / "b" / "c" / "d" / "e" / "f" / "A" / "B" / "C" / "D" / "E" / "F"
+//	UUID                   = time-low "-" time-mid "-" time-high-and-version "-" clock-seq-and-reserved clock-seq-low "-" node
+//	time-low               = 4hexOctet
+//	time-mid               = 2hexOctet
+//	time-high-and-version  = 2hexOctet
+//	clock-seq-and-reserved = hexOctet
+//	clock-seq-low          = hexOctet
+//	node                   = 6hexOctet
+//	hexOctet               = hexDigit hexDigit
+//	hexDigit               = "0" / "1" / "2" / "3" / "4" / "5" / "6" / "7" / "8" / "9" / "a" / "b" / "c" / "d" / "e" / "f" / "A" / "B" / "C" / "D" / "E" / "F"
 //
 // From RFC 4122, a UUID (i.e. "in memory") is defined as follows (BigEndian/NetworkByteOrder):
 //
-//      0                   1                   2                   3
-//       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |                          time_low                             |
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |       time_mid                |         time_hi_and_version   |
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |clk_seq_hi_res |  clk_seq_low  |         node (0-1)            |
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//      |                         node (2-5)                            |
-//      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	0                   1                   2                   3
+//	 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|                          time_low                             |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|       time_mid                |         time_hi_and_version   |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|clk_seq_hi_res |  clk_seq_low  |         node (0-1)            |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//	|                         node (2-5)                            |
+//	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 func (confMap ConfMap) FetchOptionValueUUID(sectionName string, optionName string) (optionValue []byte, err error) {
 	optionValue = make([]byte, 16)
 

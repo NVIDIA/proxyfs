@@ -24,7 +24,6 @@ type authInStruct struct {
 //
 // The format of authInJSON is determined by the Go JSON unmarshalling conventions
 // of the AuthInStruct declared above.
-//
 func PerformAuth(authInJSON string) (authToken string, storageURL string, err error) {
 	var (
 		authIn          authInStruct
