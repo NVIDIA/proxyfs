@@ -1,5 +1,15 @@
 # ProxyFS Release Notes
 
+## 2.03.0 (December 6, 2022)
+
+### Bug Fixes:
+
+Resolved a lease deadlock scenario. As part of this fix, dismounts or shutdowns of iclients now triggers implicit releasing of all of their held leases.
+
+### Notes:
+
+There is now a /keepalive URL API that, if configured to automatically exit, will prevent that. This is a feature implemented to enable an overseer to have confidence that if the overseer cannot communiate with an imgr that the imgr will dismount and stop serving any volumes. This allows for the overseer to relocate the serving of the volume(s) previously served by the unreachable imgr to a different imgr without risking the unsupported case where more than one imgr thinks it should be serving the same volume.
+
 ## 2.02.0 (May 6, 2022)
 
 ### Notes:

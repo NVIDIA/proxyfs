@@ -63,6 +63,13 @@ func performMountFUSE() (err error) {
 }
 
 func performUnmountFUSE() (err error) {
+	var (
+		inode            *inodeStruct
+		inodeListElement *list.Element
+		ok               bool
+		wg               sync.WaitGroup
+	)
+
 	err = globals.fissionVolume.DoUnmount()
 	if nil != err {
 		return
@@ -70,10 +77,42 @@ func performUnmountFUSE() (err error) {
 
 	globals.fissionVolume = nil
 
-	// TODO: Here would be a great place to at least flush any dirty inodes
-
 	globals.fuseEntryValidDurationSec, globals.fuseEntryValidDurationNSec = 0, 0
 	globals.fuseAttrValidDurationSec, globals.fuseAttrValidDurationNSec = 0, 0
+
+	globals.Lock()
+
+	inodeListElement = globals.sharedLeaseLRU.Front()
+
+	for inodeListElement != nil {
+		inode, ok = inodeListElement.Value.(*inodeStruct)
+		if !ok {
+			logFatalf("inodeListElement.Value.(*inodeStruct) returned !ok")
+		}
+
+		wg.Add(1)
+		go releaseInodeLease(inode.inodeNumber, &wg)
+
+		inodeListElement = inodeListElement.Next()
+	}
+
+	inodeListElement = globals.exclusiveLeaseLRU.Front()
+
+	for inodeListElement != nil {
+		inode, ok = inodeListElement.Value.(*inodeStruct)
+		if !ok {
+			logFatalf("inodeListElement.Value.(*inodeStruct) returned !ok")
+		}
+
+		wg.Add(1)
+		go releaseInodeLease(inode.inodeNumber, &wg)
+
+		inodeListElement = inodeListElement.Next()
+	}
+
+	globals.Unlock()
+
+	wg.Wait()
 
 	err = nil
 	return

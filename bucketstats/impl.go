@@ -23,7 +23,6 @@ var (
 
 // Register a set of statistics, where the statistics are one or more fields in
 // the passed structure.
-//
 func register(pkgName string, statsGroupName string, statsStruct interface{}) {
 
 	var ok bool
@@ -157,7 +156,6 @@ func unRegister(pkgName string, statsGroupName string) {
 }
 
 // Return the selected group(s) of statistics as a string.
-//
 func sprintStats(statFmt StatStringFormat, pkgName string, statsGroupName string) (statValues string) {
 
 	statsNameMapLock.Lock()
@@ -246,7 +244,6 @@ func sprintStatsStruct(statFmt StatStringFormat, pkgName string, statsGroupName 
 }
 
 // Construct and return a statistics name (fully qualified field name) in the specified format.
-//
 func statisticName(statFmt StatStringFormat, pkgName string, statsGroupName string, fieldName string) string {
 
 	switch statFmt {
@@ -273,7 +270,6 @@ func statisticName(statFmt StatStringFormat, pkgName string, statsGroupName stri
 }
 
 // Return the "name" of the bucket that would hold 'n' as the string "2^x".
-//
 func bucketNameLog2(value uint64) string {
 
 	var idx uint
@@ -289,7 +285,6 @@ func bucketNameLog2(value uint64) string {
 
 // Return the "name" of the bucket that would hold 'n' as the string "2^x",
 // where x can have the suffix ".5" as in "2^7.5".
-//
 func bucketNameLogRoot2(value uint64) string {
 
 	var idx uint
@@ -307,7 +302,6 @@ func bucketNameLogRoot2(value uint64) string {
 }
 
 // Return a string with the statistic's value in the specified format.
-//
 func (this *Total) sprint(statFmt StatStringFormat, pkgName string, statsGroupName string) string {
 
 	statName := statisticName(statFmt, pkgName, statsGroupName, this.Name)
@@ -321,7 +315,6 @@ func (this *Total) sprint(statFmt StatStringFormat, pkgName string, statsGroupNa
 }
 
 // Return a string with the statistic's value in the specified format.
-//
 func (this *Average) sprint(statFmt StatStringFormat, pkgName string, statsGroupName string) string {
 
 	statName := statisticName(statFmt, pkgName, statsGroupName, this.Name)
@@ -341,7 +334,6 @@ func (this *Average) sprint(statFmt StatStringFormat, pkgName string, statsGroup
 
 // The canonical distribution for a bucketized statistic is an array of BucketInfo.
 // Create one based on the information for this bucketstat .
-//
 func bucketDistMake(nBucket uint, statBuckets []uint32, bucketInfoBase []BucketInfo) []BucketInfo {
 
 	// copy the base []BucketInfo before modifying it
@@ -371,11 +363,12 @@ func bucketDistMake(nBucket uint, statBuckets []uint32, bucketInfoBase []BucketI
 //
 // o the index of the first entry with a non-zero count
 // o the index + 1 of the last entry with a non-zero count, or zero if no such
-//   bucket exists
+//
+//	bucket exists
+//
 // o the count (number things in buckets)
 // o sum of counts * count_meanVal, and
 // o mean (average)
-//
 func bucketCalcStat(bucketInfo []BucketInfo) (firstIdx int, maxIdx int, count uint64, sum uint64, mean uint64) {
 
 	var (
@@ -421,7 +414,6 @@ func bucketCalcStat(bucketInfo []BucketInfo) (firstIdx int, maxIdx int, count ui
 }
 
 // Return a string with the bucketized statistic content in the specified format.
-//
 func bucketSprint(statFmt StatStringFormat, pkgName string, statsGroupName string, fieldName string,
 	bucketInfo []BucketInfo) string {
 
@@ -459,7 +451,6 @@ func bucketSprint(statFmt StatStringFormat, pkgName string, statsGroupName strin
 }
 
 // Replace illegal characters in names with underbar (`_`)
-//
 func scrubName(name string) string {
 
 	// Names should include only pritable characters that are not

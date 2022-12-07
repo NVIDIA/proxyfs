@@ -4,7 +4,8 @@
 package iclientpkg
 
 // To use: fmt.Sprintf(indexDotHTMLTemplate, proxyfsVersion)
-//                                               %[1]v
+//
+//	%[1]v
 const indexDotHTMLTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -93,7 +94,8 @@ const indexDotHTMLTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(configTemplate, proxyfsVersion, confMapJSONString)
-//                                          %[1]v            %[2]v
+//
+//	%[1]v            %[2]v
 const configTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -152,7 +154,8 @@ const configTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(leasesTemplate, proxyfsVersion, inodeLeaseTableJSONString)
-//                                          %[1]v            %[2]v
+//
+//	%[1]v            %[2]v
 const leasesTemplate string = `<!doctype html>
 <html lang="en">
   <head>

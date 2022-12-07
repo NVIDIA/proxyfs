@@ -44,7 +44,8 @@
 #          [-d|--detach]                                              \
 #          [-it]                                                      \
 #          [--rm]                                                     \
-#          [--privileged]                                             \
+#          [--cap-add SYS_ADMIN]                                      \
+#          [--device /dev/fuse]                                       \
 #          [--mount src="$(pwd)",target="/src",type=bind]             \
 #          [--env DISPLAY=<hostOrIP>:<displayNumber>[.<screenNumber]] \
 #          <image id>|<repository>[:<tag>]
@@ -53,8 +54,11 @@
 #     -d|--detach:   tells Docker to detach from running container 
 #     -it:           tells Docker to run container interactively
 #     --rm:          tells Docker to destroy container upon exit
-#     --privileged:
-#       1) tells Docker to, among other things, grant access to /dev/fuse
+#     --cap-add:
+#       1) tells Docker to enable FUSE mounts
+#       2) only useful for --target dev and --target iclient
+#     --device:
+#       1) tells Docker to grant access to /dev/fuse
 #       2) only useful for --target dev and --target iclient
 #     --mount:
 #       1) bind mounts the context into /src in the container
@@ -62,11 +66,11 @@
 #       3) only useful for --target dev
 #     --env DISPLAY: tells Docker to set ENV DISPLAY for X apps (e.g. wireshark)
 
-FROM alpine:3.15.0 as base
+FROM alpine:3.17 as base
 RUN apk add --no-cache libc6-compat
 
 FROM base as dev
-ARG GolangVersion=1.18
+ARG GolangVersion=1.19.4
 RUN apk add --no-cache               \
                        bind-tools    \
                        curl          \
@@ -94,6 +98,7 @@ RUN go build github.com/go-delve/delve/cmd/dlv
 RUN cp dlv /usr/local/go/bin/.
 VOLUME /src
 WORKDIR /src
+RUN git config --global --add safe.directory /src
 
 FROM dev as build
 ARG MakeTarget

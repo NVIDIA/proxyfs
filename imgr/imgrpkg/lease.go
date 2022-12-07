@@ -13,14 +13,10 @@ import (
 )
 
 func (inodeLease *inodeLeaseStruct) handler() {
-	var (
-		leaseRequestOperation *leaseRequestOperationStruct
-	)
-
 	for {
 		select {
-		case leaseRequestOperation = <-inodeLease.requestChan:
-			inodeLease.handleOperation(leaseRequestOperation)
+		case _ = <-inodeLease.requestChan:
+			inodeLease.handleRequestList()
 		case <-inodeLease.longAgoTimer.C:
 			inodeLease.handleLongAgoTimerPop()
 		case <-inodeLease.interruptTimer.C:
@@ -31,434 +27,491 @@ func (inodeLease *inodeLeaseStruct) handler() {
 	}
 }
 
-func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *leaseRequestOperationStruct) {
+func (inodeLease *inodeLeaseStruct) handleRequestList() {
 	var (
-		err                      error
-		inodeLeaseExpirerWG      *sync.WaitGroup
-		leaseRequest             *leaseRequestStruct
-		leaseRequestElement      *list.Element
-		ok                       bool
-		rpcInterrupt             *RPCInterrupt
-		rpcInterruptBuf          []byte
-		sharedHolderLeaseRequest *leaseRequestStruct
-		sharedHolderListElement  *list.Element
+		err                          error
+		inodeLeaseExpirerWG          *sync.WaitGroup
+		leaseRequest                 *leaseRequestStruct
+		leaseRequestElement          *list.Element
+		leaseRequestOperation        *leaseRequestOperationStruct
+		leaseRequestOperationElement *list.Element
+		ok                           bool
+		rpcInterrupt                 *RPCInterrupt
+		rpcInterruptBuf              []byte
+		sharedHolderLeaseRequest     *leaseRequestStruct
+		sharedHolderListElement      *list.Element
 	)
 
-	globals.Lock()
-
-	if globals.inodeLeaseExpirerWG != nil {
-		inodeLeaseExpirerWG = globals.inodeLeaseExpirerWG
-		globals.Unlock()
-		inodeLeaseExpirerWG.Wait()
+	for {
 		globals.Lock()
-	}
 
-	globals.inodeLeaseLRU.MoveToBack(inodeLease.lruElement)
-
-	switch leaseRequestOperation.LeaseRequestType {
-	case LeaseRequestTypeShared:
-		_, ok = leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber]
-		if ok {
-			leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-		} else { // leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] returned !ok
-			leaseRequest = &leaseRequestStruct{
-				mount:        leaseRequestOperation.mount,
-				inodeLease:   inodeLease,
-				requestState: leaseRequestStateSharedRequested,
-				replyChan:    leaseRequestOperation.replyChan,
-			}
-			leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] = leaseRequest
-			switch inodeLease.leaseState {
-			case inodeLeaseStateNone:
-				leaseRequest.requestState = leaseRequestStateSharedGranted
-				inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
-				leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-				inodeLease.lastGrantTime = time.Now()
-				inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-				leaseRequest.replyChan <- LeaseResponseTypeShared
-			case inodeLeaseStateSharedGrantedRecently:
-				if !inodeLease.longAgoTimer.Stop() {
-					<-inodeLease.longAgoTimer.C
-				}
-				inodeLease.lastGrantTime = time.Time{}
-				inodeLease.longAgoTimer = &time.Timer{}
-				leaseRequest.requestState = leaseRequestStateSharedGranted
-				inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
-				leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-				inodeLease.lastGrantTime = time.Now()
-				inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-				leaseRequest.replyChan <- LeaseResponseTypeShared
-			case inodeLeaseStateSharedGrantedLongAgo:
-				leaseRequest.requestState = leaseRequestStateSharedGranted
-				inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
-				leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-				inodeLease.lastGrantTime = time.Now()
-				inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-				leaseRequest.replyChan <- LeaseResponseTypeShared
-			case inodeLeaseStateSharedPromoting:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateSharedReleasing:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateSharedExpired:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeShared, found unexpected inodeLease.leaseState inodeLeaseStateSharedExpired")
-			case inodeLeaseStateExclusiveGrantedRecently:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateExclusiveGrantedLongAgo:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-				inodeLease.leaseState = inodeLeaseStateExclusiveDemoting
-				inodeLease.demotingHolder = inodeLease.exclusiveHolder
-				inodeLease.demotingHolder.requestState = leaseRequestStateExclusiveDemoting
-				inodeLease.exclusiveHolder = nil
-				rpcInterrupt = &RPCInterrupt{
-					RPCInterruptType: RPCInterruptTypeDemote,
-					InodeNumber:      inodeLease.inodeNumber,
-				}
-				rpcInterruptBuf, err = json.Marshal(rpcInterrupt)
-				if nil != err {
-					logFatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 1]", rpcInterrupt, err)
-				}
-				globals.retryrpcServer.SendCallback(inodeLease.demotingHolder.mount.retryRPCClientID, rpcInterruptBuf)
-				logTracef("<== [RPC] SendCallback(clientID: 0x%016X, rpcInterrupt: %+v)", inodeLease.demotingHolder.mount.retryRPCClientID, rpcInterrupt)
-				inodeLease.lastInterruptTime = time.Now()
-				inodeLease.interruptsSent = 1
-				inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
-			case inodeLeaseStateExclusiveDemoting:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateExclusiveReleasing:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateExclusiveExpired:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeShared, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveExpired")
-			default:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeShared, found unknown inodeLease.leaseState: %v", inodeLease.leaseState)
-			}
+		if globals.inodeLeaseExpirerWG != nil {
+			inodeLeaseExpirerWG = globals.inodeLeaseExpirerWG
+			globals.Unlock()
+			inodeLeaseExpirerWG.Wait()
+			globals.Lock()
 		}
-	case LeaseRequestTypePromote:
-		leaseRequest, ok = leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber]
-		if ok {
-			if leaseRequestStateSharedGranted == leaseRequest.requestState {
+
+		leaseRequestOperationElement = inodeLease.requestList.Front()
+
+		if leaseRequestOperationElement == nil {
+			globals.Unlock()
+			return
+		}
+
+		leaseRequestOperation, ok = leaseRequestOperationElement.Value.(*leaseRequestOperationStruct)
+		if !ok {
+			logFatalf("leaseRequestOperationElement.Value.(*leaseRequestOperationStruct) returned !ok")
+		}
+
+		_ = inodeLease.requestList.Remove(leaseRequestOperationElement)
+
+		globals.inodeLeaseLRU.MoveToBack(inodeLease.lruElement)
+
+		switch leaseRequestOperation.LeaseRequestType {
+		case LeaseRequestTypeShared:
+			_, ok = leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber]
+			if ok {
+				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+			} else { // leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] returned !ok
+				leaseRequest = &leaseRequestStruct{
+					mount:        leaseRequestOperation.mount,
+					inodeLease:   inodeLease,
+					requestState: leaseRequestStateSharedRequested,
+					replyChan:    leaseRequestOperation.replyChan,
+				}
+				leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] = leaseRequest
 				switch inodeLease.leaseState {
 				case inodeLeaseStateNone:
-					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateNone")
+					leaseRequest.requestState = leaseRequestStateSharedGranted
+					inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
+					leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+					inodeLease.lastGrantTime = time.Now()
+					inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+					leaseRequest.replyChan <- LeaseResponseTypeShared
 				case inodeLeaseStateSharedGrantedRecently:
-					if nil == inodeLease.promotingHolder {
+					if !inodeLease.longAgoTimer.Stop() {
+						<-inodeLease.longAgoTimer.C
+					}
+					inodeLease.lastGrantTime = time.Time{}
+					inodeLease.longAgoTimer = &time.Timer{}
+					leaseRequest.requestState = leaseRequestStateSharedGranted
+					inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
+					leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+					inodeLease.lastGrantTime = time.Now()
+					inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+					leaseRequest.replyChan <- LeaseResponseTypeShared
+				case inodeLeaseStateSharedGrantedLongAgo:
+					leaseRequest.requestState = leaseRequestStateSharedGranted
+					inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
+					leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+					inodeLease.lastGrantTime = time.Now()
+					inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+					leaseRequest.replyChan <- LeaseResponseTypeShared
+				case inodeLeaseStateSharedPromoting:
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
+				case inodeLeaseStateSharedReleasing:
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
+				case inodeLeaseStateSharedExpired:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeShared, found unexpected inodeLease.leaseState inodeLeaseStateSharedExpired")
+				case inodeLeaseStateExclusiveGrantedRecently:
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
+				case inodeLeaseStateExclusiveGrantedLongAgo:
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
+					inodeLease.leaseState = inodeLeaseStateExclusiveDemoting
+					inodeLease.demotingHolder = inodeLease.exclusiveHolder
+					inodeLease.demotingHolder.requestState = leaseRequestStateExclusiveDemoting
+					inodeLease.exclusiveHolder = nil
+					rpcInterrupt = &RPCInterrupt{
+						RPCInterruptType: RPCInterruptTypeDemote,
+						InodeNumber:      inodeLease.inodeNumber,
+					}
+					rpcInterruptBuf, err = json.Marshal(rpcInterrupt)
+					if nil != err {
+						logFatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 1]", rpcInterrupt, err)
+					}
+					globals.retryrpcServer.SendCallback(inodeLease.demotingHolder.mount.retryRPCClientID, rpcInterruptBuf)
+					logTracef("<== [RPC] SendCallback(clientID: 0x%016X, rpcInterrupt: %+v)", inodeLease.demotingHolder.mount.retryRPCClientID, rpcInterrupt)
+					inodeLease.lastInterruptTime = time.Now()
+					inodeLease.interruptsSent = 1
+					inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
+				case inodeLeaseStateExclusiveDemoting:
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
+				case inodeLeaseStateExclusiveReleasing:
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
+				case inodeLeaseStateExclusiveExpired:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeShared, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveExpired")
+				default:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeShared, found unknown inodeLease.leaseState: %v", inodeLease.leaseState)
+				}
+			}
+		case LeaseRequestTypePromote:
+			leaseRequest, ok = leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber]
+			if ok {
+				if leaseRequestStateSharedGranted == leaseRequest.requestState {
+					switch inodeLease.leaseState {
+					case inodeLeaseStateNone:
+						logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateNone")
+					case inodeLeaseStateSharedGrantedRecently:
+						if nil == inodeLease.promotingHolder {
+							_ = inodeLease.sharedHoldersList.Remove(leaseRequest.listElement)
+							leaseRequest.listElement = nil
+							if inodeLease.sharedHoldersList.Len() == 0 {
+								leaseRequest.requestState = leaseRequestStateExclusiveGranted
+								leaseRequestOperation.replyChan <- LeaseResponseTypePromoted
+								inodeLease.exclusiveHolder = leaseRequest
+								inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
+								inodeLease.lastGrantTime = time.Now()
+								inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+							} else {
+								inodeLease.promotingHolder = leaseRequest
+								leaseRequest.replyChan = leaseRequestOperation.replyChan
+							}
+						} else { // nil != inodeLease.promotingHolder
+							leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+						}
+					case inodeLeaseStateSharedGrantedLongAgo:
 						_ = inodeLease.sharedHoldersList.Remove(leaseRequest.listElement)
 						leaseRequest.listElement = nil
 						if inodeLease.sharedHoldersList.Len() == 0 {
+							inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
+							inodeLease.exclusiveHolder = leaseRequest
 							leaseRequest.requestState = leaseRequestStateExclusiveGranted
 							leaseRequestOperation.replyChan <- LeaseResponseTypePromoted
-							inodeLease.exclusiveHolder = leaseRequest
-							inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
 							inodeLease.lastGrantTime = time.Now()
 							inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
 						} else {
-							inodeLease.promotingHolder = leaseRequest
 							leaseRequest.replyChan = leaseRequestOperation.replyChan
+							inodeLease.leaseState = inodeLeaseStateSharedPromoting
+							inodeLease.promotingHolder = leaseRequest
+							leaseRequest.requestState = leaseRequestStateSharedPromoting
+							rpcInterrupt = &RPCInterrupt{
+								RPCInterruptType: RPCInterruptTypeRelease,
+								InodeNumber:      inodeLease.inodeNumber,
+							}
+							rpcInterruptBuf, err = json.Marshal(rpcInterrupt)
+							if nil != err {
+								logFatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 2]", rpcInterrupt, err)
+							}
+							for nil != inodeLease.sharedHoldersList.Front() {
+								leaseRequestElement = inodeLease.sharedHoldersList.Front()
+								leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
+								_ = inodeLease.sharedHoldersList.Remove(leaseRequestElement)
+								leaseRequest.listElement = inodeLease.releasingHoldersList.PushBack(leaseRequest)
+								leaseRequest.requestState = leaseRequestStateSharedReleasing
+								globals.retryrpcServer.SendCallback(leaseRequest.mount.retryRPCClientID, rpcInterruptBuf)
+								logTracef("<== [RPC] SendCallback(clientID: 0x%016X, rpcInterrupt: %+v)", leaseRequest.mount.retryRPCClientID, rpcInterrupt)
+							}
+							inodeLease.lastInterruptTime = time.Now()
+							inodeLease.interruptsSent = 1
+							inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
 						}
-					} else { // nil != inodeLease.promotingHolder
-						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+					case inodeLeaseStateSharedPromoting:
+						logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateSharedPromoting")
+					case inodeLeaseStateSharedReleasing:
+						logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateSharedReleasing")
+					case inodeLeaseStateSharedExpired:
+						logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateSharedExpired")
+					case inodeLeaseStateExclusiveGrantedRecently:
+						logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveGrantedRecently")
+					case inodeLeaseStateExclusiveGrantedLongAgo:
+						logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveGrantedLongAgo")
+					case inodeLeaseStateExclusiveDemoting:
+						logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveDemoting")
+					case inodeLeaseStateExclusiveReleasing:
+						logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveReleasing")
+					case inodeLeaseStateExclusiveExpired:
+						logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveExpired")
+					default:
+						logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unknown inodeLease.leaseState: %v", inodeLease.leaseState)
 					}
+				} else { // leaseRequestStateSharedGranted != leaseRequest.requestState
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				}
+			} else { // leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] returned !ok
+				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+			}
+		case LeaseRequestTypeExclusive:
+			_, ok = leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber]
+			if ok {
+				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+			} else { // leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] returned !ok
+				leaseRequest = &leaseRequestStruct{
+					mount:        leaseRequestOperation.mount,
+					inodeLease:   inodeLease,
+					requestState: leaseRequestStateExclusiveRequested,
+					replyChan:    leaseRequestOperation.replyChan,
+				}
+				leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] = leaseRequest
+				switch inodeLease.leaseState {
+				case inodeLeaseStateNone:
+					leaseRequest.requestState = leaseRequestStateExclusiveGranted
+					inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
+					inodeLease.exclusiveHolder = leaseRequest
+					inodeLease.lastGrantTime = time.Now()
+					inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+					leaseRequest.replyChan <- LeaseResponseTypeExclusive
+				case inodeLeaseStateSharedGrantedRecently:
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
 				case inodeLeaseStateSharedGrantedLongAgo:
-					_ = inodeLease.sharedHoldersList.Remove(leaseRequest.listElement)
-					leaseRequest.listElement = nil
-					if inodeLease.sharedHoldersList.Len() == 0 {
-						inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
-						inodeLease.exclusiveHolder = leaseRequest
-						leaseRequest.requestState = leaseRequestStateExclusiveGranted
-						leaseRequestOperation.replyChan <- LeaseResponseTypePromoted
-						inodeLease.lastGrantTime = time.Now()
-						inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-					} else {
-						leaseRequest.replyChan = leaseRequestOperation.replyChan
-						inodeLease.leaseState = inodeLeaseStateSharedPromoting
-						inodeLease.promotingHolder = leaseRequest
-						leaseRequest.requestState = leaseRequestStateSharedPromoting
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
+					inodeLease.leaseState = inodeLeaseStateSharedReleasing
+					for nil != inodeLease.sharedHoldersList.Front() {
+						sharedHolderListElement = inodeLease.sharedHoldersList.Front()
+						sharedHolderLeaseRequest = sharedHolderListElement.Value.(*leaseRequestStruct)
+						_ = inodeLease.sharedHoldersList.Remove(sharedHolderListElement)
+						sharedHolderLeaseRequest.requestState = leaseRequestStateSharedReleasing
+						sharedHolderLeaseRequest.listElement = inodeLease.releasingHoldersList.PushBack(sharedHolderLeaseRequest)
 						rpcInterrupt = &RPCInterrupt{
 							RPCInterruptType: RPCInterruptTypeRelease,
 							InodeNumber:      inodeLease.inodeNumber,
 						}
 						rpcInterruptBuf, err = json.Marshal(rpcInterrupt)
 						if nil != err {
-							logFatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 2]", rpcInterrupt, err)
+							logFatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 3]", rpcInterrupt, err)
 						}
-						for nil != inodeLease.sharedHoldersList.Front() {
-							leaseRequestElement = inodeLease.sharedHoldersList.Front()
-							leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
-							_ = inodeLease.sharedHoldersList.Remove(leaseRequestElement)
-							leaseRequest.listElement = inodeLease.releasingHoldersList.PushBack(leaseRequest)
-							leaseRequest.requestState = leaseRequestStateSharedReleasing
-							globals.retryrpcServer.SendCallback(leaseRequest.mount.retryRPCClientID, rpcInterruptBuf)
-							logTracef("<== [RPC] SendCallback(clientID: 0x%016X, rpcInterrupt: %+v)", leaseRequest.mount.retryRPCClientID, rpcInterrupt)
-						}
-						inodeLease.lastInterruptTime = time.Now()
-						inodeLease.interruptsSent = 1
-						inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
+						globals.retryrpcServer.SendCallback(sharedHolderLeaseRequest.mount.retryRPCClientID, rpcInterruptBuf)
+						logTracef("<== [RPC] SendCallback(clientID: 0x%016X, rpcInterrupt: %+v)", sharedHolderLeaseRequest.mount.retryRPCClientID, rpcInterrupt)
 					}
+					inodeLease.lastInterruptTime = time.Now()
+					inodeLease.interruptsSent = 1
+					inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
 				case inodeLeaseStateSharedPromoting:
-					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateSharedPromoting")
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
 				case inodeLeaseStateSharedReleasing:
-					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateSharedReleasing")
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
 				case inodeLeaseStateSharedExpired:
-					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateSharedExpired")
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeExclusive, found unexpected inodeLease.leaseState inodeLeaseStateSharedExpired")
 				case inodeLeaseStateExclusiveGrantedRecently:
-					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveGrantedRecently")
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
 				case inodeLeaseStateExclusiveGrantedLongAgo:
-					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveGrantedLongAgo")
-				case inodeLeaseStateExclusiveDemoting:
-					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveDemoting")
-				case inodeLeaseStateExclusiveReleasing:
-					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveReleasing")
-				case inodeLeaseStateExclusiveExpired:
-					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveExpired")
-				default:
-					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypePromote, found unknown inodeLease.leaseState: %v", inodeLease.leaseState)
-				}
-			} else { // leaseRequestStateSharedGranted != leaseRequest.requestState
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-			}
-		} else { // leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] returned !ok
-			leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-		}
-	case LeaseRequestTypeExclusive:
-		_, ok = leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber]
-		if ok {
-			leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-		} else { // leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] returned !ok
-			leaseRequest = &leaseRequestStruct{
-				mount:        leaseRequestOperation.mount,
-				inodeLease:   inodeLease,
-				requestState: leaseRequestStateExclusiveRequested,
-				replyChan:    leaseRequestOperation.replyChan,
-			}
-			leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] = leaseRequest
-			switch inodeLease.leaseState {
-			case inodeLeaseStateNone:
-				leaseRequest.requestState = leaseRequestStateExclusiveGranted
-				inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
-				inodeLease.exclusiveHolder = leaseRequest
-				inodeLease.lastGrantTime = time.Now()
-				inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-				leaseRequest.replyChan <- LeaseResponseTypeExclusive
-			case inodeLeaseStateSharedGrantedRecently:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateSharedGrantedLongAgo:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-				inodeLease.leaseState = inodeLeaseStateSharedReleasing
-				for nil != inodeLease.sharedHoldersList.Front() {
-					sharedHolderListElement = inodeLease.sharedHoldersList.Front()
-					sharedHolderLeaseRequest = sharedHolderListElement.Value.(*leaseRequestStruct)
-					_ = inodeLease.sharedHoldersList.Remove(sharedHolderListElement)
-					sharedHolderLeaseRequest.requestState = leaseRequestStateSharedReleasing
-					sharedHolderLeaseRequest.listElement = inodeLease.releasingHoldersList.PushBack(sharedHolderLeaseRequest)
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
+					inodeLease.leaseState = inodeLeaseStateExclusiveReleasing
+					inodeLease.exclusiveHolder.requestState = leaseRequestStateExclusiveReleasing
+					inodeLease.exclusiveHolder.listElement = inodeLease.releasingHoldersList.PushBack(inodeLease.exclusiveHolder)
 					rpcInterrupt = &RPCInterrupt{
 						RPCInterruptType: RPCInterruptTypeRelease,
 						InodeNumber:      inodeLease.inodeNumber,
 					}
 					rpcInterruptBuf, err = json.Marshal(rpcInterrupt)
 					if nil != err {
-						logFatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 3]", rpcInterrupt, err)
+						logFatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 4]", rpcInterrupt, err)
 					}
-					globals.retryrpcServer.SendCallback(sharedHolderLeaseRequest.mount.retryRPCClientID, rpcInterruptBuf)
-					logTracef("<== [RPC] SendCallback(clientID: 0x%016X, rpcInterrupt: %+v)", sharedHolderLeaseRequest.mount.retryRPCClientID, rpcInterrupt)
-				}
-				inodeLease.lastInterruptTime = time.Now()
-				inodeLease.interruptsSent = 1
-				inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
-			case inodeLeaseStateSharedPromoting:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateSharedReleasing:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateSharedExpired:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeExclusive, found unexpected inodeLease.leaseState inodeLeaseStateSharedExpired")
-			case inodeLeaseStateExclusiveGrantedRecently:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateExclusiveGrantedLongAgo:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-				inodeLease.leaseState = inodeLeaseStateExclusiveReleasing
-				inodeLease.exclusiveHolder.requestState = leaseRequestStateExclusiveReleasing
-				inodeLease.exclusiveHolder.listElement = inodeLease.releasingHoldersList.PushBack(inodeLease.exclusiveHolder)
-				rpcInterrupt = &RPCInterrupt{
-					RPCInterruptType: RPCInterruptTypeRelease,
-					InodeNumber:      inodeLease.inodeNumber,
-				}
-				rpcInterruptBuf, err = json.Marshal(rpcInterrupt)
-				if nil != err {
-					logFatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 4]", rpcInterrupt, err)
-				}
-				globals.retryrpcServer.SendCallback(inodeLease.exclusiveHolder.mount.retryRPCClientID, rpcInterruptBuf)
-				logTracef("<== [RPC] SendCallback(clientID: 0x%016X, rpcInterrupt: %+v)", inodeLease.exclusiveHolder.mount.retryRPCClientID, rpcInterrupt)
-				inodeLease.exclusiveHolder = nil
-				inodeLease.lastInterruptTime = time.Now()
-				inodeLease.interruptsSent = 1
-				inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
-			case inodeLeaseStateExclusiveDemoting:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateExclusiveReleasing:
-				leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
-			case inodeLeaseStateExclusiveExpired:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeExclusive, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveExpired")
-			default:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeExclusive, found unknown inodeLease.leaseState: %v", inodeLease.leaseState)
-			}
-		}
-	case LeaseRequestTypeDemote:
-		leaseRequest, ok = leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber]
-		if ok {
-			switch inodeLease.leaseState {
-			case inodeLeaseStateNone:
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-			case inodeLeaseStateSharedGrantedRecently:
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-			case inodeLeaseStateSharedGrantedLongAgo:
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-			case inodeLeaseStateSharedPromoting:
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-			case inodeLeaseStateSharedReleasing:
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-			case inodeLeaseStateSharedExpired:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeDemote, found unexpected inodeLease.leaseState inodeLeaseStateSharedExpired")
-			case inodeLeaseStateExclusiveGrantedRecently:
-				if leaseRequestStateExclusiveGranted == leaseRequest.requestState {
-					if !inodeLease.longAgoTimer.Stop() {
-						<-inodeLease.longAgoTimer.C
-					}
-					inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
-					leaseRequest.requestState = leaseRequestStateSharedGranted
+					globals.retryrpcServer.SendCallback(inodeLease.exclusiveHolder.mount.retryRPCClientID, rpcInterruptBuf)
+					logTracef("<== [RPC] SendCallback(clientID: 0x%016X, rpcInterrupt: %+v)", inodeLease.exclusiveHolder.mount.retryRPCClientID, rpcInterrupt)
 					inodeLease.exclusiveHolder = nil
-					leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDemoted
-					leaseRequestElement = inodeLease.requestedList.Front()
-					for nil != leaseRequestElement {
-						leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
-						if leaseRequestStateSharedRequested == leaseRequest.requestState {
-							leaseRequest.requestState = leaseRequestStateSharedGranted
-							_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
-							leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-							leaseRequest.replyChan <- LeaseResponseTypeShared
-							leaseRequestElement = inodeLease.requestedList.Front()
-						} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
-							leaseRequestElement = nil
-						}
-					}
-					inodeLease.lastGrantTime = time.Now()
-					inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-				} else { // leaseRequestStateExclusiveGranted == leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+					inodeLease.lastInterruptTime = time.Now()
+					inodeLease.interruptsSent = 1
+					inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
+				case inodeLeaseStateExclusiveDemoting:
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
+				case inodeLeaseStateExclusiveReleasing:
+					leaseRequest.listElement = inodeLease.requestedList.PushBack(leaseRequest)
+				case inodeLeaseStateExclusiveExpired:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeExclusive, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveExpired")
+				default:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeExclusive, found unknown inodeLease.leaseState: %v", inodeLease.leaseState)
 				}
-			case inodeLeaseStateExclusiveGrantedLongAgo:
-				if leaseRequestStateExclusiveGranted == leaseRequest.requestState {
-					inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
-					leaseRequest.requestState = leaseRequestStateSharedGranted
-					inodeLease.exclusiveHolder = nil
-					leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDemoted
-					inodeLease.lastGrantTime = time.Now()
-					inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-				} else { // leaseRequestStateExclusiveGranted != leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
-			case inodeLeaseStateExclusiveDemoting:
-				if leaseRequestStateExclusiveDemoting == leaseRequest.requestState {
-					if !inodeLease.interruptTimer.Stop() {
-						<-inodeLease.interruptTimer.C
-					}
-					inodeLease.lastInterruptTime = time.Time{}
-					inodeLease.interruptsSent = 0
-					inodeLease.interruptTimer = &time.Timer{}
-					inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
-					inodeLease.demotingHolder = nil
-					leaseRequest.requestState = leaseRequestStateSharedGranted
-					leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDemoted
-					leaseRequestElement = inodeLease.requestedList.Front()
-					for nil != leaseRequestElement {
-						leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
-						if leaseRequestStateSharedRequested == leaseRequest.requestState {
-							leaseRequest.requestState = leaseRequestStateSharedGranted
-							_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
-							leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-							leaseRequest.replyChan <- LeaseResponseTypeShared
-							leaseRequestElement = inodeLease.requestedList.Front()
-						} else { // leaseRequestStateSharedRequested != leaseRequest.requestState
-							leaseRequestElement = nil
-						}
-					}
-					inodeLease.lastGrantTime = time.Now()
-					inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-				} else { // leaseRequestStateExclusiveDemoting == leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
-			case inodeLeaseStateExclusiveReleasing:
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-			case inodeLeaseStateExclusiveExpired:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeDemote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveExpired")
-			default:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeDemote, found unknown inodeLease.leaseState: %v", inodeLease.leaseState)
 			}
-		} else { // leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] returned !ok
-			leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-		}
-	case LeaseRequestTypeRelease:
-		leaseRequest, ok = leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber]
-		if ok {
-			switch inodeLease.leaseState {
-			case inodeLeaseStateNone:
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-			case inodeLeaseStateSharedGrantedRecently:
-				if leaseRequestStateSharedGranted == leaseRequest.requestState {
-					_ = inodeLease.sharedHoldersList.Remove(leaseRequest.listElement)
-					leaseRequest.listElement = nil
-					leaseRequest.requestState = leaseRequestStateNone
-					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-					if inodeLease.sharedHoldersList.Len() == 0 {
+		case LeaseRequestTypeDemote:
+			leaseRequest, ok = leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber]
+			if ok {
+				switch inodeLease.leaseState {
+				case inodeLeaseStateNone:
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				case inodeLeaseStateSharedGrantedRecently:
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				case inodeLeaseStateSharedGrantedLongAgo:
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				case inodeLeaseStateSharedPromoting:
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				case inodeLeaseStateSharedReleasing:
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				case inodeLeaseStateSharedExpired:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeDemote, found unexpected inodeLease.leaseState inodeLeaseStateSharedExpired")
+				case inodeLeaseStateExclusiveGrantedRecently:
+					if leaseRequestStateExclusiveGranted == leaseRequest.requestState {
 						if !inodeLease.longAgoTimer.Stop() {
 							<-inodeLease.longAgoTimer.C
 						}
-						if nil == inodeLease.promotingHolder {
-							leaseRequestElement = inodeLease.requestedList.Front()
-							if nil == leaseRequestElement {
-								delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
-								_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
-							} else { // nil != leaseRequestElement
-								leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
-								_ = inodeLease.requestedList.Remove(leaseRequestElement)
-								if leaseRequestStateSharedRequested == leaseRequest.requestState {
-									if inodeLease.requestedList.Len() == 0 {
+						inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
+						leaseRequest.requestState = leaseRequestStateSharedGranted
+						inodeLease.exclusiveHolder = nil
+						leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDemoted
+						leaseRequestElement = inodeLease.requestedList.Front()
+						for nil != leaseRequestElement {
+							leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
+							if leaseRequestStateSharedRequested == leaseRequest.requestState {
+								leaseRequest.requestState = leaseRequestStateSharedGranted
+								_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
+								leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+								leaseRequest.replyChan <- LeaseResponseTypeShared
+								leaseRequestElement = inodeLease.requestedList.Front()
+							} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
+								leaseRequestElement = nil
+							}
+						}
+						inodeLease.lastGrantTime = time.Now()
+						inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+					} else { // leaseRequestStateExclusiveGranted == leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+					}
+				case inodeLeaseStateExclusiveGrantedLongAgo:
+					if leaseRequestStateExclusiveGranted == leaseRequest.requestState {
+						inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
+						leaseRequest.requestState = leaseRequestStateSharedGranted
+						inodeLease.exclusiveHolder = nil
+						leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDemoted
+						inodeLease.lastGrantTime = time.Now()
+						inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+					} else { // leaseRequestStateExclusiveGranted != leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+					}
+				case inodeLeaseStateExclusiveDemoting:
+					if leaseRequestStateExclusiveDemoting == leaseRequest.requestState {
+						if !inodeLease.interruptTimer.Stop() {
+							<-inodeLease.interruptTimer.C
+						}
+						inodeLease.lastInterruptTime = time.Time{}
+						inodeLease.interruptsSent = 0
+						inodeLease.interruptTimer = &time.Timer{}
+						inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
+						inodeLease.demotingHolder = nil
+						leaseRequest.requestState = leaseRequestStateSharedGranted
+						leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDemoted
+						leaseRequestElement = inodeLease.requestedList.Front()
+						for nil != leaseRequestElement {
+							leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
+							if leaseRequestStateSharedRequested == leaseRequest.requestState {
+								leaseRequest.requestState = leaseRequestStateSharedGranted
+								_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
+								leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+								leaseRequest.replyChan <- LeaseResponseTypeShared
+								leaseRequestElement = inodeLease.requestedList.Front()
+							} else { // leaseRequestStateSharedRequested != leaseRequest.requestState
+								leaseRequestElement = nil
+							}
+						}
+						inodeLease.lastGrantTime = time.Now()
+						inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+					} else { // leaseRequestStateExclusiveDemoting == leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+					}
+				case inodeLeaseStateExclusiveReleasing:
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				case inodeLeaseStateExclusiveExpired:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeDemote, found unexpected inodeLease.leaseState inodeLeaseStateExclusiveExpired")
+				default:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeDemote, found unknown inodeLease.leaseState: %v", inodeLease.leaseState)
+				}
+			} else { // leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] returned !ok
+				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+			}
+		case LeaseRequestTypeRelease:
+			leaseRequest, ok = leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber]
+			if ok {
+				switch inodeLease.leaseState {
+				case inodeLeaseStateNone:
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				case inodeLeaseStateSharedGrantedRecently:
+					if leaseRequestStateSharedGranted == leaseRequest.requestState {
+						_ = inodeLease.sharedHoldersList.Remove(leaseRequest.listElement)
+						leaseRequest.listElement = nil
+						leaseRequest.requestState = leaseRequestStateNone
+						delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+						leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
+						if inodeLease.sharedHoldersList.Len() == 0 {
+							if !inodeLease.longAgoTimer.Stop() {
+								<-inodeLease.longAgoTimer.C
+							}
+							if nil == inodeLease.promotingHolder {
+								leaseRequestElement = inodeLease.requestedList.Front()
+								if nil == leaseRequestElement {
+									delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+									_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
+								} else { // nil != leaseRequestElement
+									leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
+									_ = inodeLease.requestedList.Remove(leaseRequestElement)
+									if leaseRequestStateSharedRequested == leaseRequest.requestState {
+										if inodeLease.requestedList.Len() == 0 {
+											inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
+											inodeLease.exclusiveHolder = leaseRequest
+											leaseRequest.listElement = nil
+											leaseRequest.requestState = leaseRequestStateExclusiveGranted
+											leaseRequest.replyChan <- LeaseResponseTypeExclusive
+										} else { // 0 < inodeLease.requestedList.Len()
+											inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
+											leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+											leaseRequest.requestState = leaseRequestStateSharedGranted
+											leaseRequest.replyChan <- LeaseResponseTypeShared
+											leaseRequestElement = inodeLease.requestedList.Front()
+											for nil != leaseRequestElement {
+												leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
+												_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
+												if leaseRequestStateSharedRequested == leaseRequest.requestState {
+													leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+													leaseRequest.requestState = leaseRequestStateSharedGranted
+													leaseRequest.replyChan <- LeaseResponseTypeShared
+													leaseRequestElement = inodeLease.requestedList.Front()
+												} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState {
+													leaseRequestElement = nil
+												}
+											}
+										}
+									} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
 										inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
 										inodeLease.exclusiveHolder = leaseRequest
 										leaseRequest.listElement = nil
 										leaseRequest.requestState = leaseRequestStateExclusiveGranted
 										leaseRequest.replyChan <- LeaseResponseTypeExclusive
-									} else { // 0 < inodeLease.requestedList.Len()
-										inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
-										leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-										leaseRequest.requestState = leaseRequestStateSharedGranted
-										leaseRequest.replyChan <- LeaseResponseTypeShared
-										leaseRequestElement = inodeLease.requestedList.Front()
-										for nil != leaseRequestElement {
-											leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
-											_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
-											if leaseRequestStateSharedRequested == leaseRequest.requestState {
-												leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-												leaseRequest.requestState = leaseRequestStateSharedGranted
-												leaseRequest.replyChan <- LeaseResponseTypeShared
-												leaseRequestElement = inodeLease.requestedList.Front()
-											} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState {
-												leaseRequestElement = nil
-											}
-										}
 									}
-								} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
-									inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
-									inodeLease.exclusiveHolder = leaseRequest
-									leaseRequest.listElement = nil
-									leaseRequest.requestState = leaseRequestStateExclusiveGranted
-									leaseRequest.replyChan <- LeaseResponseTypeExclusive
+									inodeLease.lastGrantTime = time.Now()
+									inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
 								}
+							} else { // nil != inodeLease.promotingHolder
+								inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
+								inodeLease.exclusiveHolder = inodeLease.promotingHolder
+								inodeLease.promotingHolder = nil
+								inodeLease.exclusiveHolder.requestState = leaseRequestStateExclusiveGranted
+								inodeLease.exclusiveHolder.replyChan <- LeaseResponseTypePromoted
 								inodeLease.lastGrantTime = time.Now()
 								inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
 							}
-						} else { // nil != inodeLease.promotingHolder
+						}
+					} else { // leaseRequestStateSharedGranted != leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+					}
+				case inodeLeaseStateSharedGrantedLongAgo:
+					if leaseRequestStateSharedGranted == leaseRequest.requestState {
+						_ = inodeLease.sharedHoldersList.Remove(leaseRequest.listElement)
+						leaseRequest.listElement = nil
+						leaseRequest.requestState = leaseRequestStateNone
+						delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+						leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
+						if inodeLease.sharedHoldersList.Len() == 0 {
+							delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+							_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
+						}
+					} else { // leaseRequestStateSharedGranted != leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+					}
+				case inodeLeaseStateSharedPromoting:
+					if leaseRequestStateSharedReleasing == leaseRequest.requestState {
+						_ = inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
+						leaseRequest.listElement = nil
+						leaseRequest.requestState = leaseRequestStateNone
+						delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+						leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
+						if inodeLease.releasingHoldersList.Len() == 0 {
+							if !inodeLease.interruptTimer.Stop() {
+								<-inodeLease.interruptTimer.C
+							}
+							inodeLease.lastInterruptTime = time.Time{}
+							inodeLease.interruptsSent = 0
+							inodeLease.interruptTimer = &time.Timer{}
 							inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
 							inodeLease.exclusiveHolder = inodeLease.promotingHolder
 							inodeLease.promotingHolder = nil
@@ -467,217 +520,178 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 							inodeLease.lastGrantTime = time.Now()
 							inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
 						}
+					} else { // leaseRequestStateSharedReleasing != leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 					}
-				} else { // leaseRequestStateSharedGranted != leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
-			case inodeLeaseStateSharedGrantedLongAgo:
-				if leaseRequestStateSharedGranted == leaseRequest.requestState {
-					_ = inodeLease.sharedHoldersList.Remove(leaseRequest.listElement)
-					leaseRequest.listElement = nil
-					leaseRequest.requestState = leaseRequestStateNone
-					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-					if inodeLease.sharedHoldersList.Len() == 0 {
+				case inodeLeaseStateSharedReleasing:
+					if leaseRequestStateSharedReleasing == leaseRequest.requestState {
+						_ = inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
+						leaseRequest.listElement = nil
+						leaseRequest.requestState = leaseRequestStateNone
+						delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+						leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
+						if inodeLease.releasingHoldersList.Len() == 0 {
+							if !inodeLease.interruptTimer.Stop() {
+								<-inodeLease.interruptTimer.C
+							}
+							inodeLease.lastInterruptTime = time.Time{}
+							inodeLease.interruptsSent = 0
+							inodeLease.interruptTimer = &time.Timer{}
+							inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
+							leaseRequestElement = inodeLease.requestedList.Front()
+							leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
+							_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
+							leaseRequest.listElement = nil
+							inodeLease.exclusiveHolder = leaseRequest
+							leaseRequest.requestState = leaseRequestStateExclusiveGranted
+							leaseRequest.replyChan <- LeaseResponseTypeExclusive
+							inodeLease.lastGrantTime = time.Now()
+							inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+						}
+					} else { // leaseRequestStateSharedReleasing != leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+					}
+				case inodeLeaseStateSharedExpired:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeRelease, found unknown inodeLease.leaseState inodeLeaseStateSharedExpired")
+				case inodeLeaseStateExclusiveGrantedRecently:
+					if leaseRequestStateExclusiveGranted == leaseRequest.requestState {
+						if !inodeLease.longAgoTimer.Stop() {
+							<-inodeLease.longAgoTimer.C
+						}
+						leaseRequest.requestState = leaseRequestStateNone
+						delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+						leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
+						leaseRequestElement = inodeLease.requestedList.Front()
+						if nil == leaseRequestElement {
+							delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+							_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
+						} else { // nil != leaseRequestElement
+							leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
+							_ = inodeLease.requestedList.Remove(leaseRequestElement)
+							if leaseRequestStateSharedRequested == leaseRequest.requestState {
+								leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+								inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
+								leaseRequest.requestState = leaseRequestStateSharedGranted
+								leaseRequest.replyChan <- LeaseResponseTypeShared
+								leaseRequestElement = inodeLease.requestedList.Front()
+								for nil != leaseRequestElement {
+									leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
+									if leaseRequestStateSharedRequested == leaseRequest.requestState {
+										_ = inodeLease.requestedList.Remove(leaseRequestElement)
+										leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+										leaseRequest.requestState = leaseRequestStateSharedGranted
+										leaseRequest.replyChan <- LeaseResponseTypeShared
+										leaseRequestElement = inodeLease.requestedList.Front()
+									} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
+										leaseRequestElement = nil
+									}
+								}
+							} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
+								inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
+								leaseRequest.requestState = leaseRequestStateExclusiveGranted
+								inodeLease.exclusiveHolder = leaseRequest
+								leaseRequest.replyChan <- LeaseResponseTypeExclusive
+							}
+							inodeLease.lastGrantTime = time.Now()
+							inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+						}
+					} else { // leaseRequestStateExclusiveGranted != leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+					}
+				case inodeLeaseStateExclusiveGrantedLongAgo:
+					if leaseRequestStateExclusiveGranted == leaseRequest.requestState {
+						delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+						leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
 						delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 						_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
+					} else { // leaseRequestStateExclusiveGranted != leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 					}
-				} else { // leaseRequestStateSharedGranted != leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
-			case inodeLeaseStateSharedPromoting:
-				if leaseRequestStateSharedReleasing == leaseRequest.requestState {
-					_ = inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
-					leaseRequest.listElement = nil
-					leaseRequest.requestState = leaseRequestStateNone
-					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-					if inodeLease.releasingHoldersList.Len() == 0 {
+				case inodeLeaseStateExclusiveDemoting:
+					if leaseRequestStateExclusiveDemoting == leaseRequest.requestState {
 						if !inodeLease.interruptTimer.Stop() {
 							<-inodeLease.interruptTimer.C
 						}
 						inodeLease.lastInterruptTime = time.Time{}
 						inodeLease.interruptsSent = 0
 						inodeLease.interruptTimer = &time.Timer{}
-						inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
-						inodeLease.exclusiveHolder = inodeLease.promotingHolder
-						inodeLease.promotingHolder = nil
-						inodeLease.exclusiveHolder.requestState = leaseRequestStateExclusiveGranted
-						inodeLease.exclusiveHolder.replyChan <- LeaseResponseTypePromoted
-						inodeLease.lastGrantTime = time.Now()
-						inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-					}
-				} else { // leaseRequestStateSharedReleasing != leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
-			case inodeLeaseStateSharedReleasing:
-				if leaseRequestStateSharedReleasing == leaseRequest.requestState {
-					_ = inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
-					leaseRequest.listElement = nil
-					leaseRequest.requestState = leaseRequestStateNone
-					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-					if inodeLease.releasingHoldersList.Len() == 0 {
-						if !inodeLease.interruptTimer.Stop() {
-							<-inodeLease.interruptTimer.C
-						}
-						inodeLease.lastInterruptTime = time.Time{}
-						inodeLease.interruptsSent = 0
-						inodeLease.interruptTimer = &time.Timer{}
-						inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
+						leaseRequest.requestState = leaseRequestStateNone
+						delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+						inodeLease.demotingHolder = nil
+						leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
 						leaseRequestElement = inodeLease.requestedList.Front()
 						leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
 						_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
-						leaseRequest.listElement = nil
-						inodeLease.exclusiveHolder = leaseRequest
-						leaseRequest.requestState = leaseRequestStateExclusiveGranted
-						leaseRequest.replyChan <- LeaseResponseTypeExclusive
-						inodeLease.lastGrantTime = time.Now()
-						inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-					}
-				} else { // leaseRequestStateSharedReleasing != leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
-			case inodeLeaseStateSharedExpired:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeRelease, found unknown inodeLease.leaseState inodeLeaseStateSharedExpired")
-			case inodeLeaseStateExclusiveGrantedRecently:
-				if leaseRequestStateExclusiveGranted == leaseRequest.requestState {
-					if !inodeLease.longAgoTimer.Stop() {
-						<-inodeLease.longAgoTimer.C
-					}
-					leaseRequest.requestState = leaseRequestStateNone
-					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-					leaseRequestElement = inodeLease.requestedList.Front()
-					if nil == leaseRequestElement {
-						delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
-						_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
-					} else { // nil != leaseRequestElement
-						leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
-						_ = inodeLease.requestedList.Remove(leaseRequestElement)
-						if leaseRequestStateSharedRequested == leaseRequest.requestState {
-							leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+						if (nil == inodeLease.requestedList.Front()) || (leaseRequestStateExclusiveRequested == inodeLease.requestedList.Front().Value.(*leaseRequestStruct).requestState) {
+							inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
+							leaseRequest.requestState = leaseRequestStateExclusiveGranted
+							leaseRequest.listElement = nil
+							inodeLease.exclusiveHolder = leaseRequest
+							leaseRequest.replyChan <- LeaseResponseTypeExclusive
+						} else {
 							inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
 							leaseRequest.requestState = leaseRequestStateSharedGranted
+							leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
 							leaseRequest.replyChan <- LeaseResponseTypeShared
 							leaseRequestElement = inodeLease.requestedList.Front()
 							for nil != leaseRequestElement {
 								leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
 								if leaseRequestStateSharedRequested == leaseRequest.requestState {
-									_ = inodeLease.requestedList.Remove(leaseRequestElement)
-									leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
+									_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
 									leaseRequest.requestState = leaseRequestStateSharedGranted
+									leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
 									leaseRequest.replyChan <- LeaseResponseTypeShared
 									leaseRequestElement = inodeLease.requestedList.Front()
 								} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
 									leaseRequestElement = nil
 								}
 							}
-						} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
-							inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
-							leaseRequest.requestState = leaseRequestStateExclusiveGranted
-							inodeLease.exclusiveHolder = leaseRequest
-							leaseRequest.replyChan <- LeaseResponseTypeExclusive
 						}
 						inodeLease.lastGrantTime = time.Now()
 						inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+					} else { // leaseRequestStateExclusiveDemoting != leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 					}
-				} else { // leaseRequestStateExclusiveGranted != leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
-			case inodeLeaseStateExclusiveGrantedLongAgo:
-				if leaseRequestStateExclusiveGranted == leaseRequest.requestState {
-					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-					delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
-					_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
-				} else { // leaseRequestStateExclusiveGranted != leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
-			case inodeLeaseStateExclusiveDemoting:
-				if leaseRequestStateExclusiveDemoting == leaseRequest.requestState {
-					if !inodeLease.interruptTimer.Stop() {
-						<-inodeLease.interruptTimer.C
-					}
-					inodeLease.lastInterruptTime = time.Time{}
-					inodeLease.interruptsSent = 0
-					inodeLease.interruptTimer = &time.Timer{}
-					leaseRequest.requestState = leaseRequestStateNone
-					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-					inodeLease.demotingHolder = nil
-					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-					leaseRequestElement = inodeLease.requestedList.Front()
-					leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
-					_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
-					if (nil == inodeLease.requestedList.Front()) || (leaseRequestStateExclusiveRequested == inodeLease.requestedList.Front().Value.(*leaseRequestStruct).requestState) {
+				case inodeLeaseStateExclusiveReleasing:
+					if leaseRequestStateExclusiveReleasing == leaseRequest.requestState {
+						if !inodeLease.interruptTimer.Stop() {
+							<-inodeLease.interruptTimer.C
+						}
+						inodeLease.lastInterruptTime = time.Time{}
+						inodeLease.interruptsSent = 0
+						inodeLease.interruptTimer = &time.Timer{}
 						inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
+						leaseRequest.requestState = leaseRequestStateNone
+						delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+						_ = inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
+						leaseRequest.listElement = nil
+						leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
+						leaseRequestElement = inodeLease.requestedList.Front()
+						leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
 						leaseRequest.requestState = leaseRequestStateExclusiveGranted
+						_ = inodeLease.requestedList.Remove(leaseRequestElement)
 						leaseRequest.listElement = nil
 						inodeLease.exclusiveHolder = leaseRequest
 						leaseRequest.replyChan <- LeaseResponseTypeExclusive
-					} else {
-						inodeLease.leaseState = inodeLeaseStateSharedGrantedRecently
-						leaseRequest.requestState = leaseRequestStateSharedGranted
-						leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-						leaseRequest.replyChan <- LeaseResponseTypeShared
-						leaseRequestElement = inodeLease.requestedList.Front()
-						for nil != leaseRequestElement {
-							leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
-							if leaseRequestStateSharedRequested == leaseRequest.requestState {
-								_ = inodeLease.requestedList.Remove(leaseRequest.listElement)
-								leaseRequest.requestState = leaseRequestStateSharedGranted
-								leaseRequest.listElement = inodeLease.sharedHoldersList.PushBack(leaseRequest)
-								leaseRequest.replyChan <- LeaseResponseTypeShared
-								leaseRequestElement = inodeLease.requestedList.Front()
-							} else { // leaseRequestStateExclusiveRequested == leaseRequest.requestState
-								leaseRequestElement = nil
-							}
-						}
+						inodeLease.lastGrantTime = time.Now()
+						inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
+					} else { // leaseRequestStateExclusiveReleasing != leaseRequest.requestState
+						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 					}
-					inodeLease.lastGrantTime = time.Now()
-					inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-				} else { // leaseRequestStateExclusiveDemoting != leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				case inodeLeaseStateExclusiveExpired:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeRelease, found unknown inodeLease.leaseState inodeLeaseStateExclusiveExpired")
+				default:
+					logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeRelease, found unknown inodeLease.leaseState: %v", inodeLease.leaseState)
 				}
-			case inodeLeaseStateExclusiveReleasing:
-				if leaseRequestStateExclusiveReleasing == leaseRequest.requestState {
-					if !inodeLease.interruptTimer.Stop() {
-						<-inodeLease.interruptTimer.C
-					}
-					inodeLease.lastInterruptTime = time.Time{}
-					inodeLease.interruptsSent = 0
-					inodeLease.interruptTimer = &time.Timer{}
-					inodeLease.leaseState = inodeLeaseStateExclusiveGrantedRecently
-					leaseRequest.requestState = leaseRequestStateNone
-					delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-					_ = inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
-					leaseRequest.listElement = nil
-					leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-					leaseRequestElement = inodeLease.requestedList.Front()
-					leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
-					leaseRequest.requestState = leaseRequestStateExclusiveGranted
-					_ = inodeLease.requestedList.Remove(leaseRequestElement)
-					leaseRequest.listElement = nil
-					inodeLease.exclusiveHolder = leaseRequest
-					leaseRequest.replyChan <- LeaseResponseTypeExclusive
-					inodeLease.lastGrantTime = time.Now()
-					inodeLease.longAgoTimer = time.NewTimer(globals.config.MinLeaseDuration)
-				} else { // leaseRequestStateExclusiveReleasing != leaseRequest.requestState
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
-			case inodeLeaseStateExclusiveExpired:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeRelease, found unknown inodeLease.leaseState inodeLeaseStateExclusiveExpired")
-			default:
-				logFatalf("(*inodeLeaseStruct).handleOperation(), while in leaseRequestOperation.LeaseRequestType LeaseRequestTypeRelease, found unknown inodeLease.leaseState: %v", inodeLease.leaseState)
+			} else { // leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] returned !ok
+				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 			}
-		} else { // leaseRequestOperation.mount.leaseRequestMap[inodeLease.inodeNumber] returned !ok
-			leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+		default:
+			logFatalf("(*inodeLeaseStruct).handleOperation() found unexpected leaseRequestOperation.LeaseRequestType: %v", leaseRequestOperation.LeaseRequestType)
 		}
-	default:
-		logFatalf("(*inodeLeaseStruct).handleOperation() found unexpected leaseRequestOperation.LeaseRequestType: %v", leaseRequestOperation.LeaseRequestType)
-	}
 
-	globals.Unlock()
+		globals.Unlock()
+	}
 }
 
 func (inodeLease *inodeLeaseStruct) handleLongAgoTimerPop() {
@@ -1124,7 +1138,6 @@ func inodeLeaseExpirer() {
 			fmt.Printf("inodeLeaseExpirer() ran up against already stopping leases (stopCount: %v, stopMax: %v)\n", stopCount, stopMax)
 			break
 		}
-		fmt.Printf("inodeLeaseExpirer() will be stopping inodeLease: %+v\n", inodeLease)
 		stopCount++
 		inodeLease.stopping = true
 		close(inodeLease.stopChan)
@@ -1141,13 +1154,14 @@ func inodeLeaseExpirer() {
 
 func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 	var (
-		err                   error
-		leaseRequest          *leaseRequestStruct
-		leaseRequestElement   *list.Element
-		leaseRequestOperation *leaseRequestOperationStruct
-		ok                    bool
-		rpcInterrupt          *RPCInterrupt
-		rpcInterruptBuf       []byte
+		err                          error
+		leaseRequest                 *leaseRequestStruct
+		leaseRequestElement          *list.Element
+		leaseRequestOperation        *leaseRequestOperationStruct
+		leaseRequestOperationElement *list.Element
+		ok                           bool
+		rpcInterrupt                 *RPCInterrupt
+		rpcInterruptBuf              []byte
 	)
 
 	// Deny all pending requests:
@@ -1291,57 +1305,70 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 		globals.Unlock()
 
 		select {
-		case leaseRequestOperation = <-inodeLease.requestChan:
+		case _ = <-inodeLease.requestChan:
 			globals.Lock()
 
-			switch leaseRequestOperation.LeaseRequestType {
-			case LeaseRequestTypeShared:
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+			for inodeLease.requestList.Front() != nil {
+				leaseRequestOperationElement = inodeLease.requestList.Front()
 
-			case LeaseRequestTypePromote:
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				leaseRequestOperation, ok = leaseRequestOperationElement.Value.(*leaseRequestOperationStruct)
+				if !ok {
+					logFatalf("leaseRequestOperationElement.Value.(*leaseRequestOperationStruct) returned !ok")
+				}
 
-			case LeaseRequestTypeExclusive:
-				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+				_ = inodeLease.requestList.Remove(leaseRequestOperationElement)
 
-			case LeaseRequestTypeDemote:
-				if inodeLeaseStateExclusiveDemoting == inodeLease.leaseState {
-					leaseRequest, ok = leaseRequestOperation.mount.leaseRequestMap[leaseRequestOperation.inodeLease.inodeNumber]
-					if ok {
-						if leaseRequestStateExclusiveDemoting == leaseRequest.requestState {
-							if leaseRequest == inodeLease.demotingHolder {
-								leaseRequestOperation.replyChan <- LeaseResponseTypeDemoted
+				switch leaseRequestOperation.LeaseRequestType {
+				case LeaseRequestTypeShared:
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 
-								inodeLease.demotingHolder = nil
+				case LeaseRequestTypePromote:
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 
-								leaseRequest.requestState = leaseRequestStateExclusiveReleasing
+				case LeaseRequestTypeExclusive:
+					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 
-								leaseRequest.listElement = inodeLease.releasingHoldersList.PushBack(leaseRequest)
+				case LeaseRequestTypeDemote:
+					if inodeLeaseStateExclusiveDemoting == inodeLease.leaseState {
+						leaseRequest, ok = leaseRequestOperation.mount.leaseRequestMap[leaseRequestOperation.inodeLease.inodeNumber]
+						if ok {
+							if leaseRequestStateExclusiveDemoting == leaseRequest.requestState {
+								if leaseRequest == inodeLease.demotingHolder {
+									leaseRequestOperation.replyChan <- LeaseResponseTypeDemoted
 
-								rpcInterrupt = &RPCInterrupt{
-									RPCInterruptType: RPCInterruptTypeRelease,
-									InodeNumber:      inodeLease.inodeNumber,
+									inodeLease.demotingHolder = nil
+
+									leaseRequest.requestState = leaseRequestStateExclusiveReleasing
+
+									leaseRequest.listElement = inodeLease.releasingHoldersList.PushBack(leaseRequest)
+
+									rpcInterrupt = &RPCInterrupt{
+										RPCInterruptType: RPCInterruptTypeRelease,
+										InodeNumber:      inodeLease.inodeNumber,
+									}
+
+									rpcInterruptBuf, err = json.Marshal(rpcInterrupt)
+									if nil != err {
+										logFatalf("(*inodeLeaseStruct).handleStopChanClose() unable to json.Marshal(rpcInterrupt: %#v): %v [case 4]", rpcInterrupt, err)
+									}
+
+									globals.retryrpcServer.SendCallback(leaseRequest.mount.retryRPCClientID, rpcInterruptBuf)
+
+									logTracef("<== [RPC] SendCallback(clientID: 0x%016X, rpcInterrupt: %+v)", leaseRequest.mount.retryRPCClientID, rpcInterrupt)
+
+									inodeLease.leaseState = inodeLeaseStateExclusiveReleasing
+
+									if !inodeLease.interruptTimer.Stop() {
+										<-inodeLease.interruptTimer.C
+									}
+
+									inodeLease.lastInterruptTime = time.Now()
+									inodeLease.interruptsSent = 1
+
+									inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
+								} else {
+									leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 								}
-
-								rpcInterruptBuf, err = json.Marshal(rpcInterrupt)
-								if nil != err {
-									logFatalf("(*inodeLeaseStruct).handleStopChanClose() unable to json.Marshal(rpcInterrupt: %#v): %v [case 4]", rpcInterrupt, err)
-								}
-
-								globals.retryrpcServer.SendCallback(leaseRequest.mount.retryRPCClientID, rpcInterruptBuf)
-
-								logTracef("<== [RPC] SendCallback(clientID: 0x%016X, rpcInterrupt: %+v)", leaseRequest.mount.retryRPCClientID, rpcInterrupt)
-
-								inodeLease.leaseState = inodeLeaseStateExclusiveReleasing
-
-								if !inodeLease.interruptTimer.Stop() {
-									<-inodeLease.interruptTimer.C
-								}
-
-								inodeLease.lastInterruptTime = time.Now()
-								inodeLease.interruptsSent = 1
-
-								inodeLease.interruptTimer = time.NewTimer(globals.config.LeaseInterruptInterval)
 							} else {
 								leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 							}
@@ -1351,24 +1378,46 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					} else {
 						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 					}
-				} else {
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
 
-			case LeaseRequestTypeRelease:
-				leaseRequest, ok = leaseRequestOperation.mount.leaseRequestMap[leaseRequestOperation.inodeLease.inodeNumber]
-				if ok {
-					switch inodeLease.leaseState {
-					case inodeLeaseStateSharedReleasing:
-						if leaseRequestStateSharedReleasing == leaseRequest.requestState {
-							leaseRequest.requestState = leaseRequestStateNone
-							delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-							inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
-							leaseRequest.listElement = nil
+				case LeaseRequestTypeRelease:
+					leaseRequest, ok = leaseRequestOperation.mount.leaseRequestMap[leaseRequestOperation.inodeLease.inodeNumber]
+					if ok {
+						switch inodeLease.leaseState {
+						case inodeLeaseStateSharedReleasing:
+							if leaseRequestStateSharedReleasing == leaseRequest.requestState {
+								leaseRequest.requestState = leaseRequestStateNone
+								delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+								inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
+								leaseRequest.listElement = nil
 
-							leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
+								leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
 
-							if inodeLease.releasingHoldersList.Len() == 0 {
+								if inodeLease.releasingHoldersList.Len() == 0 {
+									inodeLease.leaseState = inodeLeaseStateNone
+
+									if !inodeLease.interruptTimer.Stop() {
+										<-inodeLease.interruptTimer.C
+									}
+
+									inodeLease.lastInterruptTime = time.Time{}
+									inodeLease.interruptsSent = 0
+
+									inodeLease.interruptTimer = &time.Timer{}
+
+									delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+									_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
+								}
+							} else {
+								leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+							}
+						case inodeLeaseStateExclusiveDemoting:
+							if leaseRequestStateExclusiveDemoting == leaseRequest.requestState {
+								leaseRequest.requestState = leaseRequestStateNone
+								delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+								inodeLease.demotingHolder = nil
+
+								leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
+
 								inodeLease.leaseState = inodeLeaseStateNone
 
 								if !inodeLease.interruptTimer.Stop() {
@@ -1382,68 +1431,44 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 
 								delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
 								_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
+							} else {
+								leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 							}
-						} else {
+						case inodeLeaseStateExclusiveReleasing:
+							if leaseRequestStateExclusiveReleasing == leaseRequest.requestState {
+								leaseRequest.requestState = leaseRequestStateNone
+								delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
+								inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
+								leaseRequest.listElement = nil
+
+								leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
+
+								inodeLease.leaseState = inodeLeaseStateNone
+
+								if !inodeLease.interruptTimer.Stop() {
+									<-inodeLease.interruptTimer.C
+								}
+
+								inodeLease.lastInterruptTime = time.Time{}
+								inodeLease.interruptsSent = 0
+
+								inodeLease.interruptTimer = &time.Timer{}
+
+								delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
+								_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
+							} else {
+								leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+							}
+						default:
 							leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 						}
-					case inodeLeaseStateExclusiveDemoting:
-						if leaseRequestStateExclusiveDemoting == leaseRequest.requestState {
-							leaseRequest.requestState = leaseRequestStateNone
-							delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-							inodeLease.demotingHolder = nil
-
-							leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-
-							inodeLease.leaseState = inodeLeaseStateNone
-
-							if !inodeLease.interruptTimer.Stop() {
-								<-inodeLease.interruptTimer.C
-							}
-
-							inodeLease.lastInterruptTime = time.Time{}
-							inodeLease.interruptsSent = 0
-
-							inodeLease.interruptTimer = &time.Timer{}
-
-							delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
-							_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
-						} else {
-							leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-						}
-					case inodeLeaseStateExclusiveReleasing:
-						if leaseRequestStateExclusiveReleasing == leaseRequest.requestState {
-							leaseRequest.requestState = leaseRequestStateNone
-							delete(leaseRequest.mount.leaseRequestMap, inodeLease.inodeNumber)
-							inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
-							leaseRequest.listElement = nil
-
-							leaseRequestOperation.replyChan <- LeaseResponseTypeReleased
-
-							inodeLease.leaseState = inodeLeaseStateNone
-
-							if !inodeLease.interruptTimer.Stop() {
-								<-inodeLease.interruptTimer.C
-							}
-
-							inodeLease.lastInterruptTime = time.Time{}
-							inodeLease.interruptsSent = 0
-
-							inodeLease.interruptTimer = &time.Timer{}
-
-							delete(inodeLease.volume.inodeLeaseMap, inodeLease.inodeNumber)
-							_ = globals.inodeLeaseLRU.Remove(inodeLease.lruElement)
-						} else {
-							leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-						}
-					default:
+					} else {
 						leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
 					}
-				} else {
-					leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
-				}
 
-			default:
-				logFatalf("(*inodeLeaseStruct).handleStopChanClose() read unexected leaseRequestOperationLeaseRequestType: %v", leaseRequestOperation.LeaseRequestType)
+				default:
+					logFatalf("(*inodeLeaseStruct).handleStopChanClose() read unexected leaseRequestOperationLeaseRequestType: %v", leaseRequestOperation.LeaseRequestType)
+				}
 			}
 
 		case <-inodeLease.interruptTimer.C:
@@ -1594,8 +1619,17 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 
 	for {
 		select {
-		case leaseRequestOperation = <-inodeLease.requestChan:
-			leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+		case _ = <-inodeLease.requestChan:
+			for inodeLease.requestList.Front() != nil {
+				leaseRequestOperation, ok = leaseRequestOperationElement.Value.(*leaseRequestOperationStruct)
+				if !ok {
+					logFatalf("leaseRequestOperationElement.Value.(*leaseRequestOperationStruct) returned !ok")
+				}
+
+				_ = inodeLease.requestList.Remove(leaseRequestOperationElement)
+
+				leaseRequestOperation.replyChan <- LeaseResponseTypeDenied
+			}
 		default:
 			goto RequestChanDrained
 		}
@@ -1664,5 +1698,59 @@ func (leaseRequest *leaseRequestStruct) okToWrite() (ok bool) {
 		logFatalf("(*leaseRequestStruct).okToWrite() called while for unknown leaseRequest.requestState: %v", leaseRequest.requestState)
 	}
 
+	return
+}
+
+func (leaseRequest *LeaseRequestStruct) String() (str string) {
+	switch leaseRequest.LeaseRequestType {
+	case LeaseRequestTypeShared:
+		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Shared}", leaseRequest.MountID, leaseRequest.InodeNumber)
+	case LeaseRequestTypePromote:
+		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Promote}", leaseRequest.MountID, leaseRequest.InodeNumber)
+	case LeaseRequestTypeExclusive:
+		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Exclusive}", leaseRequest.MountID, leaseRequest.InodeNumber)
+	case LeaseRequestTypeDemote:
+		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Demote}", leaseRequest.MountID, leaseRequest.InodeNumber)
+	case LeaseRequestTypeRelease:
+		str = fmt.Sprintf("&{MountID:%s InodeNumber:%v LeaseRequestType:...Release}", leaseRequest.MountID, leaseRequest.InodeNumber)
+	default:
+		logFatalf("(*LeaseRequestStruct).String() unable to interpret leaseRequest.LeaseRequestType [%v]", leaseRequest.LeaseRequestType)
+	}
+
+	return
+}
+
+func (leaseResponse *LeaseResponseStruct) String() (str string) {
+	switch leaseResponse.LeaseResponseType {
+	case LeaseResponseTypeDenied:
+		str = fmt.Sprintf("&{LeaseResponseType:...Denied}")
+	case LeaseResponseTypeShared:
+		str = fmt.Sprintf("&{LeaseResponseType:...Shared}")
+	case LeaseResponseTypePromoted:
+		str = fmt.Sprintf("&{LeaseResponseType:...Promoted}")
+	case LeaseResponseTypeExclusive:
+		str = fmt.Sprintf("&{LeaseResponseType:...Exclusive}")
+	case LeaseResponseTypeDemoted:
+		str = fmt.Sprintf("&{LeaseResponseType:...Demoted}")
+	case LeaseResponseTypeReleased:
+		str = fmt.Sprintf("&{LeaseResponseType:...Released}")
+	default:
+		logFatalf("(*LeaseResponseStruct).String() unable to interpret leaseResponse.LeaseResponseType [%v]", leaseResponse.LeaseResponseType)
+	}
+
+	return
+}
+
+func (rpcInterrupt *RPCInterrupt) String() (str string) {
+	switch rpcInterrupt.RPCInterruptType {
+	case RPCInterruptTypeUnmount:
+		str = fmt.Sprintf("&{RPCInterruptType:...Unmount}")
+	case RPCInterruptTypeDemote:
+		str = fmt.Sprintf("&{RPCInterruptType:...Demote InodeNumber:%v}", rpcInterrupt.InodeNumber)
+	case RPCInterruptTypeRelease:
+		str = fmt.Sprintf("&{RPCInterruptType:...Release InodeNumber:%v}", rpcInterrupt.InodeNumber)
+	default:
+		logFatalf("(*RPCInterrupt).String() unable to interpret rpcInterrupt.RPCInterruptType [%v]", rpcInterrupt.RPCInterruptType)
+	}
 	return
 }

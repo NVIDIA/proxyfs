@@ -187,7 +187,6 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 // TODO - update this comment for initialDial() vs reDial() cases!!!
 // should we rename function????
 
-//
 // getClientIDAndWait reads the first message off the new connection.
 //
 // If the client is new, it will ask for a UniqueID.   This routine will
@@ -202,12 +201,12 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 // This avoids race conditions when there are cascading retransmits.
 // The algorithm is:
 //
-// 1. Client sends UniqueID to server when the connection is reestablished.
-// 2. After accepting new socket, the server waits for the UniqueID from
-//    the client.
-// 3. If this is a client returning on a new socket, the server blocks
-//    until all outstanding RPCs and related goroutines have completed for the
-//    client on the previous connection.
+//  1. Client sends UniqueID to server when the connection is reestablished.
+//  2. After accepting new socket, the server waits for the UniqueID from
+//     the client.
+//  3. If this is a client returning on a new socket, the server blocks
+//     until all outstanding RPCs and related goroutines have completed for the
+//     client on the previous connection.
 func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err error) {
 	buf, msgType, getErr := getIO(uint64(0), server.deadlineIO, cCtx.conn)
 	if getErr != nil {

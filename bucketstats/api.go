@@ -13,7 +13,6 @@
 // placed in a structure and registered, with a name, via a call to Register()
 // before being used.  The set of the statistics registered can be queried using
 // the registered name or individually.
-//
 package bucketstats
 
 import (
@@ -31,7 +30,6 @@ const (
 // values added.
 //
 // Adding a negative value is not supported.
-//
 type Totaler interface {
 	Increment()
 	Add(value uint64)
@@ -43,7 +41,6 @@ type Totaler interface {
 //
 // This adds a CountGet() function that returns the number of values added as
 // well as an AverageGet() method that returns the average.
-//
 type Averager interface {
 	Totaler
 	CountGet() (count uint64)
@@ -57,11 +54,11 @@ type Averager interface {
 // RangeHigh the largest value mapped to the bucket
 // NominalVal the nominal value of the bucket (sqrt(2)^n or 2^n)
 // MeanVal the mean value of values added to the bucket, assuming
-//         a uniform distribution
+//
+//	a uniform distribution
 //
 // When performing math on these statistics be careful of overflowing a uint64.
 // It may be a good idea to use the "math/big" package.
-//
 type BucketInfo struct {
 	Count      uint64
 	NominalVal uint64
@@ -77,7 +74,6 @@ type BucketInfo struct {
 //
 // DistGet() returns the distribution of values across the buckets as an array
 // of BucketInfo.
-//
 type Bucketer interface {
 	Averager
 	DistGet() []BucketInfo
@@ -93,7 +89,6 @@ type Bucketer interface {
 // of stats.  One or the other, but not both, can be the empty string.
 // Whitespace characters, '"' (double quote), '*' (asterik), and ':' (colon) are
 // not allowed in either name.
-//
 func Register(pkgName string, statsGroupName string, statsStruct interface{}) {
 	register(pkgName, statsGroupName, statsStruct)
 }
@@ -102,7 +97,6 @@ func Register(pkgName string, statsGroupName string, statsStruct interface{}) {
 //
 // Once unregistered, the same or a different set of statistics can be
 // registered using the same name.
-//
 func UnRegister(pkgName string, statsGroupName string) {
 	unRegister(pkgName, statsGroupName)
 }
@@ -115,7 +109,6 @@ func UnRegister(pkgName string, statsGroupName string) {
 //
 // Use "*" to select all package names with a given group name, all
 // groups with a given package name, or all groups.
-//
 func SprintStats(stringFmt StatStringFormat, pkgName string, statsGroupName string) (values string) {
 	return sprintStats(stringFmt, pkgName, statsGroupName)
 }
@@ -124,7 +117,6 @@ func SprintStats(stringFmt StatStringFormat, pkgName string, statsGroupName stri
 //
 // Name must be unique within statistics in the structure.  If it is "" then
 // Register() will assign a name based on the name of the field.
-//
 type Total struct {
 	total uint64 // Ensure 64-bit alignment
 	Name  string
@@ -143,7 +135,6 @@ func (this *Total) TotalGet() uint64 {
 }
 
 // Return a string with the statistic's value in the specified format.
-//
 func (this *Total) Sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
 	return this.sprint(stringFmt, pkgName, statsGroupName)
 }
@@ -153,7 +144,6 @@ func (this *Total) Sprint(stringFmt StatStringFormat, pkgName string, statsGroup
 //
 // Name must be unique within statistics in the structure.  If it is "" then
 // Register() will assign a name based on the name of the field.
-//
 type Average struct {
 	count uint64 // Ensure 64-bit alignment
 	total uint64 // Ensure 64-bit alignment
@@ -161,14 +151,12 @@ type Average struct {
 }
 
 // Add a value to the mean statistics.
-//
 func (this *Average) Add(value uint64) {
 	atomicAddUint64(&this.total, value)
 	atomicAddUint64(&this.count, 1)
 }
 
 // Add a value of 1 to the mean statistics.
-//
 func (this *Average) Increment() {
 	this.Add(1)
 }
@@ -186,7 +174,6 @@ func (this *Average) AverageGet() uint64 {
 }
 
 // Return a string with the statistic's value in the specified format.
-//
 func (this *Average) Sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
 	return this.sprint(stringFmt, pkgName, statsGroupName)
 }
@@ -206,18 +193,19 @@ func (this *Average) Sprint(stringFmt StatStringFormat, pkgName string, statsGro
 //
 // Example mappings of values to buckets:
 //
-//  Values  Bucket
-//       0       0
-//       1       1
-//       2       2
-//   3 - 5       3
-//  6 - 11       4
+//	Values  Bucket
+//	     0       0
+//	     1       1
+//	     2       2
+//	 3 - 5       3
+//	6 - 11       4
+//
 // 12 - 22       5
-//     etc.
+//
+//	etc.
 //
 // Note that value 2^n increments the count in bucket n + 1, but the average of
 // values in bucket n is very slightly larger than 2^n.
-//
 type BucketLog2Round struct {
 	Name        string
 	NBucket     uint
@@ -243,7 +231,6 @@ func (this *BucketLog2Round) Add(value uint64) {
 }
 
 // Add a value of 1 to the bucketized statistics.
-//
 func (this *BucketLog2Round) Increment() {
 	this.Add(1)
 }
@@ -264,13 +251,11 @@ func (this *BucketLog2Round) AverageGet() uint64 {
 }
 
 // Return BucketInfo information for all the buckets.
-//
 func (this *BucketLog2Round) DistGet() []BucketInfo {
 	return bucketDistMake(this.NBucket, this.statBuckets[:], log2RoundBucketTable[:])
 }
 
 // Return a string with the statistic's value in the specified format.
-//
 func (this *BucketLog2Round) Sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
 	return bucketSprint(stringFmt, pkgName, statsGroupName, this.Name, this.DistGet())
 }
@@ -293,20 +278,21 @@ func (this *BucketLog2Round) Sprint(stringFmt StatStringFormat, pkgName string, 
 //
 // Example mappings of values to buckets:
 //
-//  Values  Bucket
-//       0       0
-//       1       1
-//       2       2
-//       3       3
-//       4       4
-//   5 - 6       5
-//   7 - 9       6
+//	Values  Bucket
+//	     0       0
+//	     1       1
+//	     2       2
+//	     3       3
+//	     4       4
+//	 5 - 6       5
+//	 7 - 9       6
+//
 // 10 - 13       7
-//     etc.
+//
+//	etc.
 //
 // Note that a value sqrt(2)^n increments the count in bucket 2 * n, but the
 // average of values in bucket n is slightly larger than sqrt(2)^n.
-//
 type BucketLogRoot2Round struct {
 	Name        string
 	NBucket     uint
@@ -332,7 +318,6 @@ func (this *BucketLogRoot2Round) Add(value uint64) {
 }
 
 // Add a value of 1 to the bucketized statistics.
-//
 func (this *BucketLogRoot2Round) Increment() {
 	this.Add(1)
 }
@@ -353,13 +338,11 @@ func (this *BucketLogRoot2Round) AverageGet() uint64 {
 }
 
 // Return BucketInfo information for all the buckets.
-//
 func (this *BucketLogRoot2Round) DistGet() []BucketInfo {
 	return bucketDistMake(this.NBucket, this.statBuckets[:], logRoot2RoundBucketTable[:])
 }
 
 // Return a string with the statistic's value in the specified format.
-//
 func (this *BucketLogRoot2Round) Sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
 	return bucketSprint(stringFmt, pkgName, statsGroupName, this.Name, this.DistGet())
 }

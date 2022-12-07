@@ -7,52 +7,52 @@
 // To configure an iclientpkg instance, Start() is called passing, as the sole
 // argument, a package conf ConfMap. Here is a sample .conf file:
 //
-//  [ICLIENT]
-//  VolumeName:                       testvol
-//  MountPointDirPath:                /mnt
-//  FUSEBlockSize:                    512            # Several tools/applications actually require fission.KStatFS.BSize to be 512
-//  FUSEAllowOther:                   true
-//  FUSEMaxBackground:                1000
-//  FUSECongestionThreshhold:         0
-//  FUSEMaxPages:                     256
-//  FUSEMaxRead:                      1048576        # 1MiB == FUSEMaxPages(256) * 4KiB
-//  FUSEMaxWrite:                     1048576        # 1MiB == FUSEMaxPages(256) * 4KiB
-//  FUSEEntryValidDuration:           250ms
-//  FUSEAttrValidDuration:            250ms
-//  FUSENameLenMax:                   255
-//  AuthPlugInPath:                   iauth-swift.so
-//  AuthPlugInEnvName:                               # Only used if not defining AuthPlugInEnvValue here
-//  AuthPlugInEnvValue:               {"AuthURL":"http://swift:8080/auth/v1.0"\u002C"AuthUser":"test:tester"\u002C"AuthKey":"testing"\u002C"Account":"AUTH_test"\u002C"Container":"con"}
-//  SwiftTimeout:                     10m
-//  SwiftRetryLimit:                  4
-//  SwiftRetryDelay:                  100ms
-//  SwiftRetryDelayVariance:          25             # Percentage (1-100) of SwitRetryDelay
-//  SwiftRetryExponentialBackoff:     1.4
-//  SwiftConnectionPoolSize:          128
-//  RetryRPCPublicIPAddr:             imgr
-//  RetryRPCPort:                     32356
-//  RetryRPCDeadlineIO:               60s
-//  RetryRPCKeepAlivePeriod:          60s
-//  RetryRPCCACertFilePath:                          # Defaults to /dev/null disabling TLS
-//  MaxSharedLeases:                  500
-//  MaxExclusiveLeases:               100            # Caps pending FileFlush data at 1GiB (with FileFlushTriggerSize of 10MiB)
-//  InodePayloadEvictLowLimit:        100000
-//  InodePayloadEvictHighLimit:       100010
-//  DirInodeMaxKeysPerBPlusTreePage:  1024
-//  FileInodeMaxKeysPerBPlusTreePage: 2048
-//  ReadCacheLineSize:                1048576        # 1MiB
-//  ReadCacheLineCountMax:            1024           # 1GiB (with ReadCacheLineSize of 1MiB)
-//  FileFlushTriggerSize:             10485760       # [10MiB] Amount of written data before metadata is appended and flush is triggered
-//  FileFlushTriggerDuration:         10s            # Amount of time before unwritten data and its metadata flush is triggered
-//  InodeLockRetryDelay:              10ms
-//  InodeLockRetryDelayVariance:      50             # Percentage (1-100) of InodeLockRetryDelay
-//  LogFilePath:                      iclient.log
-//  LogToConsole:                     true
-//  TraceEnabled:                     false
-//  FUSELogEnabled:                   false
-//  RetryRPCLogEnabled:               false
-//  HTTPServerIPAddr:                                # Defaults to 0.0.0.0 (i.e. all interfaces)
-//  HTTPServerPort:                                  # Defaults to disabling the embedded HTTP Server
+//	[ICLIENT]
+//	VolumeName:                       testvol
+//	MountPointDirPath:                /mnt
+//	FUSEBlockSize:                    512            # Several tools/applications actually require fission.KStatFS.BSize to be 512
+//	FUSEAllowOther:                   true
+//	FUSEMaxBackground:                1000
+//	FUSECongestionThreshhold:         0
+//	FUSEMaxPages:                     256
+//	FUSEMaxRead:                      1048576        # 1MiB == FUSEMaxPages(256) * 4KiB
+//	FUSEMaxWrite:                     1048576        # 1MiB == FUSEMaxPages(256) * 4KiB
+//	FUSEEntryValidDuration:           250ms
+//	FUSEAttrValidDuration:            250ms
+//	FUSENameLenMax:                   255
+//	AuthPlugInPath:                   iauth-swift.so
+//	AuthPlugInEnvName:                               # Only used if not defining AuthPlugInEnvValue here
+//	AuthPlugInEnvValue:               {"AuthURL":"http://swift:8080/auth/v1.0"\u002C"AuthUser":"test:tester"\u002C"AuthKey":"testing"\u002C"Account":"AUTH_test"\u002C"Container":"con"}
+//	SwiftTimeout:                     10m
+//	SwiftRetryLimit:                  4
+//	SwiftRetryDelay:                  100ms
+//	SwiftRetryDelayVariance:          25             # Percentage (1-100) of SwitRetryDelay
+//	SwiftRetryExponentialBackoff:     1.4
+//	SwiftConnectionPoolSize:          128
+//	RetryRPCPublicIPAddr:             imgr
+//	RetryRPCPort:                     32356
+//	RetryRPCDeadlineIO:               60s
+//	RetryRPCKeepAlivePeriod:          60s
+//	RetryRPCCACertFilePath:                          # Defaults to /dev/null disabling TLS
+//	MaxSharedLeases:                  500
+//	MaxExclusiveLeases:               100            # Caps pending FileFlush data at 1GiB (with FileFlushTriggerSize of 10MiB)
+//	InodePayloadEvictLowLimit:        100000
+//	InodePayloadEvictHighLimit:       100010
+//	DirInodeMaxKeysPerBPlusTreePage:  1024
+//	FileInodeMaxKeysPerBPlusTreePage: 2048
+//	ReadCacheLineSize:                1048576        # 1MiB
+//	ReadCacheLineCountMax:            1024           # 1GiB (with ReadCacheLineSize of 1MiB)
+//	FileFlushTriggerSize:             10485760       # [10MiB] Amount of written data before metadata is appended and flush is triggered
+//	FileFlushTriggerDuration:         10s            # Amount of time before unwritten data and its metadata flush is triggered
+//	InodeLockRetryDelay:              10ms
+//	InodeLockRetryDelayVariance:      50             # Percentage (1-100) of InodeLockRetryDelay
+//	LogFilePath:                      iclient.log
+//	LogToConsole:                     true
+//	TraceEnabled:                     false
+//	FUSELogEnabled:                   false
+//	RetryRPCLogEnabled:               false
+//	HTTPServerIPAddr:                                # Defaults to 0.0.0.0 (i.e. all interfaces)
+//	HTTPServerPort:                                  # Defaults to disabling the embedded HTTP Server
 //
 // Most of the config keys are required and must have values. One set of exceptions
 // are the HTTPServer{IPAddr|Port} keys that, if not present (or HTTPServerPort is
@@ -62,29 +62,28 @@
 // The embedded HTTP Server (at URL http://<HTTPServerIPAddr>:<HTTPServerPort>)
 // responds to the following:
 //
-//  GET /config
+//	GET /config
 //
 // This will return a JSON document that matches the conf.ConfMap used to
 // launch this package.
 //
-//  GET /leases
+//	GET /leases
 //
 // This will display the state of every lease.
 //
-//  POST /leases/demote
+//	POST /leases/demote
 //
 // This will trigger the demotion of any Exclusive Leases held.
 //
-//  POST /leases/release
+//	POST /leases/release
 //
 // This will trigger the release of any {Exclusive|Shared} Leases held.
 //
-//  GET /stats
+//	GET /stats
 //
 // This will return a raw bucketstats dump.
 //
-//  GET /version
-//
+//	GET /version
 package iclientpkg
 
 import (
@@ -92,40 +91,34 @@ import (
 )
 
 // Start is called to start serving.
-//
 func Start(confMap conf.ConfMap, fissionErrChan chan error) (err error) {
 	err = start(confMap, fissionErrChan)
 	return
 }
 
 // Stop is called to stop serving.
-//
 func Stop() (err error) {
 	err = stop()
 	return
 }
 
 // Signal is called to interrupt the server for performing operations such as log rotation.
-//
 func Signal() (err error) {
 	err = signal()
 	return
 }
 
 // LogFatalf is a wrapper around the internal logFatalf() func called by iclient/main.go::main().
-//
 func LogFatalf(format string, args ...interface{}) {
 	logFatalf(format, args...)
 }
 
 // LogWarnf is a wrapper around the internal logWarnf() func called by iclient/main.go::main().
-//
 func LogWarnf(format string, args ...interface{}) {
 	logWarnf(format, args...)
 }
 
 // LogInfof is a wrapper around the internal logInfof() func called by iclient/main.go::main().
-//
 func LogInfof(format string, args ...interface{}) {
 	logInfof(format, args...)
 }

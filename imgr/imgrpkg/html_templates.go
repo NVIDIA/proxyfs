@@ -4,7 +4,8 @@
 package imgrpkg
 
 // To use: fmt.Sprintf(indexDotHTMLTemplate, proxyfsVersion)
-//                                               %[1]v
+//
+//	%[1]v
 const indexDotHTMLTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -93,7 +94,8 @@ const indexDotHTMLTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(configTemplate, proxyfsVersion, confMapJSONString)
-//                                          %[1]v            %[2]v
+//
+//	%[1]v            %[2]v
 const configTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -152,7 +154,8 @@ const configTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(volumeListTemplate, proxyfsVersion, volumeListJSONString)
-//                                             %[1]v              %[2]v
+//
+//	%[1]v              %[2]v
 const volumeListTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -239,7 +242,8 @@ const volumeListTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(volumeTemplate, proxyfsVersion, volumeName, volumeJSONString)
-//                                          %[1]v        %[2]v          %[3]v
+//
+//	%[1]v        %[2]v          %[3]v
 const volumeTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -432,7 +436,8 @@ const volumeTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(inodeTemplate, proxyfsVersion, volumeName, inodeNumber, inodeJSONString)
-//                                          %[1]v       %[2]v        %[3]v          %[4]v
+//
+//	%[1]v       %[2]v        %[3]v          %[4]v
 const inodeTemplate string = `<!doctype html>
 <html lang="en">
   <head>

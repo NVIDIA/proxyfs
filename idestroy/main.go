@@ -10,7 +10,6 @@
 // As it is expected to be used (e.g.. during development/testing) to clear out
 // a container ultimately used by iclient/imgr, idestroy is designed to simply
 // leverage the same iclient .conf file.
-//
 package main
 
 import (

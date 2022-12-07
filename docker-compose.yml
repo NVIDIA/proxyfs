@@ -3,7 +3,7 @@
 
 # To build the `development` service
 #
-#   docker compose build [--build-arg GolangVersion=<X.YY.Z>] [--build-arg MakeTarget={|all|ci|minimal}]
+#   docker-compose build [--build-arg GolangVersion=<X.YY.Z>] [--build-arg MakeTarget={|all|ci|minimal}]
 #
 #   Notes:
 #     --build-arg Key=Value settings passed on to Dockerfile
@@ -12,34 +12,34 @@
 #
 # To run the resultant application:
 #
-#   docker compose up [-d|--detach] {dev|ickpt|imgr|iclient}
+#   docker-compose up [-d|--detach] {dev|ickpt|imgr|iclient}
 #
 #   Notes:
 #     -d|--detach:
-#       1) tells docker compose to detach from running containers
+#       1) tells docker-compose to detach from running containers
 #       2) if supplied:
 #          a) stop application with `docker compose down`
 #          b) containers are removed upon application down
 #       3) if not supplied:
 #          a) stop application with ^C
 #          b) containers are left in "exited" state upon application down
-#     dev:     tells docker compose to only bring up dev     service (w/ dependencies)
-#     ickpt:   tells docker compose to only bring up ickpt   service (w/ dependencies)
-#     imgr:    tells docker compose to only bring up imgr    service (w/ dependencies)
-#     iclient: tells docker compose to only bring up iclient service (w/ dependencies)
+#     dev:     tells docker-compose to only bring up dev     service (w/ dependencies)
+#     ickpt:   tells docker-compose to only bring up ickpt   service (w/ dependencies)
+#     imgr:    tells docker-compose to only bring up imgr    service (w/ dependencies)
+#     iclient: tells docker-compose to only bring up iclient service (w/ dependencies)
 #     Precisely one of {dev|ickpt|imgr|iclient} must be specied...
 #       If no service is specified, dev published ports will collide with other services
 #     Containers launched have been named the same as their corresponding service name
 #
 # To stop the resultant application:
 #
-#   docker compose down
+#   docker-compose down
 
 version: '3.8'
 
 services:
   swift:
-    image: dockerswiftaio/docker-swift:2.27.0
+    image: dockerswiftaio/docker-swift:2.29.0
     container_name: proxyfs_swift
     expose:
       - 8080                                  # curl http://swift:8080/info
@@ -55,7 +55,10 @@ services:
     container_name: proxyfs_dev
     depends_on:
       - swift
-    privileged: true
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - '/dev/fuse'
     expose:
       - 33123                                 # ICKPT.Port
       - 32356                                 # IMGR.RetryRPCPort
@@ -100,7 +103,6 @@ services:
     container_name: proxyfs_ickpt
     depends_on:
       - swift
-    privileged: true
     expose:
       - 33123                                 # ICKPT.Port
     ports:
@@ -138,7 +140,10 @@ services:
     depends_on:
       - swift
       - imgr
-    privileged: true
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - '/dev/fuse'
     expose:
       - 15347                                 # ICLIENT.HTTPServerPort
     ports:

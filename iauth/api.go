@@ -13,7 +13,6 @@ import (
 //
 // The return from the Auth PlugIn's PerformAuth func is simply returned to the
 // caller of this func.
-//
 func PerformAuth(authPlugInPath string, authInString string) (authToken string, storageURL string, err error) {
 	var (
 		ok                  bool

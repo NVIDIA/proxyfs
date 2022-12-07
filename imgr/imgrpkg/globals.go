@@ -81,15 +81,18 @@ type configStruct struct {
 }
 
 type statsStruct struct {
-	DeleteVolumeUsecs   bucketstats.BucketLog2Round // DELETE /volume/<VolumeName>
-	GetConfigUsecs      bucketstats.BucketLog2Round // GET /config
-	GetStatsUsecs       bucketstats.BucketLog2Round // GET /stats
-	GetVersionUsecs     bucketstats.BucketLog2Round // GET /version
-	GetVolumeInodeUsecs bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumber>
-	GetVolumeListUsecs  bucketstats.BucketLog2Round // GET /volume
-	GetVolumeUsecs      bucketstats.BucketLog2Round // GET /volume/<VolumeName>
-	PostVolumeUsecs     bucketstats.BucketLog2Round // POST /volume/<VolumeName>
-	PutVolumeUsecs      bucketstats.BucketLog2Round // PUT /volume/<VolumeName>
+	DeleteKeepAliveUsecs bucketstats.BucketLog2Round // DELETE /keepalive
+	DeleteVolumeUsecs    bucketstats.BucketLog2Round // DELETE /volume/<VolumeName>
+	GetConfigUsecs       bucketstats.BucketLog2Round // GET /config
+	GetKeepAliveUsecs    bucketstats.BucketLog2Round // GET /keepalive
+	GetStatsUsecs        bucketstats.BucketLog2Round // GET /stats
+	GetVersionUsecs      bucketstats.BucketLog2Round // GET /version
+	GetVolumeInodeUsecs  bucketstats.BucketLog2Round // GET /volume/<VolumeName>/inode/<InodeNumber>
+	GetVolumeListUsecs   bucketstats.BucketLog2Round // GET /volume
+	GetVolumeUsecs       bucketstats.BucketLog2Round // GET /volume/<VolumeName>
+	PostVolumeUsecs      bucketstats.BucketLog2Round // POST /volume/<VolumeName>
+	PutKeepAliveUsecs    bucketstats.BucketLog2Round // PUT /keepalive/<Duration>
+	PutVolumeUsecs       bucketstats.BucketLog2Round // PUT /volume/<VolumeName>
 
 	AdjustInodeTableEntryOpenCountUsecs bucketstats.BucketLog2Round // (*RetryRPCServerStruct).AdjustInodeTableEntryOpenCount()
 	DeleteInodeTableEntryUsecs          bucketstats.BucketLog2Round // (*RetryRPCServerStruct).DeleteInodeTableEntry()
@@ -185,7 +188,8 @@ type inodeLeaseStruct struct {
 	lruElement  *list.Element // link into globals.inodeLeaseLRU
 	leaseState  inodeLeaseStateType
 
-	requestChan chan *leaseRequestOperationStruct
+	requestChan chan struct{} // Used to signal handler() to service .requestList
+	requestList *list.List    // FIFO of leaseRequestOperationStruct's
 	stopChan    chan struct{} // closing this chan will trigger *inodeLeaseStruct.handler() to:
 	//                             revoke/reject all leaseRequestStruct's in *Holder* & requestedList
 	//                             issue volume.leaseHandlerWG.Done()
@@ -270,6 +274,12 @@ type volumeStruct struct {
 	//                                                                         .Done() each inodeLease after it is removed from inodeLeaseMap
 }
 
+type keepAliveControlStruct struct {
+	sync.WaitGroup
+	duration time.Duration
+	stopChan chan struct{}
+}
+
 type globalsStruct struct {
 	sync.Mutex                                    //
 	config               configStruct             //
@@ -287,6 +297,7 @@ type globalsStruct struct {
 	retryrpcServer       *retryrpc.Server         //
 	httpServer           *http.Server             //
 	httpServerWG         sync.WaitGroup           //
+	keepAliveControl     *keepAliveControlStruct  // if != nil, represents a possibly active (or recently exited) (*keepAliveControl).daemon()
 	stats                *statsStruct             //
 }
 

@@ -43,6 +43,8 @@ func startHTTPServer() (err error) {
 
 	ipAddrTCPPort = net.JoinHostPort(globals.config.PrivateIPAddr, strconv.Itoa(int(globals.config.HTTPServerPort)))
 
+	globals.keepAliveControl = nil
+
 	globals.httpServer = &http.Server{
 		Addr:    ipAddrTCPPort,
 		Handler: &globals,
@@ -77,9 +79,22 @@ func startHTTPServer() (err error) {
 }
 
 func stopHTTPServer() (err error) {
+	var (
+		keepAliveControl *keepAliveControlStruct
+	)
+
 	err = globals.httpServer.Shutdown(context.TODO())
 	if nil == err {
 		globals.httpServerWG.Wait()
+	}
+
+	globals.Lock()
+	keepAliveControl = globals.keepAliveControl
+	globals.keepAliveControl = nil
+	globals.Unlock()
+
+	if keepAliveControl != nil {
+		keepAliveControl.cancel()
 	}
 
 	return
@@ -87,12 +102,18 @@ func stopHTTPServer() (err error) {
 
 func (dummy *globalsStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		err         error
-		requestBody []byte
-		requestPath string
+		err              error
+		requestAuthToken string
+		requestBody      []byte
+		requestHTML      bool
+		requestPath      string
 	)
 
 	requestPath = strings.TrimRight(request.URL.Path, "/")
+
+	requestAuthToken = request.Header.Get("X-Auth-Token")
+
+	requestHTML = strings.Contains(request.Header.Get("Accept"), "text/html")
 
 	requestBody, err = ioutil.ReadAll(request.Body)
 	if nil == err {
@@ -109,28 +130,56 @@ func (dummy *globalsStruct) ServeHTTP(responseWriter http.ResponseWriter, reques
 
 	switch request.Method {
 	case http.MethodDelete:
-		serveHTTPDelete(responseWriter, request, requestPath)
+		serveHTTPDelete(responseWriter, requestPath)
 	case http.MethodGet:
-		serveHTTPGet(responseWriter, request, requestPath)
+		serveHTTPGet(responseWriter, requestPath, requestAuthToken, requestHTML)
 	case http.MethodPost:
-		serveHTTPPost(responseWriter, request, requestPath, requestBody)
+		serveHTTPPost(responseWriter, requestPath, requestBody)
 	case http.MethodPut:
-		serveHTTPPut(responseWriter, request, requestPath, requestBody)
+		serveHTTPPut(responseWriter, requestPath, requestBody)
 	default:
 		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
-func serveHTTPDelete(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
+func serveHTTPDelete(responseWriter http.ResponseWriter, requestPath string) {
 	switch {
+	case "/keepalive" == requestPath:
+		serveHTTPDeleteOfKeepAlive(responseWriter)
 	case strings.HasPrefix(requestPath, "/volume"):
-		serveHTTPDeleteOfVolume(responseWriter, request, requestPath)
+		serveHTTPDeleteOfVolume(responseWriter, requestPath)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
 }
 
-func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
+func serveHTTPDeleteOfKeepAlive(responseWriter http.ResponseWriter) {
+	var (
+		keepAliveControl *keepAliveControlStruct
+		startTime        time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.DeleteKeepAliveUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	globals.Lock()
+	keepAliveControl = globals.keepAliveControl
+	globals.keepAliveControl = nil // Avoid race
+	globals.Unlock()
+
+	if keepAliveControl == nil {
+		responseWriter.WriteHeader(http.StatusNotFound)
+	} else {
+		keepAliveControl.cancel()
+
+		responseWriter.WriteHeader(http.StatusOK)
+
+		logInfof("KeepAlive disabled")
+	}
+}
+
+func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, requestPath string) {
 	var (
 		err       error
 		pathSplit []string
@@ -156,7 +205,7 @@ func serveHTTPDeleteOfVolume(responseWriter http.ResponseWriter, request *http.R
 	}
 }
 
-func serveHTTPGet(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
+func serveHTTPGet(responseWriter http.ResponseWriter, requestPath string, requestAuthToken string, requestHTML bool) {
 	var (
 		ok bool
 	)
@@ -167,17 +216,19 @@ func serveHTTPGet(responseWriter http.ResponseWriter, request *http.Request, req
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write([]byte(fmt.Sprintf(indexDotHTMLTemplate, version.ProxyFSVersion)))
 	case "/config" == requestPath:
-		serveHTTPGetOfConfig(responseWriter, request)
+		serveHTTPGetOfConfig(responseWriter, requestHTML)
 	case "/index.html" == requestPath:
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write([]byte(fmt.Sprintf(indexDotHTMLTemplate, version.ProxyFSVersion)))
+	case "/keepalive" == requestPath:
+		serveHTTPGetOfKeepAlive(responseWriter)
 	case "/stats" == requestPath:
-		serveHTTPGetOfStats(responseWriter, request)
+		serveHTTPGetOfStats(responseWriter)
 	case "/version" == requestPath:
-		serveHTTPGetOfVersion(responseWriter, request)
+		serveHTTPGetOfVersion(responseWriter)
 	case strings.HasPrefix(requestPath, "/volume"):
-		serveHTTPGetOfVolume(responseWriter, request, requestPath)
+		serveHTTPGetOfVolume(responseWriter, requestPath, requestAuthToken, requestHTML)
 	default:
 		ok = ihtml.ServeHTTPGet(responseWriter, requestPath)
 		if !ok {
@@ -186,7 +237,7 @@ func serveHTTPGet(responseWriter http.ResponseWriter, request *http.Request, req
 	}
 }
 
-func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
+func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, requestHTML bool) {
 	var (
 		confMapJSON []byte
 		err         error
@@ -202,7 +253,7 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Requ
 		logFatalf("json.Marshal(globals.config) failed: %v", err)
 	}
 
-	if strings.Contains(request.Header.Get("Accept"), "text/html") {
+	if requestHTML {
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
@@ -222,7 +273,48 @@ func serveHTTPGetOfConfig(responseWriter http.ResponseWriter, request *http.Requ
 	}
 }
 
-func serveHTTPGetOfStats(responseWriter http.ResponseWriter, request *http.Request) {
+func serveHTTPGetOfKeepAlive(responseWriter http.ResponseWriter) {
+	var (
+		err                       error
+		keepAliveControl          *keepAliveControlStruct
+		keepAliveDurationAsString string
+		startTime                 time.Time = time.Now()
+	)
+
+	defer func() {
+		globals.stats.GetKeepAliveUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	globals.Lock()
+	keepAliveControl = globals.keepAliveControl
+	globals.keepAliveControl = nil // Avoid race
+	globals.Unlock()
+
+	if keepAliveControl == nil {
+		responseWriter.WriteHeader(http.StatusNotFound)
+	} else {
+		keepAliveControl.cancel()
+
+		keepAliveDurationAsString = fmt.Sprintf("%v", keepAliveControl.duration)
+
+		responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(keepAliveDurationAsString)))
+		responseWriter.Header().Set("Content-Type", "text/plain")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, err = responseWriter.Write([]byte(keepAliveDurationAsString))
+		if nil != err {
+			logWarnf("responseWriter.Write([]byte(keepAliveDurationAsString)) failed: %v", err)
+		}
+
+		globals.Lock()
+		if globals.keepAliveControl == nil { // Avoid race
+			globals.keepAliveControl = keepAliveStart(keepAliveControl.duration)
+		}
+		globals.Unlock()
+	}
+}
+
+func serveHTTPGetOfStats(responseWriter http.ResponseWriter) {
 	var (
 		err           error
 		startTime     time.Time = time.Now()
@@ -245,7 +337,7 @@ func serveHTTPGetOfStats(responseWriter http.ResponseWriter, request *http.Reque
 	}
 }
 
-func serveHTTPGetOfVersion(responseWriter http.ResponseWriter, request *http.Request) {
+func serveHTTPGetOfVersion(responseWriter http.ResponseWriter) {
 	var (
 		err       error
 		startTime time.Time
@@ -631,9 +723,8 @@ func (extentMapWrapper *httpServerExtentMapWrapperStruct) UnpackValue(payloadDat
 	return
 }
 
-func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string) {
+func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, requestPath string, requestAuthToken string, requestHTML bool) {
 	var (
-		acceptHeader                       string
 		checkPointV1                       *ilayout.CheckPointV1Struct
 		dimensionsReport                   sortedmap.DimensionsReport
 		directoryEntryIndex                int
@@ -664,11 +755,11 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		inodeTableIndex                    int
 		inodeTableLayoutIndex              int
 		inodeTableWrapper                  *httpServerInodeTableWrapperStruct
+		keepAliveControl                   *keepAliveControlStruct
 		mustBeInode                        string
 		ok                                 bool
 		pathSplit                          []string
 		pendingDeleteObjectNameArrayIndex  int
-		requestAuthToken                   string
 		startTime                          time.Time = time.Now()
 		superBlockV1                       *ilayout.SuperBlockV1Struct
 		volumeAsStruct                     *volumeStruct
@@ -728,16 +819,21 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			}
 		}
 
+		keepAliveControl = globals.keepAliveControl
+		globals.keepAliveControl = nil // Avoid race
+
 		globals.Unlock()
+
+		if keepAliveControl != nil {
+			keepAliveControl.cancel()
+		}
 
 		volumeListGETAsJSON, err = json.Marshal(volumeListGET)
 		if nil != err {
 			logFatal(err)
 		}
 
-		acceptHeader = request.Header.Get("Accept")
-
-		if strings.Contains(acceptHeader, "text/html") {
+		if requestHTML {
 			volumeListGETAsHTML = []byte(fmt.Sprintf(volumeListTemplate, version.ProxyFSVersion, string(volumeListGETAsJSON)))
 
 			responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeListGETAsHTML)))
@@ -757,6 +853,14 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 			if nil != err {
 				logWarnf("responseWriter.Write(volumeListGETAsJSON) failed: %v", err)
 			}
+		}
+
+		if keepAliveControl != nil {
+			globals.Lock()
+			if globals.keepAliveControl == nil { // Avoid race
+				globals.keepAliveControl = keepAliveStart(keepAliveControl.duration)
+			}
+			globals.Unlock()
 		}
 	case 3:
 		// Form: /volume/<VolumeName>
@@ -780,7 +884,6 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				logFatalf("globals.volumeMap[\"%s\"] was not a *volumeStruct", volumeName)
 			}
 
-			requestAuthToken = request.Header.Get("X-Auth-Token")
 			volumeAuthToken = volumeAsStruct.authToken
 			if requestAuthToken != "" {
 				volumeAsStruct.authToken = requestAuthToken
@@ -889,9 +992,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				logFatal(err)
 			}
 
-			acceptHeader = request.Header.Get("Accept")
-
-			if strings.Contains(acceptHeader, "text/html") {
+			if requestHTML {
 				volumeGETAsHTML = []byte(fmt.Sprintf(volumeTemplate, version.ProxyFSVersion, volumeAsStruct.name, string(volumeGETAsJSON)))
 
 				responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(volumeGETAsHTML)))
@@ -947,7 +1048,6 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 					}
 
 					volumeAuthToken = volumeAsStruct.authToken
-					requestAuthToken = request.Header.Get("X-Auth-Token")
 					if requestAuthToken != "" {
 						volumeAsStruct.authToken = requestAuthToken
 					}
@@ -1255,9 +1355,7 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 						logFatal(err)
 					}
 
-					acceptHeader = request.Header.Get("Accept")
-
-					if strings.Contains(acceptHeader, "text/html") {
+					if requestHTML {
 						inodeGETAsHTML = []byte(fmt.Sprintf(inodeTemplate, version.ProxyFSVersion, volumeAsStruct.name, inodeHeadV1.InodeNumber, string(inodeGETAsJSON)))
 
 						responseWriter.Header().Set("Content-Length", fmt.Sprintf("%d", len(inodeGETAsHTML)))
@@ -1291,10 +1389,10 @@ func serveHTTPGetOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 	}
 }
 
-func serveHTTPPost(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
+func serveHTTPPost(responseWriter http.ResponseWriter, requestPath string, requestBody []byte) {
 	switch {
 	case requestPath == "/volume":
-		serveHTTPPostOfVolume(responseWriter, request, requestBody)
+		serveHTTPPostOfVolume(responseWriter, requestBody)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
@@ -1305,7 +1403,7 @@ type serveHTTPPostOfVolumeRequestBodyAsJSONStruct struct {
 	AuthToken  string
 }
 
-func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestBody []byte) {
+func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, requestBody []byte) {
 	var (
 		conflictReason         []byte
 		confligtReasonWriteErr error
@@ -1342,12 +1440,75 @@ func serveHTTPPostOfVolume(responseWriter http.ResponseWriter, request *http.Req
 	}
 }
 
-func serveHTTPPut(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
+func serveHTTPPut(responseWriter http.ResponseWriter, requestPath string, requestBody []byte) {
 	switch {
+	case strings.HasPrefix(requestPath, "/keepalive"):
+		serveHTTPPutOfKeepAlive(responseWriter, requestPath)
 	case strings.HasPrefix(requestPath, "/volume"):
-		serveHTTPPutOfVolume(responseWriter, request, requestPath, requestBody)
+		serveHTTPPutOfVolume(responseWriter, requestPath, requestBody)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func serveHTTPPutOfKeepAlive(responseWriter http.ResponseWriter, requestPath string) {
+	var (
+		err                  error
+		keepAliveControl     *keepAliveControlStruct
+		keepAliveDurationNew time.Duration
+		keepAliveDurationOld time.Duration
+		pathSplit            []string
+		startTime            time.Time = time.Now()
+	)
+
+	pathSplit = strings.Split(requestPath, "/")
+
+	switch len(pathSplit) {
+	case 3:
+		defer func() {
+			globals.stats.PutKeepAliveUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+		}()
+
+		keepAliveDurationNew, err = time.ParseDuration(pathSplit[2])
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		responseWriter.WriteHeader(http.StatusOK)
+
+		globals.Lock()
+		keepAliveControl = globals.keepAliveControl
+		globals.keepAliveControl = nil // Avoid race
+		globals.Unlock()
+
+		if keepAliveControl == nil {
+			keepAliveDurationOld = time.Duration(0)
+		} else {
+			keepAliveControl.cancel()
+			keepAliveDurationOld = keepAliveControl.duration
+		}
+
+		globals.Lock()
+		if globals.keepAliveControl == nil { // Avoid race
+			if keepAliveDurationNew == time.Duration(0) {
+				if keepAliveDurationOld != time.Duration(0) {
+					logInfof("KeepAlive disabled")
+				}
+			} else {
+				if keepAliveDurationOld == time.Duration(0) {
+					logInfof("KeepAlive enabled with duration %v", keepAliveDurationNew)
+				} else if keepAliveDurationOld != keepAliveDurationNew {
+					logInfof("KeepAlive duration updated from %v to %v", keepAliveDurationOld, keepAliveDurationNew)
+				} else {
+					// KeepAlive duration unchanged
+				}
+				globals.keepAliveControl = keepAliveStart(keepAliveDurationNew)
+			}
+			globals.Unlock()
+		}
+	default:
+		responseWriter.WriteHeader(http.StatusBadRequest)
 	}
 }
 
@@ -1356,11 +1517,12 @@ type serveHTTPPutOfVolumeRequestBodyAsJSONStruct struct {
 	AuthToken  string
 }
 
-func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Request, requestPath string, requestBody []byte) {
+func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, requestPath string, requestBody []byte) {
 	var (
 		conflictReason         []byte
 		confligtReasonWriteErr error
 		err                    error
+		keepAliveControl       *keepAliveControlStruct
 		pathSplit              []string
 		requestBodyAsJSON      serveHTTPPutOfVolumeRequestBodyAsJSONStruct
 		startTime              time.Time = time.Now()
@@ -1373,6 +1535,15 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 		defer func() {
 			globals.stats.PutVolumeUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
 		}()
+
+		globals.Lock()
+		keepAliveControl = globals.keepAliveControl
+		globals.keepAliveControl = nil // Avoid race
+		globals.Unlock()
+
+		if keepAliveControl != nil {
+			keepAliveControl.cancel()
+		}
 
 		err = json.Unmarshal(requestBody, &requestBodyAsJSON)
 		if nil != err {
@@ -1396,7 +1567,99 @@ func serveHTTPPutOfVolume(responseWriter http.ResponseWriter, request *http.Requ
 				logWarnf("responseWriter.Write(conflictReason) failed: %v", confligtReasonWriteErr)
 			}
 		}
+
+		if keepAliveControl != nil {
+			globals.Lock()
+			if globals.keepAliveControl == nil { // Avoid race
+				globals.keepAliveControl = keepAliveStart(keepAliveControl.duration)
+			}
+			globals.Unlock()
+		}
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
 	}
+}
+
+func (keepAliveControl *keepAliveControlStruct) cancel() {
+	close(keepAliveControl.stopChan)
+	keepAliveControl.Wait()
+}
+
+func keepAliveStart(keepAliveDuration time.Duration) (keepAliveControl *keepAliveControlStruct) {
+	keepAliveControl = &keepAliveControlStruct{
+		duration: keepAliveDuration,
+		stopChan: make(chan struct{}),
+	}
+
+	keepAliveControl.Add(1)
+
+	go keepAliveControl.daemon()
+
+	return
+}
+
+func (keepAliveControl *keepAliveControlStruct) daemon() {
+	var (
+		err             error
+		keepAliveTimer  *time.Timer
+		ok              bool
+		volumeMapLen    int
+		volumeList      []string
+		volumeListIndex int
+		volumeNameAsKey sortedmap.Key
+	)
+
+	keepAliveTimer = time.NewTimer(keepAliveControl.duration)
+
+	select {
+	case <-keepAliveTimer.C:
+		globals.Lock()
+		if globals.keepAliveControl == keepAliveControl {
+			globals.keepAliveControl = nil
+			close(keepAliveControl.stopChan)
+		}
+		volumeMapLen, err = globals.volumeMap.Len()
+		if nil != err {
+			logFatal(err)
+		}
+		logWarnf("KeepAlive expired - resetting and deleting %v volume(s)", volumeMapLen)
+		volumeList = make([]string, volumeMapLen)
+		for volumeListIndex = 0; volumeListIndex < volumeMapLen; volumeListIndex++ {
+			volumeNameAsKey, _, ok, err = globals.volumeMap.GetByIndex(volumeListIndex)
+			if nil != err {
+				logFatal(err)
+			}
+			if !ok {
+				logFatalf("globals.volumeMap[] len (%d) is wrong", volumeMapLen)
+			}
+			volumeList[volumeListIndex], ok = volumeNameAsKey.(string)
+			if !ok {
+				logFatalf("globals.volumeMap did not have a string Key at index %d", volumeListIndex)
+			}
+		}
+		globals.Unlock()
+		for volumeListIndex = 0; volumeListIndex < volumeMapLen; volumeListIndex++ {
+			keepAliveControl.Add(1)
+			go keepAliveControl.deleteVolume(volumeList[volumeListIndex])
+		}
+	case <-keepAliveControl.stopChan:
+		if !keepAliveTimer.Stop() {
+			<-keepAliveTimer.C
+		}
+	}
+
+	keepAliveControl.Done()
+}
+
+func (keepAliveControl *keepAliveControlStruct) deleteVolume(volumeName string) {
+	var (
+		err error
+	)
+
+	err = deleteVolume(volumeName)
+	if nil != err {
+		logFatalf("deleteVolume(\"%s\") failed: %v", volumeName, err)
+	}
+
+	keepAliveControl.Done()
 }

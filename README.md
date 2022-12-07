@@ -70,7 +70,7 @@ To clear out prior deamon runs and run the daemons in the background:
 * [`dev` /src#] rm -rf /tmp/ickptDB
 * [`dev` /src#] ickpt/ickpt ickpt/dev.conf &
 * [`dev` /src#] imgr/imgr imgr/dev.conf &
-* [`dev` /src#] idestroy/idestroy iclient/dev.conf &
+* [`dev` /src#] idestroy/idestroy iclient/dev.conf
 * [`dev` /src#] imgr/mkmount.sh -fs
 * [`dev` /src#] iclient/iclient iclient/dev.conf &
 
