@@ -59,6 +59,7 @@ services:
       - SYS_ADMIN
     devices:
       - '/dev/fuse'
+    privileged: true
     expose:
       - 33123                                 # ICKPT.Port
       - 32356                                 # IMGR.RetryRPCPort
@@ -144,6 +145,7 @@ services:
       - SYS_ADMIN
     devices:
       - '/dev/fuse'
+    privileged: true
     expose:
       - 15347                                 # ICLIENT.HTTPServerPort
     ports:
