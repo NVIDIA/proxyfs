@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 Usage="$(basename "$0") - Ask swift/imgr to format and serve testvol... and then sleep
 where:
@@ -30,7 +30,7 @@ AuthToken=""
 while [ "$AuthToken" == "" ]
 do
   sleep 1
-  AuthToken=`curl -v -s -H "X-Auth-User: test:tester" -H "X-Auth-Key: testing" swift:8080/auth/v1.0 2>&1 | awk /"X-Auth-Token:"/'{print $3}'`
+  AuthToken=`curl -v -s -H "X-Auth-User: test:tester" -H "X-Auth-Key: testing" swift:8080/auth/v1.0 2>&1 | awk /"X-Auth-Token:"/'{print $3}' | tr -d '\r'`
 done
 
 curl -v -s -H "X-Auth-Token: $AuthToken" swift:8080/v1/AUTH_test/con -X PUT

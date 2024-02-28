@@ -4,7 +4,7 @@
 # To build this image:
 #
 #   docker build                                      \
-#          --target {base|dev|build|deploy}           \
+#          --target {base|buildable|dev|build|deploy} \
 #          [--build-arg GolangVersion=<X.YY.Z>]       \
 #          [--build-arg MakeTarget={|all|ci|minimal}] \
 #          [-t <repository>[:<tag>]]                  .
@@ -47,7 +47,6 @@
 #          [--cap-add SYS_ADMIN]                                      \
 #          [--device /dev/fuse]                                       \
 #          [--mount src="$(pwd)",target="/src",type=bind]             \
-#          [--env DISPLAY=<hostOrIP>:<displayNumber>[.<screenNumber]] \
 #          <image id>|<repository>[:<tag>]
 #
 #   Notes:
@@ -64,28 +63,37 @@
 #       1) bind mounts the context into /src in the container
 #       2) /src will be a read-write'able equivalent to the context dir
 #       3) only useful for --target dev
-#     --env DISPLAY: tells Docker to set ENV DISPLAY for X apps (e.g. wireshark)
 
-FROM alpine:3.17 as base
-RUN apk add --no-cache libc6-compat
+FROM ubuntu:22.04 as base
 
-FROM base as dev
-ARG GolangVersion=1.19.4
-RUN apk add --no-cache               \
-                       bind-tools    \
-                       curl          \
-                       fio           \
-                       fuse          \
-                       gcc           \
-                       git           \
-                       jq            \
-                       libc-dev      \
-                       make          \
-                       tar           \
-                       terminus-font \
-                       wireshark
-ENV LIBGL_ALWAYS_INDIRECT=1
-ENV XDG_RUNTIME_DIR="/tmp/runtime-root"
+RUN    apt-get update \
+    && apt-get upgrade -y
+
+ARG TimeZone=America/Los_Angeles
+RUN ln -snf /usr/share/zoneinfo/${TimeZone} /etc/localtime
+RUN echo ${TimeZone} > /etc/timezone
+
+RUN DEBIAN_FRONTEND="noninteractive" apt-get install -y tzdata
+
+FROM base as buildable
+
+RUN    apt-get update \
+    && apt-get install -y \
+                        build-essential \
+                        curl \
+                        dnsutils \
+                        fuse \
+                        git \
+                        iputils-ping \
+                        jq \
+                        make \
+                        protobuf-compiler \
+                        s3cmd \
+                        tree \
+                        vim \
+                        wget
+
+ARG GolangVersion=1.22.0
 ENV GolangBasename="go${GolangVersion}.linux-amd64.tar.gz"
 ENV GolangURL="https://golang.org/dl/${GolangBasename}"
 WORKDIR /tmp
@@ -96,21 +104,35 @@ RUN git clone https://github.com/go-delve/delve
 WORKDIR /tmp/delve
 RUN go build github.com/go-delve/delve/cmd/dlv
 RUN cp dlv /usr/local/go/bin/.
+WORKDIR /
+
+RUN echo '#!/bin/bash'                  >  /root/.bashrc_additions
+RUN echo 'export PS1="\w$ "'            >> /root/.bashrc_additions
+RUN echo 'export GOPATH=${HOME}/go'     >> /root/.bashrc_additions
+RUN echo 'export GOBIN=${GOPATH}/bin'   >> /root/.bashrc_additions
+RUN echo 'export PATH=${GOBIN}:${PATH}' >> /root/.bashrc_additions
+RUN echo 'go env -w CGO_ENABLED=1'      >> /root/.bashrc_additions
+
+RUN echo ""                      >> /root/.bashrc
+RUN echo ". ~/.bashrc_additions" >> /root/.bashrc
+
+FROM buildable as dev
+
 VOLUME /src
 WORKDIR /src
 RUN git config --global --add safe.directory /src
 
-FROM dev as build
+FROM buildable as build
+
 ARG MakeTarget
 COPY . /clone
 WORKDIR /clone
+RUN git config --global --add safe.directory /clone
 RUN make clean
 RUN make $MakeTarget
 
-FROM base as deploy
-RUN apk add --no-cache      \
-                       curl \
-                       fuse
+FROM buildable as deploy
+
 COPY --from=build /clone/iauth/iauth-swift/iauth-swift.so ./
 COPY --from=build /clone/ickpt/ickpt                      ./
 COPY --from=build /clone/ickpt/ickpt.conf                 ./

@@ -61,7 +61,7 @@ To instantiate either a development or test environment, a `docker-compose.yml` 
 To kick off development activities:
 
 * [Host shell] docker-compose up -d dev
-* [Host shell] docker-compose exec dev sh
+* [Host shell] docker-compose exec dev bash
 
 To build all the images:
 * [`dev` /src#] make

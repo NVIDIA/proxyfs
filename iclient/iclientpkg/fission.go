@@ -2700,8 +2700,9 @@ func (dummy *globalsStruct) DoInit(inHeader *fission.InHeader, initIn *fission.I
 		MaxWrite:             globals.config.FUSEMaxWrite,
 		TimeGran:             0, // accept default
 		MaxPages:             globals.config.FUSEMaxPages,
-		Padding:              0,
-		Unused:               [8]uint32{0, 0, 0, 0, 0, 0, 0, 0},
+		MapAlignment:         0, // accept default
+		Flags2:               0,
+		Unused:               [7]uint32{0, 0, 0, 0, 0, 0, 0},
 	}
 
 	errno = 0
