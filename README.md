@@ -80,7 +80,7 @@ Notes:
   * Skip the `rm -rf /tmp/ickptDB` and `idestroy...` steps
   * Pass `-s` rather than `-fs` to `imgr/mkmount.sh`
 * The daemons will be logging to $StdOut in this example launching
-* Each of the above daemons may be terminated by delivering a SIGINT or SIGTERM to their processes
+* Each of the above daemons may be terminated by delivering a SIGINT or SIGTERM to their corresponding process
 
 For a more appropriate environment in which to perform functional testing, the `docker-compose.yml` file my also be used to launch the suite of Docker Containers:
 
