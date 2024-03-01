@@ -10,6 +10,8 @@ cd /gopathroot/src/github.com/NVIDIA/proxyfs
 
 go get github.com/mattn/goveralls
 
+git config --global --add safe.directory .
+
 make ci
 
 # $COVERALLS_TOKEN must be configured in the CI/CD environment

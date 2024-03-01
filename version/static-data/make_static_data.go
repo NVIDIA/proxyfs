@@ -56,17 +56,17 @@ func main() {
 	}
 	_, err = dstFile.Write([]byte(fmt.Sprintf("package %v\n\n", packageName)))
 	if nil != err {
-		panic(err.Error())
+		gitDescribeCmd = exec.Command("git", "describe", "--tags")
+
+		gitDescribeOutput, err = gitDescribeCmd.Output()
+		if nil != err {
+			panic(err.Error())
+		}
+
+		proxyfsVersionString = string(gitDescribeOutput[:len(gitDescribeOutput)-1])
+	} else {
+		proxyfsVersionString = "unknown"
 	}
-
-	gitDescribeCmd = exec.Command("git", "describe", "--tags")
-
-	gitDescribeOutput, err = gitDescribeCmd.Output()
-	if nil != err {
-		panic(err.Error())
-	}
-
-	proxyfsVersionString = string(gitDescribeOutput[:len(gitDescribeOutput)-1])
 
 	_, err = dstFile.Write([]byte(fmt.Sprintf("const ProxyFSVersion = `%v`\n", proxyfsVersionString)))
 	if nil != err {
