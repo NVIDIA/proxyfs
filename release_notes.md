@@ -1,5 +1,13 @@
 # ProxyFS Release Notes
 
+## 2.04.0 (March 1, 2024)
+
+### Notes:
+
+Picked up latest version of [Package Fission](https://github.com/NVIDIA/fission). Commensurate with
+this, also upgraded various dependencies to be at least Ubuntu 22.04 and Golang 1.19 now required by
+[Package Fission](https://github.com/NVIDIA/fission).
+
 ## 2.03.0 (December 6, 2022)
 
 ### Bug Fixes:
