@@ -1,6 +1,11 @@
 # ProxyFS Release Notes
 
-## 2.04.0 (March 1, 2024)
+## 2.04.1 (March 1, 2024)
+
+### Bug Fixes:
+
+Resolved GitHub unit test failures due to attempts to fetch `git describe` details that are, in that
+test environment, not available.
 
 ### Notes:
 
