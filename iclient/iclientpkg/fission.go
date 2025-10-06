@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NVIDIA/fission"
+	"github.com/NVIDIA/fission/v3"
 	"github.com/NVIDIA/sortedmap"
 
 	"github.com/NVIDIA/proxyfs/ilayout"
@@ -2702,7 +2702,9 @@ func (dummy *globalsStruct) DoInit(inHeader *fission.InHeader, initIn *fission.I
 		MaxPages:             globals.config.FUSEMaxPages,
 		MapAlignment:         0, // accept default
 		Flags2:               0,
-		Unused:               [7]uint32{0, 0, 0, 0, 0, 0, 0},
+		MaxStackDepth:        0,
+		RequestTimeout:       0,
+		Unused:               [11]uint16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 	}
 
 	errno = 0
@@ -3600,7 +3602,7 @@ Retry:
 			logFatalf("directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
 		}
 
-		dirEntPlusSize = fission.DirEntFixedPortionSize + uint64(len(directoryEntryKeyV1)) + fission.DirEntAlignment - 1
+		dirEntPlusSize = fission.DirEntPlusFixedPortionSize + uint64(len(directoryEntryKeyV1)) + fission.DirEntAlignment - 1
 		dirEntPlusSize /= fission.DirEntAlignment
 		dirEntPlusSize *= fission.DirEntAlignment
 
@@ -3700,6 +3702,106 @@ func (dummy *globalsStruct) DoLSeek(inHeader *fission.InHeader, lSeekIn *fission
 	return
 }
 
+func (dummy *globalsStruct) DoStatX(inHeader *fission.InHeader, statXIn *fission.StatXIn) (statXOut *fission.StatXOut, errno syscall.Errno) {
+	var (
+		err                  error
+		inode                *inodeStruct
+		inodeLockRequest     *inodeLockRequestStruct
+		modificationTimeNSec uint32
+		modificationTimeSec  uint64
+		startTime            time.Time = time.Now()
+		statusChangeTimeNSec uint32
+		statusChangeTimeSec  uint64
+	)
+
+	logTracef("==> DoStatX(inHeader: %+v, statXIn: %+v)", inHeader, statXIn)
+	defer func() {
+		logTracef("<== DoStatX(statXOut: %+v, errno: %v)", statXOut, errno)
+	}()
+
+	defer func() {
+		globals.stats.DoStatXUsecs.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+Retry:
+	inodeLockRequest = newLockRequest()
+	inodeLockRequest.inodeNumber = inHeader.NodeID
+	inodeLockRequest.exclusive = false
+	inodeLockRequest.addThisLock()
+	if len(inodeLockRequest.locksHeld) == 0 {
+		performInodeLockRetryDelay()
+		goto Retry
+	}
+
+	inode = lookupInode(inHeader.NodeID)
+	if nil == inode {
+		inodeLockRequest.unlockAll()
+		statXOut = nil
+		errno = syscall.ENOENT
+		return
+	}
+
+	if nil == inode.inodeHeadV1 {
+		err = inode.populateInodeHeadV1()
+		if nil != err {
+			logFatalf("inode.populateInodeHeadV1() failed: %v", err)
+		}
+	}
+
+	modificationTimeSec, modificationTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.ModificationTime.UnixNano()))
+	statusChangeTimeSec, statusChangeTimeNSec = nsToUnixTime(uint64(inode.inodeHeadV1.StatusChangeTime.UnixNano()))
+
+	statXOut = &fission.StatXOut{
+		AttrValidSec:  globals.fuseAttrValidDurationSec,
+		AttrValidNSec: globals.fuseAttrValidDurationNSec,
+		Flags:         0,
+		Spare:         [2]uint64{0, 0},
+		StatX: fission.StatX{
+			Mask:           (fission.StatXMaskBasicStats | fission.StatXMaskBTime),
+			Attributes:     0,
+			UID:            uint32(inode.inodeHeadV1.UserID),
+			GID:            uint32(inode.inodeHeadV1.GroupID),
+			Mode:           uint16(computeAttrMode(inode.inodeHeadV1.InodeType, inode.inodeHeadV1.Mode) & 0xFFFF),
+			Spare0:         [1]uint16{0},
+			Ino:            inode.inodeHeadV1.InodeNumber,
+			Size:           inode.inodeHeadV1.Size, // Possibly overwritten by fixStatXSizes()
+			AttributesMask: 0,
+			ATime: fission.SXTime{
+				TVSec:    modificationTimeSec,
+				TVNSec:   modificationTimeNSec,
+				Reserved: 0,
+			},
+			BTime: fission.SXTime{
+				TVSec:    statusChangeTimeSec,
+				TVNSec:   statusChangeTimeNSec,
+				Reserved: 0,
+			},
+			CTime: fission.SXTime{
+				TVSec:    statusChangeTimeSec,
+				TVNSec:   statusChangeTimeNSec,
+				Reserved: 0,
+			},
+			MTime: fission.SXTime{
+				TVSec:    modificationTimeSec,
+				TVNSec:   modificationTimeNSec,
+				Reserved: 0,
+			},
+			RDevMajor: 0,
+			RDevMinor: 0,
+			DevMajor:  0,
+			DevMinor:  0,
+			Spare2:    [14]uint64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		},
+	}
+
+	fixStatXSizes(&statXOut.StatX)
+
+	inodeLockRequest.unlockAll()
+
+	errno = 0
+	return
+}
+
 func nsToUnixTime(ns uint64) (sec uint64, nsec uint32) {
 	sec = ns / 1e9
 	nsec = uint32(ns - (sec * 1e9))
@@ -3709,11 +3811,11 @@ func nsToUnixTime(ns uint64) (sec uint64, nsec uint32) {
 func dirEntType(iLayoutInodeType uint8) (dirEntType uint32) {
 	switch iLayoutInodeType {
 	case ilayout.InodeTypeDir:
-		dirEntType = syscall.S_IFDIR
+		dirEntType = syscall.DT_DIR
 	case ilayout.InodeTypeFile:
-		dirEntType = syscall.S_IFREG
+		dirEntType = syscall.DT_REG
 	case ilayout.InodeTypeSymLink:
-		dirEntType = syscall.S_IFLNK
+		dirEntType = syscall.DT_LNK
 	default:
 		logFatalf("iLayoutInodeType (%v) unknown", iLayoutInodeType)
 	}
@@ -3828,6 +3930,18 @@ func fixAttrSizes(attr *fission.Attr) {
 		attr.Size = 0
 		attr.Blocks = 0
 		attr.BlkSize = 0
+	}
+}
+
+func fixStatXSizes(statX *fission.StatX) {
+	if syscall.S_IFREG == (statX.Mode & syscall.S_IFMT) {
+		statX.Blocks = statX.Size + (uint64(attrBlockSize) - 1)
+		statX.Blocks /= uint64(attrBlockSize)
+		statX.BlkSize = attrBlockSize
+	} else {
+		statX.Size = 0
+		statX.Blocks = 0
+		statX.BlkSize = 0
 	}
 }
 
