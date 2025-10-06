@@ -3600,7 +3600,7 @@ Retry:
 			logFatalf("directoryEntryValueV1AsValue.(*ilayout.DirectoryEntryValueV1Struct) returned !ok")
 		}
 
-		dirEntPlusSize = fission.DirEntFixedPortionSize + uint64(len(directoryEntryKeyV1)) + fission.DirEntAlignment - 1
+		dirEntPlusSize = fission.DirEntPlusFixedPortionSize + uint64(len(directoryEntryKeyV1)) + fission.DirEntAlignment - 1
 		dirEntPlusSize /= fission.DirEntAlignment
 		dirEntPlusSize *= fission.DirEntAlignment
 
@@ -3709,11 +3709,11 @@ func nsToUnixTime(ns uint64) (sec uint64, nsec uint32) {
 func dirEntType(iLayoutInodeType uint8) (dirEntType uint32) {
 	switch iLayoutInodeType {
 	case ilayout.InodeTypeDir:
-		dirEntType = syscall.S_IFDIR
+		dirEntType = syscall.DT_DIR
 	case ilayout.InodeTypeFile:
-		dirEntType = syscall.S_IFREG
+		dirEntType = syscall.DT_REG
 	case ilayout.InodeTypeSymLink:
-		dirEntType = syscall.S_IFLNK
+		dirEntType = syscall.DT_LNK
 	default:
 		logFatalf("iLayoutInodeType (%v) unknown", iLayoutInodeType)
 	}
