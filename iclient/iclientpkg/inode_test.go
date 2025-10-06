@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/fission"
+	"github.com/NVIDIA/fission/v3"
 )
 
 const (
