@@ -6,7 +6,7 @@ require (
 	github.com/NVIDIA/fission/v3 v3.0.3
 	github.com/NVIDIA/sortedmap v1.30.0
 	github.com/google/btree v1.0.1
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.8.3
 	github.com/stretchr/testify v1.7.5
 	golang.org/x/sys v0.17.0
 )
